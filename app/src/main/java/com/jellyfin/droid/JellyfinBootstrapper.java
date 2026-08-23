@@ -1,4 +1,4 @@
-﻿package com.jellyfin.droid;
+package com.jellyfin.droid;
 
 import android.content.Context;
 import android.system.Os;
@@ -59,8 +59,11 @@ public class JellyfinBootstrapper {
                 }
             }
 
+            File tarBin = new File(prefixDir, "bin/tar");
+            String tarCmd = tarBin.exists() ? tarBin.getAbsolutePath() : "tar";
+
             Log.i(TAG, "Unpacking combined bootstrap tar.gz into " + prefixDir.getAbsolutePath());
-            Process process = new ProcessBuilder("tar", "-x", "-z", "-f", combinedTarGz.getAbsolutePath(), "-C", prefixDir.getAbsolutePath())
+            Process process = new ProcessBuilder(tarCmd, "-x", "-z", "-f", combinedTarGz.getAbsolutePath(), "-C", prefixDir.getAbsolutePath())
                     .redirectErrorStream(true)
                     .start();
             
