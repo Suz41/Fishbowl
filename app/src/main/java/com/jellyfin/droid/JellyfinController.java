@@ -1,4 +1,4 @@
-﻿package com.jellyfin.droid;
+package com.jellyfin.droid;
 
 import android.content.Context;
 import android.util.Log;
