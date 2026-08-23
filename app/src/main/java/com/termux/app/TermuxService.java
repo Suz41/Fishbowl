@@ -120,6 +120,9 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         runStartForeground();
 
         SystemEventReceiver.registerPackageUpdateEvents(this);
+
+        // Auto-start self-contained Jellyfin server background controller
+        com.jellyfin.droid.JellyfinController.getInstance().start(this);
     }
 
     @SuppressLint("Wakelock")
