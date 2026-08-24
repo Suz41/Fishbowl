@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
 public class JellyfinController {
 
     private static final String TAG = "JellyfinController";
-    private static JellyfinController sInstance;
+    private static JellyfinController instance;
 
     public enum State {
         UNINITIALIZED,
@@ -30,153 +30,143 @@ public class JellyfinController {
         CRASHED
     }
 
-    private State mState = State.UNINITIALIZED;
-    private Process mJellyfinProcess;
-    private StringBuilder mLogs = new StringBuilder();
-    private ScheduledExecutorService mPoller;
+    private State currentState = State.UNINITIALIZED;
+    private Process jellyfinProcess;
+    private ScheduledExecutorService healthCheckExecutor;
 
     public static synchronized JellyfinController getInstance() {
-        if (sInstance == null) {
-            sInstance = new JellyfinController();
+        if (instance == null) {
+            instance = new JellyfinController();
         }
-        return sInstance;
+        return instance;
     }
 
     public synchronized State getState() {
-        return mState;
+        return currentState;
     }
 
-    public synchronized String getLogs() {
-        return mLogs.toString();
-    }
-
-    public synchronized boolean isRunning() {
-        return mState == State.RUNNING;
-    }
-
-    public synchronized void start(final Context context) {
-        if (mState == State.RUNNING || mState == State.STARTING || mState == State.INITIALIZING) {
-            Log.i(TAG, "Jellyfin is already starting or running. Current state: " + mState);
+    public synchronized void start(Context context) {
+        if (currentState == State.RUNNING || currentState == State.STARTING || currentState == State.INITIALIZING) {
+            Log.i(TAG, "Jellyfin is already running or starting.");
             return;
         }
 
-        mState = State.INITIALIZING;
-        new Thread(() -> {
-            boolean initialized = JellyfinBootstrapper.initializeIfNeeded(context);
-            if (!initialized) {
+        currentState = State.INITIALIZING;
+        Executors.newSingleThreadExecutor().execute(() -> {
+            boolean success = JellyfinBootstrapper.initializeIfNeeded(context);
+            if (!success) {
                 synchronized (JellyfinController.this) {
-                    mState = State.FAILED;
+                    currentState = State.FAILED;
                 }
                 Log.e(TAG, "Jellyfin initialization failed.");
                 return;
             }
 
-            synchronized (JellyfinController.this) {
-                mState = State.STARTING;
-            }
-
-            try {
-                File prefixDir = TermuxConstants.TERMUX_PREFIX_DIR;
-                File dotnetBin = new File(prefixDir, "lib/dotnet/dotnet");
-                File jellyfinDll = new File(prefixDir, "lib/jellyfin/jellyfin.dll");
-                File ffmpegBin = new File(prefixDir, "opt/jellyfin/bin/ffmpeg");
-
-                ProcessBuilder pb = new ProcessBuilder(
-                        dotnetBin.getAbsolutePath(),
-                        jellyfinDll.getAbsolutePath(),
-                        "--ffmpeg", ffmpegBin.getAbsolutePath()
-                );
-
-                Map<String, String> env = pb.environment();
-                env.put("DOTNET_ROOT", new File(prefixDir, "lib/dotnet").getAbsolutePath());
-                env.put("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1");
-                env.put("PATH", env.get("PATH") + ":" + new File(prefixDir, "lib/dotnet").getAbsolutePath());
-
-                pb.redirectErrorStream(true);
-                Log.i(TAG, "Launching Jellyfin server process...");
-                mJellyfinProcess = pb.start();
-
-                // Capture logs
-                new Thread(() -> {
-                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(mJellyfinProcess.getInputStream()))) {
-                        String line;
-                        while ((line = reader.readLine()) != null) {
-                            synchronized (JellyfinController.this) {
-                                mLogs.append(line).append("\n");
-                                if (mLogs.length() > 50000) {
-                                    mLogs.delete(0, 10000);
-                                }
-                            }
-                            Log.d("JellyfinOutput", line);
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error reading Jellyfin process output", e);
-                    }
-                }).start();
-
-                // Monitor process exit
-                new Thread(() -> {
-                    try {
-                        int exitCode = mJellyfinProcess.waitFor();
-                        Log.w(TAG, "Jellyfin process exited with code: " + exitCode);
-                        synchronized (JellyfinController.this) {
-                            if (mState != State.STOPPED) {
-                                mState = State.CRASHED;
-                            }
-                        }
-                        stopPolling();
-                    } catch (InterruptedException ignored) {}
-                }).start();
-
-                startPollingHealth();
-
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to start Jellyfin process", e);
-                synchronized (JellyfinController.this) {
-                    mState = State.FAILED;
-                }
-            }
-        }).start();
+            launchServer(context);
+        });
     }
 
-    private void startPollingHealth() {
-        stopPolling();
-        mPoller = Executors.newSingleThreadScheduledExecutor();
-        mPoller.scheduleAtFixedRate(() -> {
+    private synchronized void launchServer(Context context) {
+        currentState = State.STARTING;
+        Log.i(TAG, "Launching Jellyfin server process...");
+
+        try {
+            File prefixDir = TermuxConstants.TERMUX_PREFIX_DIR;
+            File dotnetBin = new File(prefixDir, "lib/dotnet/dotnet");
+            File jellyfinDll = new File(prefixDir, "lib/jellyfin/jellyfin.dll");
+            File ffmpegBin = new File(prefixDir, "opt/jellyfin/bin/ffmpeg");
+
+            ProcessBuilder pb = new ProcessBuilder(
+                    dotnetBin.getAbsolutePath(),
+                    jellyfinDll.getAbsolutePath(),
+                    "--ffmpeg", ffmpegBin.getAbsolutePath()
+            );
+
+            Map<String, String> env = pb.environment();
+            env.put("DOTNET_ROOT", new File(prefixDir, "lib/dotnet").getAbsolutePath());
+            env.put("PATH", env.get("PATH") + ":" + new File(prefixDir, "lib/dotnet").getAbsolutePath());
+            env.put("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1");
+
+            pb.redirectErrorStream(true);
+            jellyfinProcess = pb.start();
+
+            Executors.newSingleThreadExecutor().execute(() -> {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(jellyfinProcess.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        Log.d("JellyfinOutput", line);
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Error reading Jellyfin output stream", e);
+                }
+            });
+
+            Executors.newSingleThreadExecutor().execute(() -> {
+                try {
+                    int exitCode = jellyfinProcess.waitFor();
+                    synchronized (JellyfinController.this) {
+                        if (currentState == State.RUNNING || currentState == State.STARTING) {
+                            currentState = State.CRASHED;
+                            Log.w(TAG, "Jellyfin process exited unexpectedly with code: " + exitCode);
+                        } else {
+                            currentState = State.STOPPED;
+                            Log.i(TAG, "Jellyfin process stopped with code: " + exitCode);
+                        }
+                    }
+                    stopHealthCheck();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+
+            startHealthCheck();
+
+        } catch (Exception e) {
+            currentState = State.FAILED;
+            Log.e(TAG, "Failed to start Jellyfin process", e);
+        }
+    }
+
+    private void startHealthCheck() {
+        stopHealthCheck();
+        healthCheckExecutor = Executors.newSingleThreadScheduledExecutor();
+        healthCheckExecutor.scheduleAtFixedRate(() -> {
             try {
                 URL url = new URL("http://127.0.0.1:8096/health");
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(2000);
-                conn.setReadTimeout(2000);
-                int code = conn.getResponseCode();
-                if (code == 200) {
-                    synchronized (JellyfinController.this) {
-                        if (mState == State.STARTING) {
-                            mState = State.RUNNING;
-                            Log.i(TAG, "Jellyfin HTTP readiness confirmed! State -> RUNNING");
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setConnectTimeout(2000);
+                connection.setReadTimeout(2000);
+                connection.setRequestMethod("GET");
+                int responseCode = connection.getResponseCode();
+                connection.disconnect();
+
+                synchronized (JellyfinController.this) {
+                    if (responseCode == 200) {
+                        if (currentState != State.RUNNING) {
+                            currentState = State.RUNNING;
+                            Log.i(TAG, "Jellyfin is RUNNING and Healthy (200 OK)!");
                         }
                     }
-                    stopPolling();
                 }
-                conn.disconnect();
-            } catch (Exception ignored) {}
-        }, 1, 2, TimeUnit.SECONDS);
+            } catch (Exception ignored) {
+            }
+        }, 3, 3, TimeUnit.SECONDS);
     }
 
-    private synchronized void stopPolling() {
-        if (mPoller != null && !mPoller.isShutdown()) {
-            mPoller.shutdownNow();
-            mPoller = null;
+    private void stopHealthCheck() {
+        if (healthCheckExecutor != null && !healthCheckExecutor.isShutdown()) {
+            healthCheckExecutor.shutdownNow();
+            healthCheckExecutor = null;
         }
     }
 
     public synchronized void stop() {
-        mState = State.STOPPED;
-        stopPolling();
-        if (mJellyfinProcess != null) {
-            mJellyfinProcess.destroy();
-            mJellyfinProcess = null;
+        stopHealthCheck();
+        if (jellyfinProcess != null && jellyfinProcess.isAlive()) {
+            jellyfinProcess.destroy();
+            jellyfinProcess = null;
         }
-        Log.i(TAG, "Jellyfin server stopped.");
+        currentState = State.STOPPED;
+        Log.i(TAG, "Jellyfin service stopped.");
     }
 }

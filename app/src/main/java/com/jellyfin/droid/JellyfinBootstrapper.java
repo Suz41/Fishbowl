@@ -6,10 +6,16 @@ import android.util.Log;
 
 import com.termux.shared.termux.TermuxConstants;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.zip.GZIPInputStream;
+
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 
 public class JellyfinBootstrapper {
 
@@ -17,13 +23,20 @@ public class JellyfinBootstrapper {
     private static final String INITIALIZED_MARKER_FILE = ".jellyfin_initialized_v10.11.11";
     private static final String[] ASSET_PARTS = {
             "jellyfin-bootstrap.tar.gz.part_aa",
-            "jellyfin-bootstrap.tar.gz.part_ab"
+            "jellyfin-bootstrap.tar.gz.part_ab",
+            "jellyfin-bootstrap.tar.gz.part_ac",
+            "jellyfin-bootstrap.tar.gz.part_ad",
+            "jellyfin-bootstrap.tar.gz.part_ae",
+            "jellyfin-bootstrap.tar.gz.part_af",
+            "jellyfin-bootstrap.tar.gz.part_ag",
+            "jellyfin-bootstrap.tar.gz.part_ah",
+            "jellyfin-bootstrap.tar.gz.part_ai"
     };
 
     public static synchronized boolean isInitialized(Context context) {
-        File marker = new File(TermuxConstants.TERMUX_FILES_DIR_PATH, INITIALIZED_MARKER_FILE);
-        File jellyfinDll = new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH, "lib/jellyfin/jellyfin.dll");
-        File dotnetBin = new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH, "lib/dotnet/dotnet");
+        File marker = new File(TermuxConstants.TERMUX_FILES_DIR, INITIALIZED_MARKER_FILE);
+        File jellyfinDll = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.dll");
+        File dotnetBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/dotnet/dotnet");
         return marker.exists() && jellyfinDll.exists() && dotnetBin.exists();
     }
 
@@ -34,7 +47,7 @@ public class JellyfinBootstrapper {
         }
 
         Log.i(TAG, "Initializing Jellyfin self-contained environment...");
-        File marker = new File(TermuxConstants.TERMUX_FILES_DIR_PATH, INITIALIZED_MARKER_FILE);
+        File marker = new File(TermuxConstants.TERMUX_FILES_DIR, INITIALIZED_MARKER_FILE);
         if (marker.exists()) {
             marker.delete();
         }
@@ -44,10 +57,10 @@ public class JellyfinBootstrapper {
             prefixDir.mkdirs();
         }
 
+        File cacheTarGz = new File(context.getCacheDir(), "jellyfin-bootstrap.tar.gz");
         try {
-            File combinedTarGz = new File(context.getCacheDir(), "jellyfin-bootstrap.tar.gz");
             Log.i(TAG, "Recombining split bootstrap assets into cache...");
-            try (OutputStream out = new FileOutputStream(combinedTarGz)) {
+            try (OutputStream out = new BufferedOutputStream(new FileOutputStream(cacheTarGz))) {
                 byte[] buffer = new byte[65536];
                 for (String part : ASSET_PARTS) {
                     try (InputStream in = context.getAssets().open(part)) {
@@ -59,21 +72,54 @@ public class JellyfinBootstrapper {
                 }
             }
 
-            File tarBin = new File(prefixDir, "bin/tar");
-            String tarCmd = tarBin.exists() ? tarBin.getAbsolutePath() : "tar";
+            Log.i(TAG, "Unpacking combined bootstrap archive via Java TarArchiveInputStream...");
+            try (InputStream fileIn = new BufferedInputStream(new java.io.FileInputStream(cacheTarGz));
+                 GZIPInputStream gzIn = new GZIPInputStream(fileIn);
+                 TarArchiveInputStream tarIn = new TarArchiveInputStream(gzIn)) {
 
-            Log.i(TAG, "Unpacking combined bootstrap tar.gz into " + prefixDir.getAbsolutePath());
-            Process process = new ProcessBuilder(tarCmd, "-x", "-z", "-f", combinedTarGz.getAbsolutePath(), "-C", prefixDir.getAbsolutePath())
-                    .redirectErrorStream(true)
-                    .start();
-            
-            int exitCode = process.waitFor();
-            combinedTarGz.delete();
+                TarArchiveEntry entry;
+                byte[] buffer = new byte[65536];
+                int extractedCount = 0;
+                while ((entry = tarIn.getNextTarEntry()) != null) {
+                    String name = entry.getName();
+                    while (name.startsWith("./") || name.startsWith("/")) {
+                        name = name.startsWith("./") ? name.substring(2) : name.substring(1);
+                    }
+                    File targetFile = new File(prefixDir, name);
 
-            if (exitCode != 0) {
-                Log.e(TAG, "Tar.gz unpacking failed with exit code: " + exitCode);
-                return false;
+                    if (entry.isDirectory()) {
+                        targetFile.mkdirs();
+                    } else if (entry.isSymbolicLink()) {
+                        targetFile.getParentFile().mkdirs();
+                        if (targetFile.exists()) {
+                            targetFile.delete();
+                        }
+                        try {
+                            Os.symlink(entry.getLinkName(), targetFile.getAbsolutePath());
+                        } catch (Exception e) {
+                            Log.w(TAG, "Failed to create symlink " + targetFile + " -> " + entry.getLinkName() + ": " + e.getMessage());
+                        }
+                    } else {
+                        targetFile.getParentFile().mkdirs();
+                        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(targetFile))) {
+                            int count;
+                            while ((count = tarIn.read(buffer, 0, buffer.length)) != -1) {
+                                out.write(buffer, 0, count);
+                            }
+                        }
+                        int mode = entry.getMode();
+                        if (mode != 0) {
+                            try {
+                                Os.chmod(targetFile.getAbsolutePath(), mode);
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                    extractedCount++;
+                }
+                Log.i(TAG, "Extracted " + extractedCount + " entries from tar.gz!");
             }
+
+            cacheTarGz.delete();
 
             File dotnetBin = new File(prefixDir, "lib/dotnet/dotnet");
             if (dotnetBin.exists()) {
@@ -84,12 +130,27 @@ public class JellyfinBootstrapper {
                 Os.chmod(ffmpegBin.getAbsolutePath(), 0755);
             }
 
+            File jellyfinDll = new File(prefixDir, "lib/jellyfin/jellyfin.dll");
+            Log.i(TAG, "Post-extraction check: dotnetBin=" + dotnetBin.getAbsolutePath() + " exists=" + dotnetBin.exists() + ", jellyfinDll=" + jellyfinDll.getAbsolutePath() + " exists=" + jellyfinDll.exists());
+
+            if (!marker.getParentFile().exists()) {
+                marker.getParentFile().mkdirs();
+            }
             marker.createNewFile();
+
+            if (!isInitialized(context)) {
+                Log.e(TAG, "Extraction finished but validation failed.");
+                return false;
+            }
+
             Log.i(TAG, "Jellyfin self-contained environment initialized successfully!");
             return true;
 
         } catch (Exception e) {
             Log.e(TAG, "Failed to initialize Jellyfin bootstrap environment", e);
+            if (cacheTarGz.exists()) {
+                cacheTarGz.delete();
+            }
             return false;
         }
     }
