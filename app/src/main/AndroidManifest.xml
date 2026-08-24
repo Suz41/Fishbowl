@@ -81,6 +81,7 @@
         </activity>
         <activity android:name="com.jellyfin.droid.JellyfinLogsActivity" android:label="Jellyfin logs" />
         <activity android:name="com.jellyfin.droid.JellyfinSettingsActivity" android:label="Settings" />
+        <activity android:name="com.jellyfin.droid.JellyfinStorageActivity" android:label="Media Storage" />
         <activity android:name="com.jellyfin.droid.JellyfinWebActivity" android:label="Jellyfin" android:configChanges="orientation|screenSize" />
 
         <activity-alias
