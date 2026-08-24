@@ -24,10 +24,7 @@ public class JellyfinBootstrapper {
     private static final String[] ASSET_PARTS = {
             "jellyfin-bootstrap.tar.gz.part_aa",
             "jellyfin-bootstrap.tar.gz.part_ab",
-            "jellyfin-bootstrap.tar.gz.part_ac",
-            "jellyfin-bootstrap.tar.gz.part_ad",
-            "jellyfin-bootstrap.tar.gz.part_ae",
-            "jellyfin-bootstrap.tar.gz.part_af"
+            "jellyfin-bootstrap.tar.gz.part_ac"
     };
 
     public static synchronized boolean isInitialized(Context context) {
