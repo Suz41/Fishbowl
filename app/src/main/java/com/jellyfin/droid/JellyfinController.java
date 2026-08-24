@@ -257,11 +257,24 @@ public class JellyfinController {
                 dataDir.mkdirs();
             }
 
+            File homeDir     = TermuxConstants.TERMUX_HOME_DIR;
+            File configDir   = new File(homeDir, ".config/jellyfin");
+            File cacheDir    = new File(homeDir, ".cache/jellyfin");
+            File logDir      = new File(dataDir, "log");
+
+            // Ensure all target directories exist
+            if (!configDir.exists()) configDir.mkdirs();
+            if (!cacheDir.exists()) cacheDir.mkdirs();
+            if (!logDir.exists()) logDir.mkdirs();
+
             synchronized (this) {
                 appendLogLocked("dotnet: " + dotnetBin.getAbsolutePath());
                 appendLogLocked("jellyfin.dll: " + jellyfinDll.getAbsolutePath());
                 appendLogLocked("ffmpeg: " + ffmpegBin.getAbsolutePath());
-                appendLogLocked("data dir: " + dataDir.getAbsolutePath());
+                appendLogLocked("DATA_DIR: " + dataDir.getAbsolutePath());
+                appendLogLocked("CONFIG_DIR: " + configDir.getAbsolutePath());
+                appendLogLocked("CACHE_DIR: " + cacheDir.getAbsolutePath());
+                appendLogLocked("LOG_DIR: " + logDir.getAbsolutePath());
             }
 
             // §2: Direct ProcessBuilder, no shell invocation, explicit arguments
@@ -269,11 +282,15 @@ public class JellyfinController {
                     dotnetBin.getAbsolutePath(),
                     jellyfinDll.getAbsolutePath(),
                     "--ffmpeg", ffmpegBin.getAbsolutePath(),
-                    "--datadir", dataDir.getAbsolutePath()
+                    "--datadir", dataDir.getAbsolutePath(),
+                    "--configdir", configDir.getAbsolutePath(),
+                    "--cachedir", cacheDir.getAbsolutePath(),
+                    "--logdir", logDir.getAbsolutePath()
             );
 
             // §2: Set required environment variables every time
             Map<String, String> env = pb.environment();
+            env.put("HOME", homeDir.getAbsolutePath());
             env.put("DOTNET_ROOT", new File(prefixDir, "lib/dotnet").getAbsolutePath());
             env.put("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1");
             String existingPath = env.getOrDefault("PATH", "");
