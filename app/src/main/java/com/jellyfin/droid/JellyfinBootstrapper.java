@@ -27,10 +27,7 @@ public class JellyfinBootstrapper {
             "jellyfin-bootstrap.tar.gz.part_ac",
             "jellyfin-bootstrap.tar.gz.part_ad",
             "jellyfin-bootstrap.tar.gz.part_ae",
-            "jellyfin-bootstrap.tar.gz.part_af",
-            "jellyfin-bootstrap.tar.gz.part_ag",
-            "jellyfin-bootstrap.tar.gz.part_ah",
-            "jellyfin-bootstrap.tar.gz.part_ai"
+            "jellyfin-bootstrap.tar.gz.part_af"
     };
 
     public static synchronized boolean isInitialized(Context context) {
