@@ -299,6 +299,15 @@ public class JellyfinController {
                     + ":" + new File(prefixDir, "bin").getAbsolutePath()
                     + (existingPath.isEmpty() ? "" : ":" + existingPath));
 
+            // Phase 14: LD_LIBRARY_PATH must include $PREFIX/lib for native libs
+            // (e_sqlite3.so, libSkiaSharp.so, etc.) and $PREFIX/opt/jellyfin/lib
+            // for ffmpeg shared libraries (libavdevice, libavcodec, etc.)
+            String libDir = new File(prefixDir, "lib").getAbsolutePath();
+            String ffmpegLibDir = new File(prefixDir, "opt/jellyfin/lib").getAbsolutePath();
+            String existingLdPath = env.getOrDefault("LD_LIBRARY_PATH", "");
+            env.put("LD_LIBRARY_PATH", libDir + ":" + ffmpegLibDir
+                    + (existingLdPath.isEmpty() ? "" : ":" + existingLdPath));
+
             // §2: Merge stdout+stderr to prevent blocked pipe
             pb.redirectErrorStream(true);
 
