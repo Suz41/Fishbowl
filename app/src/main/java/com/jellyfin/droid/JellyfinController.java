@@ -3,6 +3,7 @@ package com.jellyfin.droid;
 import android.content.Context;
 import android.util.Log;
 
+import com.termux.BuildConfig;
 import com.termux.shared.termux.TermuxConstants;
 
 import java.io.BufferedReader;
@@ -333,10 +334,12 @@ public class JellyfinController {
                 while ((line = reader.readLine()) != null) {
                     final String logLine = line;
                     synchronized (JellyfinController.this) { appendLogLocked(logLine); }
-                    Log.d("JellyfinOut", logLine);
+                    if (BuildConfig.DEBUG) {
+                        Log.d("JellyfinOut", logLine);
+                    }
                 }
             } catch (Exception e) {
-                Log.w(TAG, "Output reader ended: " + e.getMessage());
+                Log.w(TAG, "Jellyfin output reader ended: " + e.getMessage());
             }
         });
     }
