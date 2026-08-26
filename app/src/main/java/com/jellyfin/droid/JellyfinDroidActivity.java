@@ -234,9 +234,8 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         // Logo Mark (Derived from Fellyfin logo white.svg)
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.ic_jellyfin_logo);
-        logo.setBackground(createRoundedDrawable(Color.parseColor("#121316"), dp(8)));
-        logo.setPadding(dp(4), dp(4), dp(4), dp(4));
-        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(32), dp(32));
+        logo.setColorFilter(getPrimaryTextColor());
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(28), dp(28));
         logoParams.rightMargin = dp(10);
         header.addView(logo, logoParams);
 
