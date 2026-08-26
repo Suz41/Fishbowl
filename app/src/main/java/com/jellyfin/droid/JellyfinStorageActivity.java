@@ -24,6 +24,10 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import java.io.File;
 import java.util.HashSet;
@@ -53,6 +57,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setupSystemBars();
         prefs = getSharedPreferences("jellyfindroid_storage", MODE_PRIVATE);
         setContentView(createView());
     }
@@ -61,6 +66,17 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         updateUI();
+    }
+
+    private void setupSystemBars() {
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        WindowInsetsControllerCompat controllerCompat = new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+        boolean isDark = isDarkTheme();
+        controllerCompat.setAppearanceLightStatusBars(!isDark);
+        controllerCompat.setAppearanceLightNavigationBars(!isDark);
+        int color = isDark ? Color.parseColor("#121316") : Color.parseColor("#F8F9FA");
+        getWindow().setStatusBarColor(color);
+        getWindow().setNavigationBarColor(color);
     }
 
     private boolean isDarkTheme() {
@@ -75,6 +91,13 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(20), dp(20), dp(20));
+
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+            androidx.core.graphics.Insets statusBarInset = insets.getInsets(WindowInsetsCompat.Type.statusBars());
+            androidx.core.graphics.Insets navBarInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+            v.setPadding(dp(20), statusBarInset.top + dp(16), dp(20), navBarInset.bottom + dp(16));
+            return insets;
+        });
 
         TextView title = new TextView(this);
         title.setText("Media Storage & Folders");
@@ -135,10 +158,10 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     private void updateUI() {
         boolean hasPermission = checkStoragePermission();
         if (hasPermission) {
-            permissionStatus.setText("●  MEDIA ACCESS GRANTED");
+            permissionStatus.setText("MEDIA ACCESS GRANTED");
             permissionStatus.setTextColor(Color.parseColor("#81C784"));
         } else {
-            permissionStatus.setText("●  MEDIA ACCESS MISSING (ACTION REQUIRED)");
+            permissionStatus.setText("MEDIA ACCESS MISSING (ACTION REQUIRED)");
             permissionStatus.setTextColor(Color.parseColor("#E57373"));
         }
 
@@ -146,7 +169,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         StringBuilder sb = new StringBuilder();
         sb.append("1. /storage/emulated/0 (Shared Internal Storage)\n");
         for (String f : folders) {
-            sb.append("• ").append(f).append("\n");
+            sb.append("- ").append(f).append("\n");
         }
         folderListText.setText(sb.toString());
     }
@@ -190,7 +213,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         Set<String> set = new HashSet<>(prefs.getStringSet("folders", new HashSet<>()));
         set.add(folderUri);
         prefs.edit().putStringSet("folders", set).apply();
-        Toast.makeText(this, "Folder added to JellyfinDroid storage bridge", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Folder added to JellfinDroid storage bridge", Toast.LENGTH_SHORT).show();
         updateUI();
     }
 
