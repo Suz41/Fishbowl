@@ -130,13 +130,53 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
             }
         });
 
-        // Set WebViewClient with smart LAN/loopback host validation
+        // Set WebViewClient with smart LAN/loopback host validation and playback diagnostic logging
         web.setWebViewClient(new WebViewClient() {
+            private String currentAttemptId = "";
+            private long lastAttemptTime = 0;
+
             @Override 
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { 
                 if (request == null || request.getUrl() == null) return false;
                 String host = request.getUrl().getHost();
                 return !isLocalOrLanHost(host);
+            }
+
+            @Override
+            public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if (BuildConfig.DEBUG && request != null && request.getUrl() != null) {
+                    String urlPath = request.getUrl().getPath();
+                    if (urlPath != null && (urlPath.contains("/Items/") || urlPath.contains("/Videos/") || urlPath.contains("/hls/") || urlPath.contains("/Trailers"))) {
+                        long now = System.currentTimeMillis();
+                        if (now - lastAttemptTime > 4000 || currentAttemptId.isEmpty()) {
+                            currentAttemptId = java.util.UUID.randomUUID().toString().substring(0, 8);
+                        }
+                        lastAttemptTime = now;
+
+                        // Sanitize URL to ensure passwords, tokens, and secrets are NEVER logged
+                        android.net.Uri uri = request.getUrl();
+                        android.net.Uri.Builder cleanBuilder = uri.buildUpon().clearQuery();
+                        for (String paramName : uri.getQueryParameterNames()) {
+                            if (!"api_key".equalsIgnoreCase(paramName) && !"token".equalsIgnoreCase(paramName) && !"X-Emby-Token".equalsIgnoreCase(paramName)) {
+                                cleanBuilder.appendQueryParameter(paramName, uri.getQueryParameter(paramName));
+                            } else {
+                                cleanBuilder.appendQueryParameter(paramName, "[REDACTED]");
+                            }
+                        }
+                        String sanitizedUrl = cleanBuilder.build().toString();
+
+                        String actionType = "OTHER_MEDIA_REQ";
+                        if (urlPath.contains("/PlaybackInfo")) actionType = "PLAYBACK_INFO";
+                        else if (urlPath.contains("/Trailers")) actionType = "TRAILER_REQ";
+                        else if (urlPath.contains("/stream") || urlPath.contains("/master.m3u8") || urlPath.contains("/main.m3u8")) actionType = "STREAM_REQ";
+                        else if (urlPath.contains("/hls/")) actionType = "HLS_TRANSCODE_REQ";
+
+                        Log.d("JellyfinPlaybackDiag", String.format(
+                                "[PLAYBACK_DIAG] [AttemptID: %s] [Timestamp: %d] [Action: %s] [Path: %s] [Method: %s]",
+                                currentAttemptId, now, actionType, sanitizedUrl, request.getMethod()));
+                    }
+                }
+                return super.shouldInterceptRequest(view, request);
             }
         });
 
