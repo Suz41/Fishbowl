@@ -308,6 +308,13 @@ public class JellyfinController {
             env.put("LD_LIBRARY_PATH", libDir + ":" + ffmpegLibDir
                     + (existingLdPath.isEmpty() ? "" : ":" + existingLdPath));
 
+            // SSL CA Certificate bundle for .NET SslStream outbound HTTPS connections (TMDb, OMDb, etc.)
+            File certFile = new File(prefixDir, "etc/tls/cert.pem");
+            if (certFile.exists()) {
+                env.put("SSL_CERT_FILE", certFile.getAbsolutePath());
+                env.put("SSL_CERT_DIR", certFile.getParentFile().getAbsolutePath());
+            }
+
             // §2: Merge stdout+stderr to prevent blocked pipe
             pb.redirectErrorStream(true);
 
