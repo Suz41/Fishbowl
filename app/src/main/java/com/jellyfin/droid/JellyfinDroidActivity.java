@@ -1,5 +1,6 @@
 package com.jellyfin.droid;
 
+import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -7,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -21,6 +23,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -34,7 +37,12 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.termux.R;
 import com.termux.app.TermuxService;
@@ -45,15 +53,14 @@ import java.net.NetworkInterface;
 import java.util.Enumeration;
 
 /**
- * Phase 14: Pixel OS UI / UX + Real Server Startup Progress Architecture.
+ * Phase 15: JellfinDroid UI Polish, Branding, Logo, System UI & Server Notification.
  *
- * Features:
- *  - Modern Pixel OS Material 3 visual design system (Light & Dark theme support)
- *  - Real stage-by-stage startup progress card (NO fake timer-based percentages)
- *  - Authoritative readiness guard for OPEN JELLYFIN action
- *  - Integrated 5-tab native shell (Dashboard, Server, Storage, Logs, Settings)
- *  - Dynamic theme manager (System / Light / Dark)
- *  - Preserves 100% of underlying server lifecycle, WakeLock, and persistence safety
+ * Requirements:
+ *  - STRICT UI RULE: ABSOLUTELY NO EMOJIS anywhere in native UI or text.
+ *  - BRANDING: JellfinDroid branding with Fellyfin logo.svg derived vector asset.
+ *  - SYSTEM UI: Correct status bar & navigation bar inset handling (no red status bar!).
+ *  - FOREGROUND NOTIFICATION: Synchronized with real server lifecycle states.
+ *  - 5-TAB BOTTOM NAV: Polished Material 3 bottom navigation bar with active pill indicator.
  */
 public final class JellyfinDroidActivity extends AppCompatActivity
         implements JellyfinController.Listener {
@@ -61,10 +68,12 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private JellyfinController controller;
     private SharedPreferences settingsPrefs;
 
-    // Active tab state (0: Dashboard, 1: Server, 2: Storage, 3: Logs, 4: Settings)
+    // Active tab state (0: Home, 1: Server, 2: Storage, 3: Logs, 4: Settings)
     private int activeTab = 0;
 
     // Containers
+    private LinearLayout rootLayout;
+    private View headerBar;
     private FrameLayout contentContainer;
     private LinearLayout bottomNavLayout;
 
@@ -82,27 +91,30 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private View startupProgressCard;
     private TextView txtStage1, txtStage2, txtStage3, txtStage4, txtStage5;
 
-    // Logs & Settings References
+    // Logs & Storage References
     private TextView logsOutputText;
     private TextView storageInfoText;
 
-    // Network Callback
+    // Network Callback & Receiver
     private ConnectivityManager.NetworkCallback networkCallback;
     private BroadcastReceiver connectivityReceiver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // Apply saved theme preference before layout inflates
         settingsPrefs = getSharedPreferences("jellyfindroid_settings", MODE_PRIVATE);
         applySavedThemeMode();
 
         super.onCreate(savedInstanceState);
         controller = JellyfinController.getInstance();
 
-        // Ensure Termux background service is running
+        // Start background helper service
         startService(new Intent(this, TermuxService.class));
 
+        // Request Android 13+ Notification Permission if needed (non-blocking)
+        requestNotificationPermissionIfNeeded();
+
         setContentView(buildMainPixelShell());
+        setupSystemBarsAndInsets();
         setupNetworkMonitor();
     }
 
@@ -126,7 +138,37 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         super.onDestroy();
     }
 
-    // ── Theme Manager ──────────────────────────────────────────────────────────
+    // ── System Bar & Inset Management ─────────────────────────────────────────
+
+    private void setupSystemBarsAndInsets() {
+        Window window = getWindow();
+        WindowCompat.setDecorFitsSystemWindows(window, false);
+
+        WindowInsetsControllerCompat controllerCompat = new WindowInsetsControllerCompat(window, window.getDecorView());
+        boolean isDark = isDarkTheme();
+        controllerCompat.setAppearanceLightStatusBars(!isDark);
+        controllerCompat.setAppearanceLightNavigationBars(!isDark);
+
+        int navBarColor = getSurfaceColor();
+        int statusBarColor = getSurfaceColor();
+        window.setStatusBarColor(statusBarColor);
+        window.setNavigationBarColor(navBarColor);
+
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout, (v, insets) -> {
+            androidx.core.graphics.Insets statusBarInset = insets.getInsets(WindowInsetsCompat.Type.statusBars());
+            androidx.core.graphics.Insets navBarInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+
+            if (headerBar != null) {
+                headerBar.setPadding(dp(16), statusBarInset.top + dp(10), dp(16), dp(10));
+            }
+            if (bottomNavLayout != null) {
+                bottomNavLayout.setPadding(0, dp(6), 0, navBarInset.bottom + dp(6));
+            }
+            return insets;
+        });
+    }
+
+    // ── Theme Engine ───────────────────────────────────────────────────────────
 
     private void applySavedThemeMode() {
         int mode = settingsPrefs.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
@@ -151,65 +193,66 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private int getPrimaryTextColor() { return isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"); }
     private int getSecondaryTextColor() { return isDarkTheme() ? Color.parseColor("#9AA0A6") : Color.parseColor("#5F6368"); }
     private int getAccentColor() { return Color.parseColor("#00A4DC"); }
-    private int getAccentDarkColor() { return Color.parseColor("#0086B3"); }
 
     // ── Root UI Shell Construction ─────────────────────────────────────────────
 
     private View buildMainPixelShell() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(getBgColor());
+        rootLayout = new LinearLayout(this);
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setBackgroundColor(getBgColor());
 
         // Header Bar
-        root.addView(buildHeaderBar());
+        headerBar = buildHeaderBar();
+        rootLayout.addView(headerBar);
 
-        // Content Area (Fills space between header and bottom nav)
+        // Content Area
         contentContainer = new FrameLayout(this);
         LinearLayout.LayoutParams contentParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f);
-        root.addView(contentContainer, contentParams);
+        rootLayout.addView(contentContainer, contentParams);
 
         // Bottom Navigation Bar
-        root.addView(buildBottomNavBar());
+        bottomNavLayout = buildBottomNavBar();
+        rootLayout.addView(bottomNavLayout);
 
         // Initial tab render
         renderActiveTab();
 
-        return root;
+        return rootLayout;
     }
 
     private View buildHeaderBar() {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(20), dp(14), dp(20), dp(14));
+        header.setPadding(dp(16), dp(10), dp(16), dp(10));
         header.setBackgroundColor(getSurfaceColor());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             header.setElevation(dp(2));
         }
 
-        // App Icon / Logo Indicator
-        TextView logoIcon = new TextView(this);
-        logoIcon.setText("❖");
-        logoIcon.setTextSize(22);
-        logoIcon.setTextColor(getAccentColor());
-        logoIcon.setPadding(0, 0, dp(10), 0);
-        header.addView(logoIcon);
+        // Logo Mark (Derived from Fellyfin logo.svg)
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.ic_jellyfin_logo);
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(28), dp(28));
+        logoParams.rightMargin = dp(10);
+        header.addView(logo, logoParams);
 
-        // App Title
+        // Exact App Branding Name
         TextView title = new TextView(this);
-        title.setText("Jellyfin");
-        title.setTextSize(20);
+        title.setText("JellfinDroid");
+        title.setTextSize(19);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         title.setTextColor(getPrimaryTextColor());
         header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        // Quick Theme Toggle Action Chip
+        // Quick Theme Switch Button (NO EMOJIS)
         TextView themeBtn = new TextView(this);
-        themeBtn.setText(isDarkTheme() ? "☀️ Light" : "🌙 Dark");
-        themeBtn.setTextSize(13);
+        themeBtn.setText(isDarkTheme() ? "LIGHT" : "DARK");
+        themeBtn.setTextSize(12);
+        themeBtn.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         themeBtn.setTextColor(getPrimaryTextColor());
-        themeBtn.setPadding(dp(12), dp(6), dp(12), dp(6));
+        themeBtn.setPadding(dp(14), dp(6), dp(14), dp(6));
         themeBtn.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(16)));
         themeBtn.setOnClickListener(v -> {
             int newMode = isDarkTheme() ? AppCompatDelegate.MODE_NIGHT_NO : AppCompatDelegate.MODE_NIGHT_YES;
@@ -220,43 +263,55 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         return header;
     }
 
-    private View buildBottomNavBar() {
-        bottomNavLayout = new LinearLayout(this);
-        bottomNavLayout.setOrientation(LinearLayout.HORIZONTAL);
-        bottomNavLayout.setBackgroundColor(getSurfaceColor());
+    private LinearLayout buildBottomNavBar() {
+        LinearLayout nav = new LinearLayout(this);
+        nav.setOrientation(LinearLayout.HORIZONTAL);
+        nav.setBackgroundColor(getSurfaceColor());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            bottomNavLayout.setElevation(dp(8));
+            nav.setElevation(dp(8));
         }
 
-        addNavTab(bottomNavLayout, 0, "Home", R.drawable.ic_home);
-        addNavTab(bottomNavLayout, 1, "Server", R.drawable.ic_dns);
-        addNavTab(bottomNavLayout, 2, "Storage", R.drawable.ic_storage);
-        addNavTab(bottomNavLayout, 3, "Logs", R.drawable.ic_terminal);
-        addNavTab(bottomNavLayout, 4, "Settings", R.drawable.ic_settings);
+        addNavTab(nav, 0, "Home", R.drawable.ic_home);
+        addNavTab(nav, 1, "Server", R.drawable.ic_dns);
+        addNavTab(nav, 2, "Storage", R.drawable.ic_storage);
+        addNavTab(nav, 3, "Logs", R.drawable.ic_terminal);
+        addNavTab(nav, 4, "Settings", R.drawable.ic_settings);
 
-        return bottomNavLayout;
+        return nav;
     }
 
     private void addNavTab(LinearLayout parent, int tabIndex, String label, int iconRes) {
         LinearLayout tab = new LinearLayout(this);
         tab.setOrientation(LinearLayout.VERTICAL);
         tab.setGravity(Gravity.CENTER);
-        tab.setPadding(0, dp(8), 0, dp(8));
+        tab.setPadding(0, dp(4), 0, dp(4));
         tab.setOnClickListener(v -> {
             activeTab = tabIndex;
             updateBottomNavSelection();
             renderActiveTab();
         });
 
+        FrameLayout iconWrapper = new FrameLayout(this);
+        LinearLayout.LayoutParams wrapperParams = new LinearLayout.LayoutParams(dp(54), dp(28));
+        wrapperParams.bottomMargin = dp(2);
+
+        View pill = new View(this);
+        pill.setTag("pill");
+        pill.setVisibility(View.INVISIBLE);
+        pill.setBackground(createRoundedDrawable(colorWithAlpha(getAccentColor(), 45), dp(14)));
+        iconWrapper.addView(pill, new FrameLayout.LayoutParams(-1, -1));
+
         ImageView icon = new ImageView(this);
         icon.setImageResource(iconRes);
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(22), dp(22));
-        tab.addView(icon, iconParams);
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(dp(20), dp(20));
+        iconParams.gravity = Gravity.CENTER;
+        iconWrapper.addView(icon, iconParams);
+
+        tab.addView(iconWrapper, wrapperParams);
 
         TextView txt = new TextView(this);
         txt.setText(label);
         txt.setTextSize(11);
-        txt.setPadding(0, dp(2), 0, 0);
         tab.addView(txt);
 
         LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -264,11 +319,16 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     }
 
     private void updateBottomNavSelection() {
+        if (bottomNavLayout == null) return;
         for (int i = 0; i < bottomNavLayout.getChildCount(); i++) {
             LinearLayout tab = (LinearLayout) bottomNavLayout.getChildAt(i);
-            ImageView icon = (ImageView) tab.getChildAt(0);
+            FrameLayout wrapper = (FrameLayout) tab.getChildAt(0);
+            View pill = wrapper.findViewWithTag("pill");
+            ImageView icon = (ImageView) wrapper.getChildAt(1);
             TextView txt = (TextView) tab.getChildAt(1);
+
             boolean selected = (i == activeTab);
+            if (pill != null) pill.setVisibility(selected ? View.VISIBLE : View.INVISIBLE);
 
             int color = selected ? getAccentColor() : getSecondaryTextColor();
             icon.setColorFilter(color);
@@ -304,7 +364,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         renderCurrentState();
     }
 
-    // ── Tab 0: Dashboard (Home) ────────────────────────────────────────────────
+    // ── Tab 0: Home (Dashboard) ────────────────────────────────────────────────
 
     private View buildDashboardTab() {
         ScrollView scroll = new ScrollView(this);
@@ -312,7 +372,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16), dp(16), dp(16), dp(16));
+        layout.setPadding(dp(16), dp(14), dp(16), dp(14));
 
         // Server Status Hero Card
         layout.addView(buildServerStatusHeroCard());
@@ -331,18 +391,18 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private View buildServerStatusHeroCard() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(20), dp(20), dp(20), dp(20));
-        card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(20)));
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             card.setElevation(dp(2));
         }
 
-        // Status Badge Pill
+        // Status Badge Pill (NO EMOJIS)
         statusBadge = new TextView(this);
-        statusBadge.setText("● SERVER INITIALIZING");
-        statusBadge.setTextSize(14);
-        statusBadge.setTypeface(Typeface.DEFAULT_BOLD);
-        statusBadge.setPadding(dp(14), dp(6), dp(14), dp(6));
+        statusBadge.setText("SERVER INITIALIZING");
+        statusBadge.setTextSize(13);
+        statusBadge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        statusBadge.setPadding(dp(14), dp(5), dp(14), dp(5));
         statusBadge.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -350,16 +410,16 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         // Server Detail & Address Info
         serverDetailText = new TextView(this);
-        serverDetailText.setText("Jellyfin 10.11.11\nLocal: http://127.0.0.1:8096");
-        serverDetailText.setTextSize(14);
+        serverDetailText.setText("Jellyfin Server 10.11.11\nLocal: http://127.0.0.1:8096");
+        serverDetailText.setTextSize(13);
         serverDetailText.setTextColor(getSecondaryTextColor());
-        serverDetailText.setPadding(0, dp(12), 0, dp(4));
+        serverDetailText.setPadding(0, dp(10), 0, dp(2));
         card.addView(serverDetailText);
 
         // Dynamic LAN Address Line with Copy Action
         lanAddressText = new TextView(this);
-        lanAddressText.setText("LAN: detecting…");
-        lanAddressText.setTextSize(14);
+        lanAddressText.setText("LAN: detecting address…");
+        lanAddressText.setTextSize(13);
         lanAddressText.setTextColor(getSecondaryTextColor());
         lanAddressText.setOnClickListener(v -> {
             String text = lanAddressText.getText().toString();
@@ -380,24 +440,24 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private View buildRealStartupProgressCard() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(16), dp(18), dp(16));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
         card.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(16)));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(14);
+        params.topMargin = dp(12);
         card.setLayoutParams(params);
 
         TextView header = new TextView(this);
         header.setText("Starting Jellyfin Server");
-        header.setTextSize(15);
+        header.setTextSize(14);
         header.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         header.setTextColor(getPrimaryTextColor());
         card.addView(header);
 
         ProgressBar progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setIndeterminate(true);
-        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(-1, dp(6));
-        progressParams.topMargin = dp(10);
-        progressParams.bottomMargin = dp(12);
+        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(-1, dp(5));
+        progressParams.topMargin = dp(8);
+        progressParams.bottomMargin = dp(10);
         card.addView(progress, progressParams);
 
         txtStage1 = createStageText("1. Starting runtime environment");
@@ -417,7 +477,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
     private TextView createStageText(String text) {
         TextView tv = new TextView(this);
-        tv.setText("○  " + text);
+        tv.setText(text);
         tv.setTextSize(13);
         tv.setTextColor(getSecondaryTextColor());
         tv.setPadding(0, dp(2), 0, dp(2));
@@ -428,32 +488,20 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(16);
+        params.topMargin = dp(14);
         layout.setLayoutParams(params);
 
-        // Prominent OPEN JELLYFIN Button (Primary Accent Pill)
+        // Prominent OPEN JELLYFIN Button
         btnOpenJellyfin = createPixelButton("OPEN JELLYFIN", getAccentColor(), Color.WHITE);
         btnOpenJellyfin.setOnClickListener(v -> startActivity(new Intent(this, JellyfinWebActivity.class)));
         layout.addView(btnOpenJellyfin);
 
         btnStartServer = createPixelButton("START SERVER", getSurfaceColor(), getPrimaryTextColor());
-        btnStartServer.setOnClickListener(v -> {
-            Intent svc = new Intent(this, JellyfinServerService.class);
-            svc.setAction(JellyfinServerService.ACTION_START);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(svc);
-            } else {
-                startService(svc);
-            }
-        });
+        btnStartServer.setOnClickListener(v -> triggerServerAction(JellyfinServerService.ACTION_START));
         layout.addView(btnStartServer);
 
         btnStopServer = createPixelButton("STOP SERVER", getSurfaceColor(), getPrimaryTextColor());
-        btnStopServer.setOnClickListener(v -> {
-            Intent svc = new Intent(this, JellyfinServerService.class);
-            svc.setAction(JellyfinServerService.ACTION_STOP);
-            startService(svc);
-        });
+        btnStopServer.setOnClickListener(v -> triggerServerAction(JellyfinServerService.ACTION_STOP));
         layout.addView(btnStopServer);
 
         btnRestartServer = createPixelButton("RESTART SERVER", getSurfaceColor(), getPrimaryTextColor());
@@ -468,6 +516,20 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         return layout;
     }
 
+    private void triggerServerAction(String action) {
+        Intent svc = new Intent(this, JellyfinServerService.class);
+        svc.setAction(action);
+        if (JellyfinServerService.ACTION_START.equals(action)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(svc);
+            } else {
+                startService(svc);
+            }
+        } else {
+            startService(svc);
+        }
+    }
+
     // ── Tab 1: Server Controls & Details ───────────────────────────────────────
 
     private View buildServerTab() {
@@ -476,31 +538,30 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16), dp(16), dp(16), dp(16));
+        layout.setPadding(dp(16), dp(14), dp(16), dp(14));
 
-        // Server Details Card
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(20), dp(20), dp(20), dp(20));
-        card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(20)));
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
 
         TextView title = new TextView(this);
         title.setText("Server Status & Controls");
-        title.setTextSize(18);
+        title.setTextSize(17);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(getPrimaryTextColor());
         card.addView(title);
 
         TextView info = new TextView(this);
         info.setText("Package Identity: com.jellyfin.droid\nServer Version: 10.11.11\nHTTP Port: 8096\nProcess Protection: Single-process lock active");
-        info.setTextSize(14);
+        info.setTextSize(13);
         info.setTextColor(getSecondaryTextColor());
-        info.setPadding(0, dp(12), 0, dp(16));
+        info.setPadding(0, dp(10), 0, dp(14));
         card.addView(info);
 
         Switch autoStartSwitch = new Switch(this);
         autoStartSwitch.setText("Auto-start Jellyfin on device boot");
-        autoStartSwitch.setTextSize(14);
+        autoStartSwitch.setTextSize(13);
         autoStartSwitch.setTextColor(getPrimaryTextColor());
         SharedPreferences prefs = getSharedPreferences("jellyfindroid", MODE_PRIVATE);
         autoStartSwitch.setChecked(prefs.getBoolean("auto_start", false));
@@ -509,11 +570,10 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         layout.addView(card);
 
-        // Control buttons
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(16);
+        params.topMargin = dp(14);
         actions.setLayoutParams(params);
 
         Button startBtn = createPixelButton("START SERVER", getAccentColor(), Color.WHITE);
@@ -529,7 +589,6 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         actions.addView(restartBtn);
 
         layout.addView(actions);
-
         scroll.addView(layout);
         return scroll;
     }
@@ -542,16 +601,16 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16), dp(16), dp(16), dp(16));
+        layout.setPadding(dp(16), dp(14), dp(16), dp(14));
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(20), dp(20), dp(20), dp(20));
-        card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(20)));
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
 
         TextView title = new TextView(this);
         title.setText("Storage & Directories");
-        title.setTextSize(18);
+        title.setTextSize(17);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(getPrimaryTextColor());
         card.addView(title);
@@ -559,7 +618,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         storageInfoText = new TextView(this);
         storageInfoText.setTextSize(13);
         storageInfoText.setTextColor(getSecondaryTextColor());
-        storageInfoText.setPadding(0, dp(12), 0, dp(16));
+        storageInfoText.setPadding(0, dp(10), 0, dp(14));
         updateStorageInfoText();
         card.addView(storageInfoText);
 
@@ -602,11 +661,11 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private View buildLogsTab() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16), dp(16), dp(16), dp(16));
+        layout.setPadding(dp(16), dp(14), dp(16), dp(14));
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setPadding(0, 0, 0, dp(12));
+        actions.setPadding(0, 0, 0, dp(10));
 
         Button btnRefresh = createPixelButton("REFRESH", getSurfaceColor(), getPrimaryTextColor());
         btnRefresh.setOnClickListener(v -> refreshLogsDisplay());
@@ -655,17 +714,16 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16), dp(16), dp(16), dp(16));
+        layout.setPadding(dp(16), dp(14), dp(16), dp(14));
 
-        // Appearance Category Card
         LinearLayout themeCard = new LinearLayout(this);
         themeCard.setOrientation(LinearLayout.VERTICAL);
-        themeCard.setPadding(dp(20), dp(20), dp(20), dp(20));
-        themeCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(20)));
+        themeCard.setPadding(dp(18), dp(18), dp(18), dp(18));
+        themeCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
 
         TextView t1 = new TextView(this);
         t1.setText("Appearance Theme");
-        t1.setTextSize(18);
+        t1.setTextSize(17);
         t1.setTypeface(Typeface.DEFAULT_BOLD);
         t1.setTextColor(getPrimaryTextColor());
         themeCard.addView(t1);
@@ -686,27 +744,26 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         layout.addView(themeCard);
 
-        // About & System Info Card
         LinearLayout aboutCard = new LinearLayout(this);
         aboutCard.setOrientation(LinearLayout.VERTICAL);
-        aboutCard.setPadding(dp(20), dp(20), dp(20), dp(20));
-        aboutCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(20)));
+        aboutCard.setPadding(dp(18), dp(18), dp(18), dp(18));
+        aboutCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
         LinearLayout.LayoutParams pAbout = new LinearLayout.LayoutParams(-1, -2);
-        pAbout.topMargin = dp(16);
+        pAbout.topMargin = dp(14);
         aboutCard.setLayoutParams(pAbout);
 
         TextView t2 = new TextView(this);
-        t2.setText("About JellyfinDroid");
-        t2.setTextSize(18);
+        t2.setText("About JellfinDroid");
+        t2.setTextSize(17);
         t2.setTypeface(Typeface.DEFAULT_BOLD);
         t2.setTextColor(getPrimaryTextColor());
         aboutCard.addView(t2);
 
         TextView abtTxt = new TextView(this);
-        abtTxt.setText("Jellyfin Server: 10.11.11\nPackage Identity: com.jellyfin.droid\nArchitecture: aarch64 (ARM64)\nPhase 14 Pixel OS UI Edition");
+        abtTxt.setText("Jellyfin Server: 10.11.11\nPackage Identity: com.jellyfin.droid\nArchitecture: aarch64 (ARM64)\nPhase 15 Branding & UI Polish");
         abtTxt.setTextSize(13);
         abtTxt.setTextColor(getSecondaryTextColor());
-        abtTxt.setPadding(0, dp(12), 0, 0);
+        abtTxt.setPadding(0, dp(10), 0, 0);
         aboutCard.addView(abtTxt);
 
         layout.addView(aboutCard);
@@ -715,7 +772,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         return scroll;
     }
 
-    // ── State Rendering Logic ──────────────────────────────────────────────────
+    // ── State Rendering Logic (NO EMOJIS) ──────────────────────────────────────
 
     @Override
     public void onServerChanged(final JellyfinController.State state) {
@@ -733,36 +790,36 @@ public final class JellyfinDroidActivity extends AppCompatActivity
             switch (state) {
                 case RUNNING:
                     color = Color.parseColor("#81C784");
-                    statusText = "●  SERVER RUNNING";
+                    statusText = "SERVER RUNNING";
                     break;
                 case STARTING:
                     color = Color.parseColor("#FFD54F");
-                    statusText = "●  SERVER STARTING…";
+                    statusText = "SERVER STARTING";
                     break;
                 case INITIALIZING:
                     color = Color.parseColor("#FFD54F");
-                    statusText = "●  INITIALIZING RUNTIME…";
+                    statusText = "INITIALIZING RUNTIME";
                     break;
                 case STOPPING:
                     color = Color.parseColor("#FFB74D");
-                    statusText = "●  SERVER STOPPING…";
+                    statusText = "SERVER STOPPING";
                     break;
                 case STOPPED:
                     color = Color.parseColor("#9AA0A6");
-                    statusText = "●  SERVER STOPPED";
+                    statusText = "SERVER STOPPED";
                     break;
                 case CRASHED:
                 case FAILED:
                     color = Color.parseColor("#E57373");
-                    statusText = "●  SERVER FAILED";
+                    statusText = "SERVER FAILED";
                     break;
                 case CRASH_LOOP:
                     color = Color.parseColor("#B71C1C");
-                    statusText = "●  CRASH LOOP DETECTED";
+                    statusText = "CRASH LOOP DETECTED";
                     break;
                 default:
                     color = Color.parseColor("#FFD54F");
-                    statusText = "●  " + state.name();
+                    statusText = state.name();
                     break;
             }
             statusBadge.setText(statusText);
@@ -770,7 +827,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
             statusBadge.setBackground(createRoundedDrawable(colorWithAlpha(color, 40), dp(16)));
         }
 
-        // Render Real Stage Progress Card
+        // Render Real Stage Progress Card (NO EMOJIS)
         if (startupProgressCard != null) {
             boolean isStarting = (state == JellyfinController.State.INITIALIZING || state == JellyfinController.State.STARTING);
             startupProgressCard.setVisibility(isStarting ? View.VISIBLE : View.GONE);
@@ -803,31 +860,18 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private void updateStageRow(TextView tv, String label, boolean completed, boolean active) {
         if (tv == null) return;
         if (completed) {
-            tv.setText("✓  " + label);
+            tv.setText("[READY]  " + label);
             tv.setTextColor(Color.parseColor("#81C784"));
         } else if (active) {
-            tv.setText("●  " + label);
+            tv.setText("[IN PROGRESS]  " + label);
             tv.setTextColor(Color.parseColor("#FFD54F"));
         } else {
-            tv.setText("○  " + label);
+            tv.setText("[WAITING]  " + label);
             tv.setTextColor(getSecondaryTextColor());
         }
     }
 
     // ── Storage & Network Helpers ──────────────────────────────────────────────
-
-    private void checkStorageStatus() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                if (lanAddressText != null) {
-                    lanAddressText.setText("⚠ MEDIA STORAGE UNAVAILABLE\nTap 'Storage' tab to grant access.");
-                    lanAddressText.setTextColor(Color.parseColor("#FFB74D"));
-                }
-                return;
-            }
-        }
-        refreshLanAddress();
-    }
 
     private void refreshLanAddress() {
         String lan = getLanAddress();
@@ -894,17 +938,26 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         }
     }
 
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, 102);
+            }
+        }
+    }
+
     // ── Design Utilities ───────────────────────────────────────────────────────
 
     private Button createPixelButton(String text, int bgColor, int textColor) {
         Button b = new Button(this);
         b.setText(text);
-        b.setTextSize(14);
+        b.setTextSize(13);
         b.setAllCaps(false);
         b.setTextColor(textColor);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        b.setBackground(createRoundedDrawable(bgColor, dp(24)));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(48));
+        b.setBackground(createRoundedDrawable(bgColor, dp(22)));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(46));
         params.topMargin = dp(8);
         b.setLayoutParams(params);
         return b;

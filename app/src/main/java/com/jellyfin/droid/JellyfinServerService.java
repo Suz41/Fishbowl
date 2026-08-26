@@ -14,6 +14,8 @@ import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
+import com.termux.R;
+
 import java.net.Inet4Address;
 import java.net.NetworkInterface;
 import java.util.Enumeration;
@@ -81,51 +83,35 @@ public class JellyfinServerService extends Service implements JellyfinController
 
     @Override
     public void onServerChanged(JellyfinController.State state) {
-        String title;
+        String title = "JellfinDroid";
         String text;
 
         switch (state) {
             case RUNNING:
                 acquireWakeLock();
                 String lan = getLanAddress();
-                title = "JellyfinDroid — Server Running";
-                text  = lan != null ? lan : "http://127.0.0.1:8096";
+                text = "Jellyfin Server is running" + (lan != null ? " (" + lan + ")" : " (http://127.0.0.1:8096)");
                 break;
             case STARTING:
             case INITIALIZING:
-                title = "JellyfinDroid — Starting…";
-                text  = "Jellyfin is initializing";
+                title = "JellfinDroid";
+                text = "Starting Jellyfin Server";
                 break;
             case STOPPING:
                 releaseWakeLock();
-                title = "JellyfinDroid — Stopping";
-                text  = "Shutting down Jellyfin server";
+                title = "JellfinDroid";
+                text = "Stopping Jellyfin Server";
                 break;
             case STOPPED:
-                releaseWakeLock();
-                title = "JellyfinDroid — Stopped";
-                text  = "Server is not running";
-                break;
             case CRASHED:
-                releaseWakeLock();
-                title = "JellyfinDroid — CRASHED";
-                String err = controller.getLastError();
-                text  = err != null ? err : "Jellyfin crashed unexpectedly";
-                break;
             case CRASH_LOOP:
-                releaseWakeLock();
-                title = "JellyfinDroid — CRASH LOOP";
-                text  = "Auto-restart disabled. Open app to reset.";
-                break;
             case FAILED:
                 releaseWakeLock();
-                title = "JellyfinDroid — FAILED";
-                String ferr = controller.getLastError();
-                text  = ferr != null ? ferr : "Jellyfin failed to start";
-                break;
+                stopSelf();
+                return;
             default:
-                title = "JellyfinDroid";
-                text  = state.name();
+                title = "JellfinDroid";
+                text = "Jellyfin Server: " + state.name();
                 break;
         }
 
@@ -179,10 +165,10 @@ public class JellyfinServerService extends Service implements JellyfinController
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(text)
-                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setSmallIcon(R.drawable.ic_notification_jellyfin)
                 .setContentIntent(openPi)
                 .setOngoing(true)
-                .addAction(android.R.drawable.ic_media_pause, "STOP", stopPi)
+                .addAction(R.drawable.ic_dns, "STOP SERVER", stopPi)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build();
     }
