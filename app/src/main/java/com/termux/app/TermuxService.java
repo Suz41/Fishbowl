@@ -117,7 +117,11 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
         mShellManager = TermuxShellManager.getShellManager();
 
-        runStartForeground();
+        if (!mShellManager.mTermuxSessions.isEmpty() || !mShellManager.mTermuxTasks.isEmpty()) {
+            runStartForeground();
+        } else {
+            stopForeground(true);
+        }
 
         SystemEventReceiver.registerPackageUpdateEvents(this);
 
