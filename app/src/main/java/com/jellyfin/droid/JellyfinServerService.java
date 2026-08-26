@@ -8,6 +8,7 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
@@ -18,15 +19,11 @@ import java.net.NetworkInterface;
 import java.util.Enumeration;
 
 /**
- * Phase 9 Steps 6 & 16: Foreground Service for Background Reliability
+ * Phase 12: Playback Hardened Foreground Service
  *
- * Keeps Jellyfin alive while the app is in background / screen locked.
- * Shows a minimal persistent notification with server state and LAN address.
- * Supports STOP and OPEN actions from the notification.
- *
- * Actions:
- *   ACTION_START  — boot up Jellyfin via JellyfinController
- *   ACTION_STOP   — stop Jellyfin and stop self
+ * Keeps Jellyfin server process alive and manages a PARTIAL_WAKE_LOCK while RUNNING
+ * to protect streaming playback & audio from CPU sleep / Doze throttling when the
+ * screen locks or when the app moves to the background.
  */
 public class JellyfinServerService extends Service implements JellyfinController.Listener {
 
@@ -37,6 +34,7 @@ public class JellyfinServerService extends Service implements JellyfinController
     private static final int    NOTIFICATION_ID  = 1001;
 
     private JellyfinController controller;
+    private PowerManager.WakeLock wakeLock;
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -60,6 +58,7 @@ public class JellyfinServerService extends Service implements JellyfinController
             controller.start(getApplicationContext());
         } else if (ACTION_STOP.equals(action)) {
             Log.i(TAG, "Service received STOP");
+            releaseWakeLock();
             controller.stop();
             stopSelf();
         }
@@ -70,6 +69,7 @@ public class JellyfinServerService extends Service implements JellyfinController
     @Override
     public void onDestroy() {
         controller.removeListener(this);
+        releaseWakeLock();
         super.onDestroy();
     }
 
@@ -86,6 +86,7 @@ public class JellyfinServerService extends Service implements JellyfinController
 
         switch (state) {
             case RUNNING:
+                acquireWakeLock();
                 String lan = getLanAddress();
                 title = "JellyfinDroid — Server Running";
                 text  = lan != null ? lan : "http://127.0.0.1:8096";
@@ -96,23 +97,28 @@ public class JellyfinServerService extends Service implements JellyfinController
                 text  = "Jellyfin is initializing";
                 break;
             case STOPPING:
+                releaseWakeLock();
                 title = "JellyfinDroid — Stopping";
                 text  = "Shutting down Jellyfin server";
                 break;
             case STOPPED:
+                releaseWakeLock();
                 title = "JellyfinDroid — Stopped";
                 text  = "Server is not running";
                 break;
             case CRASHED:
+                releaseWakeLock();
                 title = "JellyfinDroid — CRASHED";
                 String err = controller.getLastError();
                 text  = err != null ? err : "Jellyfin crashed unexpectedly";
                 break;
             case CRASH_LOOP:
+                releaseWakeLock();
                 title = "JellyfinDroid — CRASH LOOP";
                 text  = "Auto-restart disabled. Open app to reset.";
                 break;
             case FAILED:
+                releaseWakeLock();
                 title = "JellyfinDroid — FAILED";
                 String ferr = controller.getLastError();
                 text  = ferr != null ? ferr : "Jellyfin failed to start";
@@ -126,6 +132,29 @@ public class JellyfinServerService extends Service implements JellyfinController
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (nm != null) {
             nm.notify(NOTIFICATION_ID, buildNotification(title, text));
+        }
+    }
+
+    // ── WakeLock Management ───────────────────────────────────────────────────
+
+    private synchronized void acquireWakeLock() {
+        if (wakeLock == null) {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (pm != null) {
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JellyfinDroid:ServerWakeLock");
+                wakeLock.setReferenceCounted(false);
+            }
+        }
+        if (wakeLock != null && !wakeLock.isHeld()) {
+            wakeLock.acquire();
+            Log.i(TAG, "CPU WakeLock acquired for continuous server & playback execution");
+        }
+    }
+
+    private synchronized void releaseWakeLock() {
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+            Log.i(TAG, "CPU WakeLock released");
         }
     }
 

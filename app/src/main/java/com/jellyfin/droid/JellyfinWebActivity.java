@@ -1,12 +1,14 @@
 package com.jellyfin.droid;
 
 import android.annotation.SuppressLint;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.ConsoleMessage;
 import android.webkit.WebChromeClient;
@@ -22,16 +24,14 @@ import androidx.appcompat.app.AppCompatActivity;
 import java.net.InetAddress;
 
 /**
- * Phase 11: Optimized Jellyfin WebView Activity.
+ * Phase 12: Playback & Streaming Performance Hardened Jellyfin Activity.
  *
- * Performance & Rendering Improvements:
- *  - Full WebChromeClient with JS console logging for diagnostics
- *  - CookieManager enabled for session persistence
- *  - Allows local loopback (127.0.0.1, localhost) AND LAN IP addresses
- *  - Offscreen pre-rastering enabled for smooth library scrolling
- *  - Native loading overlay until server is READY
- *  - Automatic image loading and mixed content permissions
- *  - Controlled resource cleanup in onDestroy
+ * Enhancements:
+ *  - Media playback without user gesture constraint (instant play start)
+ *  - Full-screen HTML5 video support via WebChromeClient.CustomViewCallback
+ *  - Offscreen pre-rastering & hardware window acceleration
+ *  - Session cookie persistence via CookieManager
+ *  - Native loading overlay until server is genuinely RUNNING (READY)
  */
 public final class JellyfinWebActivity extends AppCompatActivity implements JellyfinController.Listener {
     private static final String TAG = "JellyfinWebActivity";
@@ -39,6 +39,8 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
     private WebView web;
     private FrameLayout rootLayout;
     private View loadingView;
+    private View customView;
+    private WebChromeClient.CustomViewCallback customViewCallback;
     private JellyfinController controller;
     private boolean loaded = false;
 
@@ -62,7 +64,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
             cookieManager.setAcceptThirdPartyCookies(web, true);
         }
 
-        // Configure WebSettings for maximum responsiveness
+        // Configure WebSettings for playback & UI performance
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -73,6 +75,10 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            settings.setMediaPlaybackRequiresUserGesture(false);
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             settings.setOffscreenPreRaster(true);
         }
@@ -81,13 +87,42 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         }
 
-        // Set WebChromeClient for console logging & progress handling
+        // Set WebChromeClient for HTML5 full-screen video playback & console diagnostics
         web.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onConsoleMessage(ConsoleMessage message) {
                 Log.d("JellyfinWebJS", message.message() + " -- From line "
                         + message.lineNumber() + " of " + message.sourceId());
                 return true;
+            }
+
+            @Override
+            public void onShowCustomView(View view, CustomViewCallback callback) {
+                if (customView != null) {
+                    onHideCustomView();
+                    return;
+                }
+                customView = view;
+                customViewCallback = callback;
+                customView.setBackgroundColor(Color.BLACK);
+                rootLayout.addView(customView, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+                web.setVisibility(View.GONE);
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            }
+
+            @Override
+            public void onHideCustomView() {
+                if (customView == null) return;
+                rootLayout.removeView(customView);
+                customView = null;
+                if (customViewCallback != null) {
+                    customViewCallback.onCustomViewHidden();
+                    customViewCallback = null;
+                }
+                web.setVisibility(View.VISIBLE);
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
             }
         });
 
@@ -112,11 +147,8 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         checkServerState(controller.getState());
     }
 
-    /**
-     * Determines whether the requested host is localhost, 127.0.0.1, or a private LAN IP address.
-     */
     private boolean isLocalOrLanHost(String host) {
-        if (host == null || host.isEmpty()) return true; // relative URLs
+        if (host == null || host.isEmpty()) return true;
         if ("127.0.0.1".equals(host) || "localhost".equals(host)) return true;
 
         try {
