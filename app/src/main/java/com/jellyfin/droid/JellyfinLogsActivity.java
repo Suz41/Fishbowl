@@ -9,21 +9,35 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 public final class JellyfinLogsActivity extends AppCompatActivity implements JellyfinController.Listener {
     private JellyfinController controller;
     private TextView output;
+    private LinearLayout root;
 
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
+        setupSystemBars();
         controller = JellyfinController.getInstance();
 
-        LinearLayout root = new LinearLayout(this);
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(16), dp(16), dp(16), dp(16));
         root.setBackgroundColor(isDarkTheme() ? Color.parseColor("#121316") : Color.parseColor("#F8F9FA"));
+
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+            androidx.core.graphics.Insets statusBarInset = insets.getInsets(WindowInsetsCompat.Type.statusBars());
+            androidx.core.graphics.Insets navBarInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+            v.setPadding(dp(16), statusBarInset.top + dp(14), dp(16), navBarInset.bottom + dp(14));
+            return insets;
+        });
 
         TextView title = new TextView(this);
         title.setText("Jellyfin Server Logs");
@@ -69,6 +83,17 @@ public final class JellyfinLogsActivity extends AppCompatActivity implements Jel
 
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1.0f));
         setContentView(root);
+    }
+
+    private void setupSystemBars() {
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        WindowInsetsControllerCompat controllerCompat = new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+        boolean isDark = isDarkTheme();
+        controllerCompat.setAppearanceLightStatusBars(!isDark);
+        controllerCompat.setAppearanceLightNavigationBars(!isDark);
+        int color = isDark ? Color.parseColor("#121316") : Color.parseColor("#F8F9FA");
+        getWindow().setStatusBarColor(color);
+        getWindow().setNavigationBarColor(color);
     }
 
     @Override

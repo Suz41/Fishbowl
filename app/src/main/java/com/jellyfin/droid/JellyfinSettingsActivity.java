@@ -12,21 +12,39 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
+
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+
 import com.termux.shared.termux.TermuxConstants;
+
 import java.io.File;
 
 public final class JellyfinSettingsActivity extends AppCompatActivity {
+    private LinearLayout root;
+
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        setupSystemBars();
+
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(isDarkTheme() ? Color.parseColor("#121316") : Color.parseColor("#F8F9FA"));
 
-        LinearLayout root = new LinearLayout(this);
+        root = new LinearLayout(this);
         root.setPadding(dp(20), dp(20), dp(20), dp(20));
         root.setOrientation(LinearLayout.VERTICAL);
+
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+            androidx.core.graphics.Insets statusBarInset = insets.getInsets(WindowInsetsCompat.Type.statusBars());
+            androidx.core.graphics.Insets navBarInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+            v.setPadding(dp(20), statusBarInset.top + dp(16), dp(20), navBarInset.bottom + dp(16));
+            return insets;
+        });
 
         TextView title = new TextView(this);
         title.setText("Settings");
@@ -87,6 +105,17 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
 
         scroll.addView(root);
         setContentView(scroll);
+    }
+
+    private void setupSystemBars() {
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        WindowInsetsControllerCompat controllerCompat = new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+        boolean isDark = isDarkTheme();
+        controllerCompat.setAppearanceLightStatusBars(!isDark);
+        controllerCompat.setAppearanceLightNavigationBars(!isDark);
+        int color = isDark ? Color.parseColor("#121316") : Color.parseColor("#F8F9FA");
+        getWindow().setStatusBarColor(color);
+        getWindow().setNavigationBarColor(color);
     }
 
     private void setThemeMode(int mode) {
