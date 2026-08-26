@@ -538,18 +538,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         return row;
     }
 
-    private Button createPillCopyButton() {
-        Button btn = new Button(this);
-        btn.setText("COPY IP");
-        btn.setTextSize(11);
-        btn.setAllCaps(false);
-        btn.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        btn.setTextColor(getPrimaryTextColor());
-        btn.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(16)));
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(76), dp(36));
-        btn.setLayoutParams(p);
-        return btn;
-    }
+
 
     private void copyUrlToClipboard(String label, String url) {
         ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
@@ -622,7 +611,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         btnStartServer.setOnClickListener(v -> triggerServerAction(JellyfinServerService.ACTION_START));
         layout.addView(btnStartServer);
 
-        btnStopServer = createPixelButton("STOP SERVER", getSurfaceColor(), getPrimaryTextColor());
+        btnStopServer = createPixelButton("STOP SERVER", Color.parseColor("#D32F2F"), Color.WHITE);
         btnStopServer.setOnClickListener(v -> triggerServerAction(JellyfinServerService.ACTION_STOP));
         layout.addView(btnStopServer);
 
@@ -1026,6 +1015,30 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
     // ── Design Utilities ───────────────────────────────────────────────────────
 
+    private Button createPillCopyButton() {
+        Button btn = new Button(this);
+        btn.setText("COPY IP");
+        btn.setTextSize(11);
+        btn.setAllCaps(false);
+        btn.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        btn.setTextColor(getPrimaryTextColor());
+
+        GradientDrawable shape = createRoundedDrawable(getSurfaceElevatedColor(), dp(16));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            android.graphics.drawable.RippleDrawable ripple = new android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(Color.argb(60, 0, 164, 220)),
+                    shape,
+                    null);
+            btn.setBackground(ripple);
+        } else {
+            btn.setBackground(shape);
+        }
+
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(76), dp(36));
+        btn.setLayoutParams(p);
+        return btn;
+    }
+
     private Button createPixelButton(String text, int bgColor, int textColor) {
         Button b = new Button(this);
         b.setText(text);
@@ -1033,7 +1046,21 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         b.setAllCaps(false);
         b.setTextColor(textColor);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        b.setBackground(createRoundedDrawable(bgColor, dp(22)));
+
+        GradientDrawable shape = createRoundedDrawable(bgColor, dp(22));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            int rippleColor = (textColor == Color.WHITE)
+                    ? Color.argb(80, 255, 255, 255)
+                    : Color.argb(60, 0, 164, 220);
+            android.graphics.drawable.RippleDrawable ripple = new android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(rippleColor),
+                    shape,
+                    null);
+            b.setBackground(ripple);
+        } else {
+            b.setBackground(shape);
+        }
+
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(46));
         params.topMargin = dp(8);
         b.setLayoutParams(params);
