@@ -21,6 +21,8 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.termux.BuildConfig;
+
 import java.net.InetAddress;
 
 /**
@@ -91,8 +93,10 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         web.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onConsoleMessage(ConsoleMessage message) {
-                Log.d("JellyfinWebJS", message.message() + " -- From line "
-                        + message.lineNumber() + " of " + message.sourceId());
+                if (BuildConfig.DEBUG) {
+                    Log.d("JellyfinWebJS", message.message() + " -- From line "
+                            + message.lineNumber() + " of " + message.sourceId());
+                }
                 return true;
             }
 

@@ -146,8 +146,9 @@ public class JellyfinServerService extends Service implements JellyfinController
             }
         }
         if (wakeLock != null && !wakeLock.isHeld()) {
-            wakeLock.acquire();
-            Log.i(TAG, "CPU WakeLock acquired for continuous server & playback execution");
+            // 10-minute max duration per acquire step — automatically renewed on state update
+            wakeLock.acquire(10 * 60 * 1000L);
+            Log.i(TAG, "CPU WakeLock acquired for server & streaming execution (with 10-min safety timeout)");
         }
     }
 
