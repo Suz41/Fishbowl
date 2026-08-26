@@ -19,7 +19,6 @@ import android.net.NetworkRequest;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -53,14 +52,13 @@ import java.net.NetworkInterface;
 import java.util.Enumeration;
 
 /**
- * Phase 15: JellfinDroid UI Polish, Branding, Logo, System UI & Server Notification.
+ * Phase 15: JellfinDroid UI Polish, Simplified 3-Tab Navigation & Network Connection Card.
  *
- * Requirements:
- *  - STRICT UI RULE: ABSOLUTELY NO EMOJIS anywhere in native UI or text.
- *  - BRANDING: JellfinDroid branding with Fellyfin logo.svg derived vector asset.
- *  - SYSTEM UI: Correct status bar & navigation bar inset handling (no red status bar!).
- *  - FOREGROUND NOTIFICATION: Synchronized with real server lifecycle states.
- *  - 5-TAB BOTTOM NAV: Polished Material 3 bottom navigation bar with active pill indicator.
+ * Changes:
+ *  - 3 Footer Tabs: Home (Server + Controls), Logs, Settings (Settings + Storage).
+ *  - Network Connections Card: Distinct colored IP boxes for Local and LAN with dedicated COPY buttons.
+ *  - Transparent JellfinDroid white header logo.
+ *  - Strict NO-EMOJI enforcement across all views.
  */
 public final class JellyfinDroidActivity extends AppCompatActivity
         implements JellyfinController.Listener {
@@ -68,7 +66,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private JellyfinController controller;
     private SharedPreferences settingsPrefs;
 
-    // Active tab state (0: Home, 1: Server, 2: Storage, 3: Logs, 4: Settings)
+    // Active tab state (0: Home, 1: Logs, 2: Settings)
     private int activeTab = 0;
 
     // Containers
@@ -79,8 +77,11 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
     // Dynamic UI References for Dashboard
     private TextView statusBadge;
-    private TextView serverDetailText;
-    private TextView lanAddressText;
+    private TextView localIpValueText;
+    private TextView lanIpValueText;
+    private Button btnCopyLocalIp;
+    private Button btnCopyLanIp;
+
     private Button btnOpenJellyfin;
     private Button btnStartServer;
     private Button btnStopServer;
@@ -91,7 +92,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private View startupProgressCard;
     private TextView txtStage1, txtStage2, txtStage3, txtStage4, txtStage5;
 
-    // Logs & Storage References
+    // Logs & Settings/Storage References
     private TextView logsOutputText;
     private TextView storageInfoText;
 
@@ -149,10 +150,9 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         controllerCompat.setAppearanceLightStatusBars(!isDark);
         controllerCompat.setAppearanceLightNavigationBars(!isDark);
 
-        int navBarColor = getSurfaceColor();
-        int statusBarColor = getSurfaceColor();
-        window.setStatusBarColor(statusBarColor);
-        window.setNavigationBarColor(navBarColor);
+        int color = getSurfaceColor();
+        window.setStatusBarColor(color);
+        window.setNavigationBarColor(color);
 
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout, (v, insets) -> {
             androidx.core.graphics.Insets statusBarInset = insets.getInsets(WindowInsetsCompat.Type.statusBars());
@@ -211,7 +211,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f);
         rootLayout.addView(contentContainer, contentParams);
 
-        // Bottom Navigation Bar
+        // Bottom Navigation Bar (3 Clean Destinations)
         bottomNavLayout = buildBottomNavBar();
         rootLayout.addView(bottomNavLayout);
 
@@ -231,7 +231,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
             header.setElevation(dp(2));
         }
 
-        // Logo Mark (Derived from Fellyfin logo white.svg)
+        // Logo Mark (Derived from Fellyfin logo white.svg, transparent background)
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.ic_jellyfin_logo);
         logo.setColorFilter(getPrimaryTextColor());
@@ -272,11 +272,10 @@ public final class JellyfinDroidActivity extends AppCompatActivity
             nav.setElevation(dp(8));
         }
 
+        // Clean 3-Tab Bottom Navigation
         addNavTab(nav, 0, "Home", R.drawable.ic_home);
-        addNavTab(nav, 1, "Server", R.drawable.ic_dns);
-        addNavTab(nav, 2, "Storage", R.drawable.ic_storage);
-        addNavTab(nav, 3, "Logs", R.drawable.ic_terminal);
-        addNavTab(nav, 4, "Settings", R.drawable.ic_settings);
+        addNavTab(nav, 1, "Logs", R.drawable.ic_terminal);
+        addNavTab(nav, 2, "Settings", R.drawable.ic_settings);
 
         return nav;
     }
@@ -285,7 +284,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         LinearLayout tab = new LinearLayout(this);
         tab.setOrientation(LinearLayout.VERTICAL);
         tab.setGravity(Gravity.CENTER);
-        tab.setPadding(0, dp(4), 0, dp(4));
+        tab.setPadding(0, dp(6), 0, dp(6));
         tab.setOnClickListener(v -> {
             activeTab = tabIndex;
             updateBottomNavSelection();
@@ -293,7 +292,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         });
 
         FrameLayout iconWrapper = new FrameLayout(this);
-        LinearLayout.LayoutParams wrapperParams = new LinearLayout.LayoutParams(dp(54), dp(28));
+        LinearLayout.LayoutParams wrapperParams = new LinearLayout.LayoutParams(dp(56), dp(28));
         wrapperParams.bottomMargin = dp(2);
 
         View pill = new View(this);
@@ -304,7 +303,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         ImageView icon = new ImageView(this);
         icon.setImageResource(iconRes);
-        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(dp(20), dp(20));
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(dp(22), dp(22));
         iconParams.gravity = Gravity.CENTER;
         iconWrapper.addView(icon, iconParams);
 
@@ -312,7 +311,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         TextView txt = new TextView(this);
         txt.setText(label);
-        txt.setTextSize(11);
+        txt.setTextSize(12);
         tab.addView(txt);
 
         LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -346,18 +345,12 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         switch (activeTab) {
             case 0:
-                contentContainer.addView(buildDashboardTab());
+                contentContainer.addView(buildHomeTab());
                 break;
             case 1:
-                contentContainer.addView(buildServerTab());
-                break;
-            case 2:
-                contentContainer.addView(buildStorageTab());
-                break;
-            case 3:
                 contentContainer.addView(buildLogsTab());
                 break;
-            case 4:
+            case 2:
                 contentContainer.addView(buildSettingsTab());
                 break;
         }
@@ -365,9 +358,9 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         renderCurrentState();
     }
 
-    // ── Tab 0: Home (Dashboard) ────────────────────────────────────────────────
+    // ── Tab 0: Home (Dashboard & Server Controls) ──────────────────────────────
 
-    private View buildDashboardTab() {
+    private View buildHomeTab() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
 
@@ -375,14 +368,17 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(16), dp(14), dp(16), dp(14));
 
-        // Server Status Hero Card
+        // 1. Server Status Hero Card
         layout.addView(buildServerStatusHeroCard());
 
-        // Real Stage-by-Stage Server Startup Progress Card
+        // 2. Network Connections Card (Color-Coded IP & Dedicated Copy Buttons)
+        layout.addView(buildNetworkConnectionsCard());
+
+        // 3. Real Stage-by-Stage Server Startup Progress Card
         startupProgressCard = buildRealStartupProgressCard();
         layout.addView(startupProgressCard);
 
-        // Actions Section
+        // 4. Server Control Actions
         layout.addView(buildDashboardActions());
 
         scroll.addView(layout);
@@ -391,51 +387,172 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
     private View buildServerStatusHeroCard() {
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(18), dp(16), dp(18), dp(16));
         card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             card.setElevation(dp(2));
         }
 
-        // Status Badge Pill (NO EMOJIS)
+        LinearLayout left = new LinearLayout(this);
+        left.setOrientation(LinearLayout.VERTICAL);
+
+        TextView label = new TextView(this);
+        label.setText("JELLYFIN SERVER STATUS");
+        label.setTextSize(11);
+        label.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        label.setTextColor(getSecondaryTextColor());
+        left.addView(label);
+
         statusBadge = new TextView(this);
-        statusBadge.setText("SERVER INITIALIZING");
-        statusBadge.setTextSize(13);
+        statusBadge.setText("INITIALIZING");
+        statusBadge.setTextSize(15);
         statusBadge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        statusBadge.setPadding(dp(14), dp(5), dp(14), dp(5));
-        statusBadge.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        card.addView(statusBadge, badgeParams);
+        statusBadge.setPadding(0, dp(4), 0, 0);
+        left.addView(statusBadge);
 
-        // Server Detail & Address Info
-        serverDetailText = new TextView(this);
-        serverDetailText.setText("Jellyfin Server 10.11.11\nLocal: http://127.0.0.1:8096");
-        serverDetailText.setTextSize(13);
-        serverDetailText.setTextColor(getSecondaryTextColor());
-        serverDetailText.setPadding(0, dp(10), 0, dp(2));
-        card.addView(serverDetailText);
+        card.addView(left, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
-        // Dynamic LAN Address Line with Copy Action
-        lanAddressText = new TextView(this);
-        lanAddressText.setText("LAN: detecting address…");
-        lanAddressText.setTextSize(13);
-        lanAddressText.setTextColor(getSecondaryTextColor());
-        lanAddressText.setOnClickListener(v -> {
-            String text = lanAddressText.getText().toString();
-            if (text.startsWith("LAN: http://")) {
-                String url = text.substring(5).trim();
-                ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                if (cm != null) {
-                    cm.setPrimaryClip(ClipData.newPlainText("Jellyfin LAN URL", url));
-                    Toast.makeText(this, "Copied LAN address to clipboard", Toast.LENGTH_SHORT).show();
-                }
-            }
-        });
-        card.addView(lanAddressText);
+        TextView versionBadge = new TextView(this);
+        versionBadge.setText("v10.11.11");
+        versionBadge.setTextSize(12);
+        versionBadge.setTypeface(Typeface.MONOSPACE);
+        versionBadge.setTextColor(getSecondaryTextColor());
+        versionBadge.setPadding(dp(10), dp(4), dp(10), dp(4));
+        versionBadge.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(12)));
+        card.addView(versionBadge);
 
         return card;
+    }
+
+    private View buildNetworkConnectionsCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(16), dp(18), dp(16));
+        card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.topMargin = dp(12);
+        card.setLayoutParams(params);
+
+        TextView header = new TextView(this);
+        header.setText("SERVER ADDRESSES");
+        header.setTextSize(12);
+        header.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        header.setTextColor(getSecondaryTextColor());
+        header.setPadding(0, 0, 0, dp(12));
+        card.addView(header);
+
+        // Local Address Box
+        card.addView(buildAddressRow("LOCAL ADDRESS", "http://127.0.0.1:8096", Color.parseColor("#00A4DC"), true));
+
+        // Divider line
+        View divider = new View(this);
+        divider.setBackgroundColor(colorWithAlpha(getSecondaryTextColor(), 30));
+        LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(-1, dp(1));
+        divParams.topMargin = dp(10);
+        divParams.bottomMargin = dp(10);
+        card.addView(divider, divParams);
+
+        // LAN Address Box
+        card.addView(buildLanAddressRow());
+
+        return card;
+    }
+
+    private View buildAddressRow(String labelText, String urlText, int urlColor, boolean isLocal) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+
+        TextView lbl = new TextView(this);
+        lbl.setText(labelText);
+        lbl.setTextSize(11);
+        lbl.setTextColor(getSecondaryTextColor());
+        info.addView(lbl);
+
+        TextView url = new TextView(this);
+        url.setText(urlText);
+        url.setTextSize(14);
+        url.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        url.setTextColor(urlColor);
+        url.setPadding(0, dp(2), 0, 0);
+        info.addView(url);
+
+        if (isLocal) {
+            localIpValueText = url;
+        }
+
+        row.addView(info, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        Button btnCopy = createPillCopyButton();
+        btnCopy.setOnClickListener(v -> copyUrlToClipboard("Local Server Address", urlText));
+        if (isLocal) {
+            btnCopyLocalIp = btnCopy;
+        }
+        row.addView(btnCopy);
+
+        return row;
+    }
+
+    private View buildLanAddressRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+
+        TextView lbl = new TextView(this);
+        lbl.setText("LAN ADDRESS");
+        lbl.setTextSize(11);
+        lbl.setTextColor(getSecondaryTextColor());
+        info.addView(lbl);
+
+        lanIpValueText = new TextView(this);
+        lanIpValueText.setText("Detecting Wi-Fi / LAN address…");
+        lanIpValueText.setTextSize(14);
+        lanIpValueText.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        lanIpValueText.setTextColor(Color.parseColor("#81C784"));
+        lanIpValueText.setPadding(0, dp(2), 0, 0);
+        info.addView(lanIpValueText);
+
+        row.addView(info, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        btnCopyLanIp = createPillCopyButton();
+        btnCopyLanIp.setOnClickListener(v -> {
+            String text = lanIpValueText.getText().toString();
+            if (text.startsWith("http://")) {
+                copyUrlToClipboard("LAN Server Address", text);
+            }
+        });
+        row.addView(btnCopyLanIp);
+
+        return row;
+    }
+
+    private Button createPillCopyButton() {
+        Button btn = new Button(this);
+        btn.setText("COPY IP");
+        btn.setTextSize(11);
+        btn.setAllCaps(false);
+        btn.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        btn.setTextColor(getPrimaryTextColor());
+        btn.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(16)));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(76), dp(36));
+        btn.setLayoutParams(p);
+        return btn;
+    }
+
+    private void copyUrlToClipboard(String label, String url) {
+        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (cm != null) {
+            cm.setPrimaryClip(ClipData.newPlainText(label, url));
+            Toast.makeText(this, "Copied " + label + " to clipboard", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private View buildRealStartupProgressCard() {
@@ -531,133 +648,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         }
     }
 
-    // ── Tab 1: Server Controls & Details ───────────────────────────────────────
-
-    private View buildServerTab() {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16), dp(14), dp(16), dp(14));
-
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(18), dp(18), dp(18));
-        card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
-
-        TextView title = new TextView(this);
-        title.setText("Server Status & Controls");
-        title.setTextSize(17);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(getPrimaryTextColor());
-        card.addView(title);
-
-        TextView info = new TextView(this);
-        info.setText("Package Identity: com.jellyfin.droid\nServer Version: 10.11.11\nHTTP Port: 8096\nProcess Protection: Single-process lock active");
-        info.setTextSize(13);
-        info.setTextColor(getSecondaryTextColor());
-        info.setPadding(0, dp(10), 0, dp(14));
-        card.addView(info);
-
-        Switch autoStartSwitch = new Switch(this);
-        autoStartSwitch.setText("Auto-start Jellyfin on device boot");
-        autoStartSwitch.setTextSize(13);
-        autoStartSwitch.setTextColor(getPrimaryTextColor());
-        SharedPreferences prefs = getSharedPreferences("jellyfindroid", MODE_PRIVATE);
-        autoStartSwitch.setChecked(prefs.getBoolean("auto_start", false));
-        autoStartSwitch.setOnCheckedChangeListener((v, checked) -> prefs.edit().putBoolean("auto_start", checked).apply());
-        card.addView(autoStartSwitch);
-
-        layout.addView(card);
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(14);
-        actions.setLayoutParams(params);
-
-        Button startBtn = createPixelButton("START SERVER", getAccentColor(), Color.WHITE);
-        startBtn.setOnClickListener(v -> controller.start(this));
-        actions.addView(startBtn);
-
-        Button stopBtn = createPixelButton("STOP SERVER", getSurfaceColor(), getPrimaryTextColor());
-        stopBtn.setOnClickListener(v -> controller.stop());
-        actions.addView(stopBtn);
-
-        Button restartBtn = createPixelButton("RESTART SERVER", getSurfaceColor(), getPrimaryTextColor());
-        restartBtn.setOnClickListener(v -> controller.restart(this));
-        actions.addView(restartBtn);
-
-        layout.addView(actions);
-        scroll.addView(layout);
-        return scroll;
-    }
-
-    // ── Tab 2: Storage & Media ─────────────────────────────────────────────────
-
-    private View buildStorageTab() {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16), dp(14), dp(16), dp(14));
-
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(18), dp(18), dp(18));
-        card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
-
-        TextView title = new TextView(this);
-        title.setText("Storage & Directories");
-        title.setTextSize(17);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(getPrimaryTextColor());
-        card.addView(title);
-
-        storageInfoText = new TextView(this);
-        storageInfoText.setTextSize(13);
-        storageInfoText.setTextColor(getSecondaryTextColor());
-        storageInfoText.setPadding(0, dp(10), 0, dp(14));
-        updateStorageInfoText();
-        card.addView(storageInfoText);
-
-        Button manageStorageBtn = createPixelButton("MANAGE MEDIA STORAGE (SAF)", getAccentColor(), Color.WHITE);
-        manageStorageBtn.setOnClickListener(v -> startActivity(new Intent(this, JellyfinStorageActivity.class)));
-        card.addView(manageStorageBtn);
-
-        layout.addView(card);
-        scroll.addView(layout);
-        return scroll;
-    }
-
-    private void updateStorageInfoText() {
-        if (storageInfoText == null) return;
-        File prefix = com.termux.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR;
-        File home = com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR;
-        File dataDir = new File(home, ".local/share/jellyfin");
-        File configDir = new File(home, ".config/jellyfin");
-        File cacheDir = new File(home, ".cache/jellyfin");
-
-        long prefixMB = getFolderSizeMB(prefix);
-        long dataMB = getFolderSizeMB(dataDir);
-        long cacheMB = getFolderSizeMB(cacheDir);
-
-        String info = "Runtime Location:\n" + prefix.getAbsolutePath() + " (" + prefixMB + " MB)\n\n"
-                + "Persistent Data:\n" + dataDir.getAbsolutePath() + " (" + dataMB + " MB)\n\n"
-                + "Config Directory:\n" + configDir.getAbsolutePath() + "\n\n"
-                + "Cache Directory:\n" + cacheDir.getAbsolutePath() + " (" + cacheMB + " MB)";
-        storageInfoText.setText(info);
-    }
-
-    private long getFolderSizeMB(File dir) {
-        if (dir == null || !dir.exists()) return 0;
-        long bytes = dir.length();
-        return bytes / (1024 * 1024);
-    }
-
-    // ── Tab 3: Logs View ───────────────────────────────────────────────────────
+    // ── Tab 1: Logs View ───────────────────────────────────────────────────────
 
     private View buildLogsTab() {
         LinearLayout layout = new LinearLayout(this);
@@ -707,7 +698,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         }
     }
 
-    // ── Tab 4: Settings View ───────────────────────────────────────────────────
+    // ── Tab 2: Settings View (Integrated Settings & Media Storage) ────────────
 
     private View buildSettingsTab() {
         ScrollView scroll = new ScrollView(this);
@@ -717,10 +708,68 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(16), dp(14), dp(16), dp(14));
 
+        // Server Category Card
+        LinearLayout serverCard = new LinearLayout(this);
+        serverCard.setOrientation(LinearLayout.VERTICAL);
+        serverCard.setPadding(dp(18), dp(18), dp(18), dp(18));
+        serverCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
+
+        TextView t0 = new TextView(this);
+        t0.setText("Server Configuration");
+        t0.setTextSize(17);
+        t0.setTypeface(Typeface.DEFAULT_BOLD);
+        t0.setTextColor(getPrimaryTextColor());
+        serverCard.addView(t0);
+
+        Switch autoStartSwitch = new Switch(this);
+        autoStartSwitch.setText("Auto-start Jellyfin on device boot");
+        autoStartSwitch.setTextSize(13);
+        autoStartSwitch.setTextColor(getPrimaryTextColor());
+        autoStartSwitch.setPadding(0, dp(10), 0, dp(4));
+        SharedPreferences prefs = getSharedPreferences("jellyfindroid", MODE_PRIVATE);
+        autoStartSwitch.setChecked(prefs.getBoolean("auto_start", false));
+        autoStartSwitch.setOnCheckedChangeListener((v, checked) -> prefs.edit().putBoolean("auto_start", checked).apply());
+        serverCard.addView(autoStartSwitch);
+
+        layout.addView(serverCard);
+
+        // Media Storage Card (Integrated from Storage activity)
+        LinearLayout storageCard = new LinearLayout(this);
+        storageCard.setOrientation(LinearLayout.VERTICAL);
+        storageCard.setPadding(dp(18), dp(18), dp(18), dp(18));
+        storageCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
+        LinearLayout.LayoutParams pStorage = new LinearLayout.LayoutParams(-1, -2);
+        pStorage.topMargin = dp(14);
+        storageCard.setLayoutParams(pStorage);
+
+        TextView tStorage = new TextView(this);
+        tStorage.setText("Storage & Directories");
+        tStorage.setTextSize(17);
+        tStorage.setTypeface(Typeface.DEFAULT_BOLD);
+        tStorage.setTextColor(getPrimaryTextColor());
+        storageCard.addView(tStorage);
+
+        storageInfoText = new TextView(this);
+        storageInfoText.setTextSize(13);
+        storageInfoText.setTextColor(getSecondaryTextColor());
+        storageInfoText.setPadding(0, dp(8), 0, dp(12));
+        updateStorageInfoText();
+        storageCard.addView(storageInfoText);
+
+        Button manageStorageBtn = createPixelButton("MANAGE MEDIA STORAGE (SAF)", getAccentColor(), Color.WHITE);
+        manageStorageBtn.setOnClickListener(v -> startActivity(new Intent(this, JellyfinStorageActivity.class)));
+        storageCard.addView(manageStorageBtn);
+
+        layout.addView(storageCard);
+
+        // Appearance Theme Card
         LinearLayout themeCard = new LinearLayout(this);
         themeCard.setOrientation(LinearLayout.VERTICAL);
         themeCard.setPadding(dp(18), dp(18), dp(18), dp(18));
         themeCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
+        LinearLayout.LayoutParams pTheme = new LinearLayout.LayoutParams(-1, -2);
+        pTheme.topMargin = dp(14);
+        themeCard.setLayoutParams(pTheme);
 
         TextView t1 = new TextView(this);
         t1.setText("Appearance Theme");
@@ -745,6 +794,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         layout.addView(themeCard);
 
+        // About Card
         LinearLayout aboutCard = new LinearLayout(this);
         aboutCard.setOrientation(LinearLayout.VERTICAL);
         aboutCard.setPadding(dp(18), dp(18), dp(18), dp(18));
@@ -761,16 +811,37 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         aboutCard.addView(t2);
 
         TextView abtTxt = new TextView(this);
-        abtTxt.setText("Jellyfin Server: 10.11.11\nPackage Identity: com.jellyfin.droid\nArchitecture: aarch64 (ARM64)\nPhase 15 Branding & UI Polish");
+        abtTxt.setText("Jellyfin Server: 10.11.11\nPackage Identity: com.jellyfin.droid\nArchitecture: aarch64 (ARM64)\nPhase 15 Polished Shell");
         abtTxt.setTextSize(13);
         abtTxt.setTextColor(getSecondaryTextColor());
-        abtTxt.setPadding(0, dp(10), 0, 0);
+        abtTxt.setPadding(0, dp(8), 0, 0);
         aboutCard.addView(abtTxt);
 
         layout.addView(aboutCard);
 
         scroll.addView(layout);
         return scroll;
+    }
+
+    private void updateStorageInfoText() {
+        if (storageInfoText == null) return;
+        File prefix = com.termux.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR;
+        File home = com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR;
+        File dataDir = new File(home, ".local/share/jellyfin");
+        File cacheDir = new File(home, ".cache/jellyfin");
+
+        long prefixMB = getFolderSizeMB(prefix);
+        long dataMB = getFolderSizeMB(dataDir);
+        long cacheMB = getFolderSizeMB(cacheDir);
+
+        String info = "Runtime: " + prefixMB + " MB | Data: " + dataMB + " MB | Cache: " + cacheMB + " MB";
+        storageInfoText.setText(info);
+    }
+
+    private long getFolderSizeMB(File dir) {
+        if (dir == null || !dir.exists()) return 0;
+        long bytes = dir.length();
+        return bytes / (1024 * 1024);
     }
 
     // ── State Rendering Logic (NO EMOJIS) ──────────────────────────────────────
@@ -825,7 +896,6 @@ public final class JellyfinDroidActivity extends AppCompatActivity
             }
             statusBadge.setText(statusText);
             statusBadge.setTextColor(color);
-            statusBadge.setBackground(createRoundedDrawable(colorWithAlpha(color, 40), dp(16)));
         }
 
         // Render Real Stage Progress Card (NO EMOJIS)
@@ -876,13 +946,15 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
     private void refreshLanAddress() {
         String lan = getLanAddress();
-        if (lanAddressText != null) {
+        if (lanIpValueText != null) {
             if (lan == null) {
-                lanAddressText.setText("LAN: UNAVAILABLE — connect to Wi-Fi or LAN");
-                lanAddressText.setTextColor(Color.parseColor("#FFB74D"));
+                lanIpValueText.setText("LAN UNAVAILABLE (Connect Wi-Fi)");
+                lanIpValueText.setTextColor(Color.parseColor("#FFB74D"));
+                if (btnCopyLanIp != null) btnCopyLanIp.setEnabled(false);
             } else {
-                lanAddressText.setText("LAN: " + lan);
-                lanAddressText.setTextColor(getSecondaryTextColor());
+                lanIpValueText.setText(lan);
+                lanIpValueText.setTextColor(Color.parseColor("#81C784"));
+                if (btnCopyLanIp != null) btnCopyLanIp.setEnabled(true);
             }
         }
     }
