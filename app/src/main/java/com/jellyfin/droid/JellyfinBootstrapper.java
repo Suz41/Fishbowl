@@ -34,6 +34,13 @@ public class JellyfinBootstrapper {
         return marker.exists() && jellyfinDll.exists() && dotnetBin.exists();
     }
 
+    /**
+     * Phase 14: Cross-package migration is NOT possible due to Android UID sandbox isolation.
+     * /data/data/com.termux/ (UID u0_a1598) cannot be read by com.jellyfin.droid (UID u0_a1599).
+     * JellyfinDroid starts with a fresh independent server instance under its own sandbox.
+     * Users must reconfigure their Jellyfin server (add libraries, create accounts, etc.).
+     */
+
     public static synchronized boolean initializeIfNeeded(Context context) {
         if (isInitialized(context)) {
             Log.i(TAG, "Jellyfin environment already initialized.");
