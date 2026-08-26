@@ -108,8 +108,8 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         super.onCreate(savedInstanceState);
         controller = JellyfinController.getInstance();
 
-        // Start background helper service
-        startService(new Intent(this, TermuxService.class));
+        // JellyfinServerService handles single foreground notification lifecycle.
+        stopService(new Intent(this, TermuxService.class));
 
         // Request Android 13+ Notification Permission if needed (non-blocking)
         requestNotificationPermissionIfNeeded();
