@@ -384,13 +384,13 @@ public class JellyfinController {
         cancelHealthCheckLocked();
         healthCheckExecutor = Executors.newSingleThreadScheduledExecutor();
         healthCheckFuture = healthCheckExecutor.scheduleAtFixedRate(() -> {
-            boolean healthy = isHealthy();
+            boolean ready = isReady();
             synchronized (JellyfinController.this) {
                 if (process != jellyfinProcess || stopRequested) return;
                 if (!process.isAlive()) return; // exit monitor handles
-                if (healthy && currentState == State.STARTING) {
+                if (ready && currentState == State.STARTING) {
                     autoRestartCount.set(0); // successful start resets crash counter
-                    appendLogLocked("Health → HTTP 200 — server is RUNNING");
+                    appendLogLocked("Public System Info → HTTP 200 JSON — server is RUNNING (READY)");
                     setStateLocked(State.RUNNING);
                     // §3/§12: Stop polling once healthy — avoid unnecessary background polling
                     cancelHealthCheckLocked();
@@ -493,6 +493,25 @@ public class JellyfinController {
             conn.setRequestMethod("GET");
             conn.getResponseCode();
             return true; // any response = port occupied
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private boolean isReady() {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL("http://127.0.0.1:8096/system/info/public").openConnection();
+            conn.setConnectTimeout(2000);
+            conn.setReadTimeout(2000);
+            conn.setRequestMethod("GET");
+            if (conn.getResponseCode() == 200) {
+                String contentType = conn.getContentType();
+                return contentType != null && contentType.contains("application/json");
+            }
+            return false;
         } catch (Exception e) {
             return false;
         } finally {
