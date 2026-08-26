@@ -293,6 +293,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         FrameLayout iconWrapper = new FrameLayout(this);
         LinearLayout.LayoutParams wrapperParams = new LinearLayout.LayoutParams(dp(56), dp(28));
+        wrapperParams.gravity = Gravity.CENTER_HORIZONTAL;
         wrapperParams.bottomMargin = dp(2);
 
         View pill = new View(this);
@@ -312,7 +313,10 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         TextView txt = new TextView(this);
         txt.setText(label);
         txt.setTextSize(12);
-        tab.addView(txt);
+        txt.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams txtParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tab.addView(txt, txtParams);
 
         LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         parent.addView(tab, tabParams);
