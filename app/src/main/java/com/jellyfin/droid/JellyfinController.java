@@ -66,6 +66,16 @@ public class JellyfinController {
         CRASH_LOOP
     }
 
+    public enum StartupStage {
+        NONE,
+        STARTING_RUNTIME,
+        LAUNCHING_SERVER,
+        WAITING_FOR_SERVER,
+        CHECKING_READINESS,
+        READY,
+        FAILED
+    }
+
     public interface Listener { void onServerChanged(State state); }
 
     // ── Singleton ──────────────────────────────────────────────────────────────
@@ -91,6 +101,7 @@ public class JellyfinController {
             new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
 
     private State currentState = State.UNINITIALIZED;
+    private StartupStage currentStage = StartupStage.NONE;
     private Process jellyfinProcess;
     private boolean stopRequested;
     private Integer lastExitCode;
@@ -99,6 +110,7 @@ public class JellyfinController {
 
     // ── Public accessors ───────────────────────────────────────────────────────
     public synchronized State getState()           { return currentState; }
+    public synchronized StartupStage getStartupStage() { return currentStage; }
     public synchronized State getStatus()          { return currentState; }
     public synchronized boolean isRunning()        { return currentState == State.RUNNING; }
     public synchronized Integer getLastExitCode()  { return lastExitCode; }
@@ -413,6 +425,13 @@ public class JellyfinController {
                     setStateLocked(State.RUNNING);
                     // §3/§12: Stop polling once healthy — avoid unnecessary background polling
                     cancelHealthCheckLocked();
+                } else if (currentState == State.STARTING) {
+                    if (isPortOccupied()) {
+                        currentStage = StartupStage.CHECKING_READINESS;
+                    } else {
+                        currentStage = StartupStage.WAITING_FOR_SERVER;
+                    }
+                    notifyListeners();
                 }
             }
         }, HEALTH_INITIAL_DELAY_S, HEALTH_PERIOD_S, TimeUnit.SECONDS);
@@ -588,7 +607,34 @@ public class JellyfinController {
 
     private void setStateLocked(State state) {
         currentState = state;
-        Log.d(TAG, "State → " + state);
+        switch (state) {
+            case INITIALIZING:
+                currentStage = StartupStage.STARTING_RUNTIME;
+                break;
+            case STARTING:
+                currentStage = StartupStage.LAUNCHING_SERVER;
+                break;
+            case RUNNING:
+                currentStage = StartupStage.READY;
+                break;
+            case FAILED:
+            case CRASHED:
+            case CRASH_LOOP:
+                currentStage = StartupStage.FAILED;
+                break;
+            case STOPPED:
+            case STOPPING:
+            default:
+                currentStage = StartupStage.NONE;
+                break;
+        }
+        Log.d(TAG, "State → " + state + " (Stage: " + currentStage + ")");
+        notifyListeners();
+    }
+
+    public void setStageLocked(StartupStage stage) {
+        currentStage = stage;
+        Log.d(TAG, "Stage → " + stage);
         notifyListeners();
     }
 

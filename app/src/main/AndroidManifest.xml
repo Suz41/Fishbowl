@@ -70,7 +70,7 @@
             android:exported="true"
             android:label="@string/jellyfindroid_name"
             android:launchMode="singleTop"
-            android:theme="@style/Theme.TermuxApp.DayNight.DarkActionBar">
+            android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -80,9 +80,9 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name="com.jellyfin.droid.JellyfinLogsActivity" android:exported="false" android:label="Jellyfin logs" />
-        <activity android:name="com.jellyfin.droid.JellyfinSettingsActivity" android:exported="false" android:label="Settings" />
-        <activity android:name="com.jellyfin.droid.JellyfinStorageActivity" android:exported="false" android:label="Media Storage" />
+        <activity android:name="com.jellyfin.droid.JellyfinLogsActivity" android:exported="false" android:label="Jellyfin logs" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
+        <activity android:name="com.jellyfin.droid.JellyfinSettingsActivity" android:exported="false" android:label="Settings" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
+        <activity android:name="com.jellyfin.droid.JellyfinStorageActivity" android:exported="false" android:label="Media Storage" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
         <activity android:name="com.jellyfin.droid.JellyfinWebActivity" android:exported="false" android:label="Jellyfin" android:configChanges="orientation|screenSize" />
 
         <activity-alias
