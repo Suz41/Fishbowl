@@ -1,11 +1,11 @@
-# JellyfinDroid — Native Jellyfin Media Server for Android (ARM64)
+# JellyfinDroid — Native Jellyfin Media Server on Android (ARM64)
 
-[![Release](https://img.shields.io/badge/Release-v1.4.0-blue.svg)](https://github.com/Suz41/JellyfinDroid/releases)
-[![Jellyfin Server](https://img.shields.io/badge/Jellyfin%20Core-10.11.11-purple.svg)](https://jellyfin.org)
+[![Release](https://img.shields.io/badge/Release-v1.4.0-blue.svg)](https://github.com/Suz41/JellyfinDroid/releases/tag/v1.4.0)
+[![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-10.11.11-purple.svg)](https://jellyfin.org)
 [![Runtime](https://img.shields.io/badge/.NET-9.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
 [![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
 [![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE.md)
-[![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg)](#privacy--security)
+[![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg)](#-permissions--privacy)
 
 **JellyfinDroid** is a native Android application that packages and runs the full, unmodified **Jellyfin Media Server 10.11.11** directly on Android devices (**ARM64-v8a**).
 
@@ -17,12 +17,12 @@ Transform any spare Android smartphone, tablet, Android TV box, or SBC into a st
 
 1. [Key Features](#-key-features)
 2. [System Architecture](#-system-architecture)
-3. [Client Ecosystem & Compatibility](#-client-ecosystem--compatibility)
+3. [Client Compatibility](#-client-compatibility)
 4. [Quick Start & Setup Guide](#-quick-start--setup-guide)
 5. [Storage Access Framework (SAF) Bridge](#-storage-access-framework-saf-bridge)
 6. [Metadata & Dynamic DNS Pipeline](#-metadata--dynamic-dns-pipeline)
 7. [Memory-Safe Diagnostics & Logging](#-memory-safe-diagnostics--logging)
-8. [Permissions & Sandboxing](#-permissions--sandboxing)
+8. [Permissions & Privacy](#-permissions--privacy)
 9. [Building From Source](#-building-from-source)
 10. [Troubleshooting & FAQ](#-troubleshooting--faq)
 11. [License & Acknowledgments](#-license--acknowledgments)
@@ -86,9 +86,9 @@ Transform any spare Android smartphone, tablet, Android TV box, or SBC into a st
 
 ---
 
-## 📺 Client Ecosystem & Compatibility
+## 📺 Client Compatibility
 
-Once JellyfinDroid is running, you can stream your media to any official Jellyfin client on your local Wi-Fi network:
+Once JellyfinDroid is running, stream your media to any official Jellyfin client on your local Wi-Fi network:
 
 | Client App | Platform | Direct Play / Stream Support |
 | :--- | :--- | :--- |
@@ -106,7 +106,7 @@ Simply enter your server's **LAN Address** (e.g. `http://192.168.1.150:8096`) in
 ## 🚀 Quick Start & Setup Guide
 
 ### 1. Installation
-1. Download the latest `termux-app_apt-android-7-release_universal.apk` from [GitHub Releases](https://github.com/Suz41/JellyfinDroid/releases/tag/v1.4.0).
+1. Download `JellyfinDroid-v1.4.0-release-universal.apk` from the [GitHub Releases Page](https://github.com/Suz41/JellyfinDroid/releases/tag/v1.4.0).
 2. Install the APK on your ARM64 Android device.
 3. Grant notification and storage permissions when prompted.
 
@@ -117,11 +117,11 @@ Simply enter your server's **LAN Address** (e.g. `http://192.168.1.150:8096`) in
    `STARTING_RUNTIME` -> `LAUNCHING_SERVER` -> `WAITING_FOR_SERVER` -> `CHECKING_READINESS` -> `READY`
 4. When the status badge turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
 
-### 3. Jellyfin Initial Wizard Setup
+### 3. Initial Jellyfin Wizard Setup
 1. Select your preferred display language.
 2. Create your administrator account username and password.
-3. Add your media libraries (point to `/sdcard/Movies`, `/sdcard/Music`, etc., or your SAF storage bridge path).
-4. Select your preferred metadata language (English, Spanish, French, etc.).
+3. Add your media libraries (point to `/sdcard/Movies`, `/sdcard/Music`, or your SAF storage bridge path).
+4. Select your preferred metadata language.
 5. Complete the setup and log in!
 
 ---
@@ -153,16 +153,16 @@ JellyfinDroid uses dynamic multi-provider DNS resolution to ensure movie and TV 
 
 ## 📊 Memory-Safe Diagnostics & Logging
 
-JellyfinDroid features a dedicated, hardened logging engine designed to prevent UI freezes during heavy transcoding or library imports:
+JellyfinDroid features a hardened logging engine designed to prevent UI freezes during heavy transcoding or library imports:
 
 - **Decoupled Observers (`LogListener`):** Log stream updates are completely separated from Activity state rendering.
 - **500ms Handler Throttling:** Incoming log lines from stdout/stderr are batched and posted to the UI looper at most 2 times per second.
 - **30KB Bounded Ring Buffer:** Memory consumption is strictly capped at ~500 lines, automatically discarding stale log lines without triggering garbage collection spikes.
-- **Smart Viewport Auto-Scrolling:** Auto-scroll engages *only* when the user is already at the bottom of the log view, allowing you to scroll up and inspect past events without the viewport jumping.
+- **Smart Viewport Auto-Scrolling:** Auto-scroll engages *only* when the user is already at the bottom of the log view, allowing you to scroll up and inspect past events without viewport jumping.
 
 ---
 
-## 🔒 Permissions & Sandboxing
+## 🔒 Permissions & Privacy
 
 JellyfinDroid operates strictly within standard Android OS application sandboxing rules:
 
@@ -204,7 +204,7 @@ cd JellyfinDroid
 ./gradlew assembleRelease
 ```
 
-Generated APKs will be located in `app/build/outputs/apk/release/`.
+Generated APKs will be located in `app/build/outputs/apk/release/` and `app/build/outputs/apk/debug/`.
 
 ---
 
@@ -227,3 +227,4 @@ Generated APKs will be located in `app/build/outputs/apk/release/`.
 - **JellyfinDroid:** Licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE.md).
 - **Jellyfin Core:** [Jellyfin Project](https://jellyfin.org) (GPLv3).
 - **Packaging Foundation:** Built upon the [Termux](https://github.com/termux/termux-app) open-source container architecture.
+
