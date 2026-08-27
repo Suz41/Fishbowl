@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <!DOCTYPE resources [
-    <!ENTITY TERMUX_PACKAGE_NAME "com.termux">
-    <!ENTITY TERMUX_APP_NAME "Termux">
+    <!ENTITY TERMUX_PACKAGE_NAME "com.jellyfin.droid">
+    <!ENTITY TERMUX_APP_NAME "JellyfinDroid">
     <!ENTITY TERMUX_API_APP_NAME "Termux:API">
     <!ENTITY TERMUX_BOOT_APP_NAME "Termux:Boot">
     <!ENTITY TERMUX_FLOAT_APP_NAME "Termux:Float">
@@ -15,11 +15,7 @@
 
     <string name="application_name">&TERMUX_APP_NAME;</string>
     <string name="jellyfindroid_name">JellyfinDroid</string>
-    <string name="shared_user_label">&TERMUX_APP_NAME; user</string>
-
-
-
-    <!-- Termux RUN_COMMAND permission -->
+    <string name="shared_user_label">JellyfinDroid user</string>
     <string name="permission_run_command_label">Run commands in &TERMUX_APP_NAME; environment</string>
     <string name="permission_run_command_description">execute arbitrary commands within &TERMUX_APP_NAME;
         environment and access files</string>

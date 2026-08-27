@@ -47,19 +47,15 @@ public class JellyfinBootstrapper {
             if (!etcDir.exists()) etcDir.mkdirs();
 
             File hostsFile = new File(etcDir, "hosts");
-            if (!hostsFile.exists() || hostsFile.length() < 10) {
-                String hostsContent = "127.0.0.1 localhost\n::1 ip6-localhost\n108.156.67.97 api.themoviedb.org\n";
-                try (FileOutputStream out = new FileOutputStream(hostsFile)) {
-                    out.write(hostsContent.getBytes());
-                }
+            String hostsContent = "127.0.0.1 localhost\n::1 ip6-localhost\n";
+            try (FileOutputStream out = new FileOutputStream(hostsFile)) {
+                out.write(hostsContent.getBytes());
             }
 
             File resolvFile = new File(etcDir, "resolv.conf");
-            if (!resolvFile.exists() || resolvFile.length() < 5) {
-                String resolvContent = "nameserver 8.8.8.8\nnameserver 1.1.1.1\n";
-                try (FileOutputStream out = new FileOutputStream(resolvFile)) {
-                    out.write(resolvContent.getBytes());
-                }
+            String resolvContent = "nameserver 8.8.8.8\nnameserver 1.1.1.1\n";
+            try (FileOutputStream out = new FileOutputStream(resolvFile)) {
+                out.write(resolvContent.getBytes());
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to write network config: " + e.getMessage(), e);
