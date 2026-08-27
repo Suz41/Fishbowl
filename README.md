@@ -1,55 +1,74 @@
-# JellyfinDroid — Native Jellyfin Media Server on Android (ARM64)
+<div align="center">
 
-[![Release](https://img.shields.io/badge/Release-v1.4.0-blue.svg)](https://github.com/Suz41/JellyfinDroid/releases/tag/v1.4.0)
-[![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-10.11.11-purple.svg)](https://jellyfin.org)
-[![Runtime](https://img.shields.io/badge/.NET-9.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
-[![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
-[![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE.md)
-[![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg)](#-permissions--privacy)
+# JellyfinDroid
 
-**JellyfinDroid** is a native Android application that packages and runs the full, unmodified **Jellyfin Media Server 10.11.11** directly on Android devices (**ARM64-v8a**).
+### Standalone, Native Jellyfin Media Server for Android (ARM64)
 
-Transform any spare Android smartphone, tablet, Android TV box, or SBC into a standalone, energy-efficient, 24/7 personal home media streaming server. **No root access required, no PRoot emulation overhead, and zero cloud subscriptions.**
+[![Release](https://img.shields.io/badge/Release-v1.4.0-blue.svg?style=for-the-badge&logo=github)](https://github.com/Suz41/JellyfinDroid/releases/tag/v1.4.0)
+[![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-10.11.11-8B5CF6.svg?style=for-the-badge&logo=jellyfin)](https://jellyfin.org)
+[![Runtime](https://img.shields.io/badge/.NET-9.0%20ARM64-512BD4.svg?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com)
+[![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?style=for-the-badge&logo=android&logoColor=white)](https://android.com)
+[![License](https://img.shields.io/badge/License-GPLv3-yellow.svg?style=for-the-badge)](LICENSE.md)
+[![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg?style=for-the-badge)](#-permissions--privacy)
+
+<p align="center">
+  <strong>Turn any spare Android smartphone, tablet, Android TV box, or SBC into a fully independent, low-power, 24/7 personal media streaming server.</strong>
+  <br />
+  <em>No root access required. No PRoot/chroot emulation overhead. Zero cloud subscriptions.</em>
+</p>
+
+</div>
+
+---
+
+> [!NOTE]
+> **What is JellyfinDroid?**  
+> Unlike standard Jellyfin client apps that only *play* streams from an external PC or NAS, **JellyfinDroid hosts and runs the actual Jellyfin Server directly on your Android hardware**. It packages native Linux ARM64 Dotnet binaries, the SQLite3 database engine, Jellyfin-FFmpeg transcoding binaries, and an Android Foreground Service into a single, standalone APK.
 
 ---
 
 ## 📑 Table of Contents
 
-1. [Key Features](#-key-features)
-2. [System Architecture](#-system-architecture)
-3. [Client Compatibility](#-client-compatibility)
-4. [Quick Start & Setup Guide](#-quick-start--setup-guide)
-5. [Storage Access Framework (SAF) Bridge](#-storage-access-framework-saf-bridge)
-6. [Metadata & Dynamic DNS Pipeline](#-metadata--dynamic-dns-pipeline)
-7. [Memory-Safe Diagnostics & Logging](#-memory-safe-diagnostics--logging)
-8. [Permissions & Privacy](#-permissions--privacy)
-9. [Building From Source](#-building-from-source)
-10. [Troubleshooting & FAQ](#-troubleshooting--faq)
-11. [License & Acknowledgments](#-license--acknowledgments)
+- [Overview & Architecture](#-overview--architecture)
+- [Key Features & Highlights](#-key-features--highlights)
+- [System Architecture](#-system-architecture)
+- [Client Ecosystem & Compatibility](#-client-ecosystem--compatibility)
+- [Step-by-Step Installation & Setup](#-step-by-step-installation--setup)
+- [Storage Access Framework (SAF) Bridge](#-storage-access-framework-saf-bridge)
+- [Dynamic Metadata DNS Pipeline](#-dynamic-metadata-dns-pipeline)
+- [Memory-Safe Logging Engine](#-memory-safe-logging-engine)
+- [Permissions & Privacy](#-permissions--privacy)
+- [Directory Hierarchy & Persistence](#-directory-hierarchy--persistence)
+- [Building From Source](#-building-from-source)
+- [Troubleshooting & FAQ](#-troubleshooting--faq)
+- [License & Acknowledgments](#-license--acknowledgments)
 
 ---
 
-## 🌟 Key Features
+## 🌟 Key Features & Highlights
 
-### 🚀 Native Server Performance
-- **Embedded Jellyfin Core (v10.11.11):** Runs full native Linux ARM64 Dotnet binaries compiled for Android's Bionic C library (`libc.so`).
-- **Jellyfin-FFmpeg Integration:** Native transcoding and remuxing engine optimized for mobile ARM64 hardware.
-- **SQLite3 Database Engine:** Local embedded storage driver managing library catalogs, user watch states, and item metadata.
+### ⚡ Native ARM64 Server Engine
+- **Full Jellyfin 10.11.11 Core:** Direct POSIX execution on Android's Bionic C runtime (`libc.so`) without virtualization or Docker containers.
+- **Embedded .NET 9.0 Host:** High-throughput JIT-compiled server core with optimized memory management.
+- **Jellyfin-FFmpeg Transcoder:** Mobile-optimized native FFmpeg binary for on-the-fly video transcoding, audio remuxing, and HLS segmenting.
+- **SQLite3 Database Engine (`libe_sqlite3.so`):** Low-latency local database storage managing media libraries, user watch states, and item metadata.
 
-### 🎨 Pixel-Style Material 3 UI
-- **Pure Dark Mode (`#121316`):** High-contrast, battery-saving dark interface with distinct surface cards and fluid Material Touch Ripples.
+### 🎨 Material 3 Pixel UI Shell
+- **Pure Dark Mode (`#121316`):** OLED-optimized dark theme with distinct surface cards, crisp typography, and fluid Material Touch Ripples.
+- **Real-Time Startup Progression:** Displays authentic multi-stage initialization (`STARTING_RUNTIME` -> `LAUNCHING_SERVER` -> `WAITING_FOR_SERVER` -> `CHECKING_READINESS` -> `READY`).
+- **Dual-Band Network Hub:** Instant local loopback (`http://127.0.0.1:8096`) and local Wi-Fi LAN IP display (`http://192.168.x.x:8096`) with one-tap `COPY IP` buttons.
 - **3-Tab Navigation:**
-  - **Home:** Real-time server status, dual-band network IP cards (Local `127.0.0.1` and LAN `192.168.x.x`), one-tap `COPY IP` buttons, and lifecycle controls (`START`, `STOP`, `RESTART`).
-  - **Logs:** Memory-capped, live-streaming diagnostic log console with 500ms batched updates and smart auto-scrolling.
-  - **Settings:** Storage breakdown, SAF media folder bridge, software stack audit, and environment path metrics.
+  - **Home:** Server lifecycle dashboard, status pills, address cards, and action buttons (`OPEN JELLYFIN`, `START`, `STOP`, `RESTART`).
+  - **Logs:** Memory-capped, live-streaming diagnostic console with 500ms throttled rendering and smart auto-scrolling.
+  - **Settings:** Storage breakdown, SAF media folder bridge, software stack audit, and boot auto-start switches.
 
-### ⚡ Resilient Background Execution
-- **Foreground Service Supervision:** Supervised by `JellyfinServerService` with an ongoing notification (ID `1001`) preventing Android OS aggressive background app killing.
-- **Intelligent CPU WakeLock:** Automatically acquires a system `PARTIAL_WAKE_LOCK` with a safety timeout during active media streaming.
-- **Immediate State Hydration:** `reconcileStateAsync()` directly checks runtime readiness on startup/resume, eliminating delayed `UNINITIALIZED` states.
+### 🛡️ Background Streaming Resilience
+- **Foreground Service Supervision:** Managed by `JellyfinServerService` with an ongoing status notification (ID `1001`) preventing Android OS aggressive memory killing.
+- **Smart CPU WakeLock:** Automatically acquires a `PARTIAL_WAKE_LOCK` with an automatic safety timeout to maintain uninterrupted streaming when the screen is locked.
+- **Immediate State Hydration:** Asynchronous `reconcileStateAsync()` directly resolves running server state on app launch/resume with zero UI latency.
 
-### 🎬 Built-in WebView Web Client
-- Integrated hardware-accelerated WebView container allowing immediate local playback and administrative server configuration without leaving the app.
+### 🎬 Built-in Hardware-Accelerated WebView
+- Native in-app WebView container allowing immediate local playback and administrative server configuration without leaving the application.
 
 ---
 
@@ -86,74 +105,75 @@ Transform any spare Android smartphone, tablet, Android TV box, or SBC into a st
 
 ---
 
-## 📺 Client Compatibility
+## 📺 Client Ecosystem & Compatibility
 
-Once JellyfinDroid is running, stream your media to any official Jellyfin client on your local Wi-Fi network:
+Once JellyfinDroid is active on your device, you can stream your movies, shows, and music to any official Jellyfin client across your local home network:
 
-| Client App | Platform | Direct Play / Stream Support |
+| Client App | Supported Platforms | Features & Direct Stream |
 | :--- | :--- | :--- |
-| **Jellyfin for Android TV** | Google TV, FireStick, Shield TV | Full 4K HDR, HEVC, Direct Play |
-| **Jellyfin Mobile** | Android & iOS Phones / Tablets | Full Touch Controls, Offline Sync |
-| **Web Client** | Chrome, Firefox, Safari, Edge | Full HTML5 Video & Audio |
-| **Roku** | Roku Streaming Stick, Roku TV | Direct Stream & Transcoding |
-| **Kodi (Jellyfin for Kodi)** | Linux, Windows, LibreELEC | Native Direct Path Playback |
-| **Swiftfin / Infuse** | Apple TV, iPhone, iPad | Native Metal Hardware Decoding |
+| **Jellyfin for Android TV** | Google TV, FireStick, Shield TV, Xiaomi Box | 4K HDR, HEVC, Dolby Vision, Direct Play |
+| **Jellyfin Mobile** | Android Smartphones & Tablets | Touch Gestures, Background Audio, Casting |
+| **Jellyfin for iOS** | iPhone, iPad | Native Player, HLS Streaming, AirPlay |
+| **Web Browser** | Chrome, Firefox, Safari, Edge, Brave | Full HTML5 Video Player, Admin Dashboard |
+| **Roku Client** | Roku Streaming Sticks, Roku Smart TVs | Direct Play, On-The-Fly Transcoding |
+| **Swiftfin & Infuse** | Apple TV, macOS, iOS | Native Metal Decoding, Subtitle Sync |
+| **Kodi Integration** | Windows, Linux, LibreELEC, Raspberry Pi | Jellyfin for Kodi Addon / Direct Path |
 
-Simply enter your server's **LAN Address** (e.g. `http://192.168.1.150:8096`) in any of these apps to connect.
+> [!TIP]
+> **Connecting Clients:** Open any Jellyfin client on the same Wi-Fi network and enter the **LAN Address** shown on your JellyfinDroid Home screen (e.g., `http://192.168.1.150:8096`).
 
 ---
 
-## 🚀 Quick Start & Setup Guide
+## 🚀 Step-by-Step Installation & Setup
 
-### 1. Installation
-1. Download `JellyfinDroid-v1.4.0-release-universal.apk` from the [GitHub Releases Page](https://github.com/Suz41/JellyfinDroid/releases/tag/v1.4.0).
+### 1. Download & Install
+1. Download the latest **`JellyfinDroid-v1.4.0-release-universal.apk`** from [GitHub Releases](https://github.com/Suz41/JellyfinDroid/releases/tag/v1.4.0).
 2. Install the APK on your ARM64 Android device.
-3. Grant notification and storage permissions when prompted.
+3. Grant **Notification** and **Storage** permissions when prompted.
 
 ### 2. Starting the Server
 1. Launch **JellyfinDroid**.
 2. Tap the **START SERVER** button.
-3. The authentic startup stage pipeline will progress:
-   `STARTING_RUNTIME` -> `LAUNCHING_SERVER` -> `WAITING_FOR_SERVER` -> `CHECKING_READINESS` -> `READY`
-4. When the status badge turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
+3. The authentic stage pipeline will verify runtime environment, start the Dotnet process, and poll HTTP readiness.
+4. Once the hero badge turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
 
-### 3. Initial Jellyfin Wizard Setup
+### 3. Initial Setup Wizard
 1. Select your preferred display language.
-2. Create your administrator account username and password.
+2. Create your admin username and password.
 3. Add your media libraries (point to `/sdcard/Movies`, `/sdcard/Music`, or your SAF storage bridge path).
-4. Select your preferred metadata language.
-5. Complete the setup and log in!
+4. Configure your preferred metadata language (English, Spanish, French, German, etc.).
+5. Finish the wizard and start streaming!
 
 ---
 
 ## 📂 Storage Access Framework (SAF) Bridge
 
-Android 11+ enforces scoped storage rules. JellyfinDroid provides a dedicated Storage Access Framework (SAF) bridge:
+Android 11+ enforces Scoped Storage boundaries. JellyfinDroid includes a built-in Storage Access Framework (SAF) document tree bridge:
 
-1. Open the **Settings** tab in JellyfinDroid.
+1. In JellyfinDroid, navigate to the **Settings** tab.
 2. Tap **Manage Media Storage (SAF)**.
-3. Tap **Add Media Folder** and pick any directory on internal storage, microSD card, or OTG USB drive using the Android system document picker.
-4. JellyfinDroid preserves permanent read permissions across device reboots and updates folder sizes dynamically in the UI.
+3. Tap **Add Media Folder** and select any directory on internal storage, microSD card, or OTG USB storage using Android's system document picker.
+4. JellyfinDroid preserves persistent URI permissions across device reboots and surfaces folder size calculations dynamically.
 
 ---
 
-## 🌐 Metadata & Dynamic DNS Pipeline
+## 🌐 Dynamic Metadata DNS Pipeline
 
 JellyfinDroid uses dynamic multi-provider DNS resolution to ensure movie and TV show identification, metadata retrieval, and artwork fetching operate smoothly:
 
-- **DNS Providers:** Dynamically queries Google DNS (`8.8.8.8`) and Cloudflare DNS (`1.1.1.1`) inside the POSIX environment.
-- **Provider Resolution:** Resolves endpoints for:
+- **DNS Resolvers:** Embedded POSIX environment dynamically resolves DNS via Google DNS (`8.8.8.8`) and Cloudflare DNS (`1.1.1.1`).
+- **Metadata Endpoints:** Seamlessly fetches data and posters from:
   - The Movie Database (TMDb): `api.themoviedb.org`, `image.tmdb.org`
   - The Open Movie Database (OMDb)
   - Internet Movie Database (IMDb) metadata scrapers
   - OpenSubtitles & MusicBrainz
-- **SSL / TLS Integrity:** Complete CA certificate bundle (`cacert.pem`) embedded within the application ensures secure HTTPS communication with all upstream providers.
+- **SSL / TLS Trust Store:** Built-in Mozilla CA Certificate bundle (`cacert.pem`) ensures secure HTTPS communication with all upstream providers.
 
 ---
 
-## 📊 Memory-Safe Diagnostics & Logging
+## 📊 Memory-Safe Logging Engine
 
-JellyfinDroid features a hardened logging engine designed to prevent UI freezes during heavy transcoding or library imports:
+JellyfinDroid features a hardened logging subsystem designed to prevent UI freezes during heavy transcoding or library imports:
 
 - **Decoupled Observers (`LogListener`):** Log stream updates are completely separated from Activity state rendering.
 - **500ms Handler Throttling:** Incoming log lines from stdout/stderr are batched and posted to the UI looper at most 2 times per second.
@@ -182,6 +202,20 @@ JellyfinDroid operates strictly within standard Android OS application sandboxin
 
 ---
 
+## 📁 Directory Hierarchy & Persistence
+
+All Jellyfin server configuration, database, and cache files are stored within the app's sandboxed data directory:
+
+| Directory Type | Absolute Android Path | Purpose |
+| :--- | :--- | :--- |
+| **System Prefix** | `/data/data/com.jellyfin.droid/files/usr` | Native binaries, Dotnet assemblies, FFmpeg executables, and shared C/C++ libraries. |
+| **Persistent Data (`--datadir`)** | `/data/data/com.jellyfin.droid/files/home/.local/share/jellyfin` | Jellyfin SQLite database (`jellyfin.db`), user accounts, library definitions, and metadata. **Survives all updates.** |
+| **Configuration (`--configdir`)** | `/data/data/com.jellyfin.droid/files/home/.config/jellyfin` | Server XML configuration (`system.xml`, `network.xml`, `encoding.xml`). |
+| **Cache (`--cachedir`)** | `/data/data/com.jellyfin.droid/files/home/.cache/jellyfin` | Image thumbnail caches, transcoded media chunks, and temporary streaming buffers. |
+| **Logs (`--logdir`)** | `/data/data/com.jellyfin.droid/files/home/.local/share/jellyfin/log` | On-disk server execution logs. |
+
+---
+
 ## 🛠️ Building From Source
 
 ### Prerequisites
@@ -193,7 +227,7 @@ JellyfinDroid operates strictly within standard Android OS application sandboxin
 ### Build Steps
 
 ```bash
-# 1. Clone repository
+# 1. Clone the repository
 git clone https://github.com/Suz41/JellyfinDroid.git
 cd JellyfinDroid
 
@@ -211,14 +245,13 @@ Generated APKs will be located in `app/build/outputs/apk/release/` and `app/buil
 ## ❓ Troubleshooting & FAQ
 
 #### Q: Server stops when I lock my phone or switch apps?
-**A:** Ensure battery optimization is set to **"Unrestricted"** for JellyfinDroid in Android Settings (`Apps -> JellyfinDroid -> Battery -> Unrestricted`). JellyfinDroid runs an ongoing Foreground Service with WakeLock, but aggressive OEM battery managers (e.g. Xiaomi, Huawei, Vivo, Samsung) may require explicit permission to run in the background.
+**A:** Ensure battery optimization is set to **"Unrestricted"** for JellyfinDroid in Android Settings (`Apps -> JellyfinDroid -> Battery -> Unrestricted`). JellyfinDroid runs an ongoing Foreground Service with WakeLock, but aggressive OEM battery managers (e.g. Xiaomi MIUI/HyperOS, Huawei EMUI, Vivo OriginOS, Samsung OneUI) may require explicit permission to run in the background.
 
-#### Q: How do I access Jellyfin from other devices?
+#### Q: How do I access Jellyfin from other devices on my network?
 **A:** Open the JellyfinDroid app, locate the **LAN Address** under the Network Connection card (e.g. `http://192.168.1.150:8096`), and enter that URL into any browser or Jellyfin app on any device connected to the same Wi-Fi network.
 
-#### Q: Where are my server configuration files stored?
-**A:** All Jellyfin server configuration, database, and cache files are stored within the app's sandboxed data directory:
-`/data/data/com.jellyfin.droid/files/home/.config/jellyfin`
+#### Q: How do I update JellyfinDroid without losing my libraries or watch history?
+**A:** Simply install the updated APK over the existing installation. All database records, user accounts, and library configurations reside in `--datadir` (`~/.local/share/jellyfin`) which is preserved across APK updates.
 
 ---
 
