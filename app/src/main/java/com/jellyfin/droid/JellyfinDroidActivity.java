@@ -733,32 +733,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         layout.addView(storageCard);
 
-        // Appearance Theme Card
-        LinearLayout themeCard = new LinearLayout(this);
-        themeCard.setOrientation(LinearLayout.VERTICAL);
-        themeCard.setPadding(dp(18), dp(18), dp(18), dp(18));
-        themeCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
-        LinearLayout.LayoutParams pTheme = new LinearLayout.LayoutParams(-1, -2);
-        pTheme.topMargin = dp(14);
-        themeCard.setLayoutParams(pTheme);
-
-        TextView t1 = new TextView(this);
-        t1.setText("Appearance Theme");
-        t1.setTextSize(17);
-        t1.setTypeface(Typeface.DEFAULT_BOLD);
-        t1.setTextColor(getPrimaryTextColor());
-        themeCard.addView(t1);
-
-        TextView themeStatus = new TextView(this);
-        themeStatus.setText("Dark Mode (Always Active)");
-        themeStatus.setTextSize(13);
-        themeStatus.setTextColor(getSecondaryTextColor());
-        themeStatus.setPadding(0, dp(6), 0, 0);
-        themeCard.addView(themeStatus);
-
-        layout.addView(themeCard);
-
-        // About & Transparency Card
+        // Installed Packages & System Security Transparency Card
         LinearLayout aboutCard = new LinearLayout(this);
         aboutCard.setOrientation(LinearLayout.VERTICAL);
         aboutCard.setPadding(dp(18), dp(18), dp(18), dp(18));
@@ -768,26 +743,28 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         aboutCard.setLayoutParams(pAbout);
 
         TextView t2 = new TextView(this);
-        t2.setText("About & Installed Components");
+        t2.setText("Installed Packages & Security Transparency");
         t2.setTextSize(17);
         t2.setTypeface(Typeface.DEFAULT_BOLD);
         t2.setTextColor(getPrimaryTextColor());
         aboutCard.addView(t2);
 
         TextView abtSub = new TextView(this);
-        abtSub.setText("Complete software stack & security transparency list:");
+        abtSub.setText("Comprehensive breakdown of all bundled binaries, runtimes, and packages:");
         abtSub.setTextSize(12);
         abtSub.setTextColor(getSecondaryTextColor());
         abtSub.setPadding(0, dp(4), 0, dp(10));
         aboutCard.addView(abtSub);
 
-        // Transparency Items
-        aboutCard.addView(buildTransparencyItem("Jellyfin Server Core", "v10.11.11 (Official Dotnet 8 Linux ARM64 build)"));
-        aboutCard.addView(buildTransparencyItem("Application Package", "com.jellyfin.droid (Isolated single app namespace)"));
-        aboutCard.addView(buildTransparencyItem("Target Architecture", "aarch64 / ARM64-v8a (Physical mobile hardware)"));
-        aboutCard.addView(buildTransparencyItem("Runtime Container", "Minimal Linux Execution Subsystem (No background analytics)"));
-        aboutCard.addView(buildTransparencyItem("TLS & Security", "OpenSSL 3.x System Bundle (Encrypted HTTP/HTTPS)"));
-        aboutCard.addView(buildTransparencyItem("Data & Privacy Policy", "100% Local Storage Only (No remote metrics or telemetry tracking)"));
+        // Detailed Installed Component Items
+        aboutCard.addView(buildTransparencyItem("Jellyfin Media Server Core", "v10.11.11\nOfficial Dotnet 8 Linux ARM64 binaries (jellyfin.dll). Self-contained web media server runtime."));
+        aboutCard.addView(buildTransparencyItem("FFmpeg Hardware Encoder / Transcoder", "v6.x / v7.x Linux ARM64\nBundled in opt/jellyfin/bin/ffmpeg. Used exclusively for media file remuxing, video thumbnail generation, and audio transcoding."));
+        aboutCard.addView(buildTransparencyItem("OpenSSL Security & TLS Stack", "OpenSSL 3.x System Libraries\nCryptographic SSL/TLS engine managing local HTTPS network encryption and secure sockets."));
+        aboutCard.addView(buildTransparencyItem("Fontconfig & FreeType Engines", "libfontconfig.so / libfreetype.so\nNative C libraries used by FFmpeg for video subtitle burn-in and text rendering."));
+        aboutCard.addView(buildTransparencyItem("SQLite3 Database Driver", "libe_sqlite3.so\nEmbedded lightweight relational database engine storing user library indexes, metadata, and watch progress locally."));
+        aboutCard.addView(buildTransparencyItem("Minimal Linux Subsystem", "APT Package Manager & Android Bionic C Library (libc)\nMinimal Android-native POSIX execution container hosting Dotnet processes without background telemetry or tracker scripts."));
+        aboutCard.addView(buildTransparencyItem("Application Package & Scope", "com.jellyfin.droid\nIsolated Android package namespace. Runs strictly under Android OS user sandboxing rules."));
+        aboutCard.addView(buildTransparencyItem("Privacy & Telemetry Verification", "0 Remote Trackers | 0 Analytics | 100% Local Storage\nNo background metrics are collected or transmitted to external servers. All media data stays strictly on your device."));
 
         layout.addView(aboutCard);
 
@@ -798,11 +775,11 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private View buildTransparencyItem(String title, String detail) {
         LinearLayout item = new LinearLayout(this);
         item.setOrientation(LinearLayout.VERTICAL);
-        item.setPadding(dp(10), dp(8), dp(10), dp(8));
-        item.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(10)));
+        item.setPadding(dp(12), dp(10), dp(12), dp(10));
+        item.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(12)));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(4);
-        params.bottomMargin = dp(4);
+        params.topMargin = dp(5);
+        params.bottomMargin = dp(5);
         item.setLayoutParams(params);
 
         TextView titleTv = new TextView(this);
@@ -816,7 +793,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         detailTv.setText(detail);
         detailTv.setTextSize(12);
         detailTv.setTextColor(getSecondaryTextColor());
-        detailTv.setPadding(0, dp(2), 0, 0);
+        detailTv.setPadding(0, dp(4), 0, 0);
         item.addView(detailTv);
 
         return item;
