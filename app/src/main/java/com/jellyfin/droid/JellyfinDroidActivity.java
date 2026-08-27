@@ -758,7 +758,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         layout.addView(themeCard);
 
-        // About Card
+        // About & Transparency Card
         LinearLayout aboutCard = new LinearLayout(this);
         aboutCard.setOrientation(LinearLayout.VERTICAL);
         aboutCard.setPadding(dp(18), dp(18), dp(18), dp(18));
@@ -768,23 +768,58 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         aboutCard.setLayoutParams(pAbout);
 
         TextView t2 = new TextView(this);
-        t2.setText("About JellfinDroid");
+        t2.setText("About & Installed Components");
         t2.setTextSize(17);
         t2.setTypeface(Typeface.DEFAULT_BOLD);
         t2.setTextColor(getPrimaryTextColor());
         aboutCard.addView(t2);
 
-        TextView abtTxt = new TextView(this);
-        abtTxt.setText("Jellyfin Server: 10.11.11\nPackage Identity: com.jellyfin.droid\nArchitecture: aarch64 (ARM64)\nPhase 15 Polished Shell");
-        abtTxt.setTextSize(13);
-        abtTxt.setTextColor(getSecondaryTextColor());
-        abtTxt.setPadding(0, dp(8), 0, 0);
-        aboutCard.addView(abtTxt);
+        TextView abtSub = new TextView(this);
+        abtSub.setText("Complete software stack & security transparency list:");
+        abtSub.setTextSize(12);
+        abtSub.setTextColor(getSecondaryTextColor());
+        abtSub.setPadding(0, dp(4), 0, dp(10));
+        aboutCard.addView(abtSub);
+
+        // Transparency Items
+        aboutCard.addView(buildTransparencyItem("Jellyfin Server Core", "v10.11.11 (Official Dotnet 8 Linux ARM64 build)"));
+        aboutCard.addView(buildTransparencyItem("Application Package", "com.jellyfin.droid (Isolated single app namespace)"));
+        aboutCard.addView(buildTransparencyItem("Target Architecture", "aarch64 / ARM64-v8a (Physical mobile hardware)"));
+        aboutCard.addView(buildTransparencyItem("Runtime Container", "Minimal Linux Execution Subsystem (No background analytics)"));
+        aboutCard.addView(buildTransparencyItem("TLS & Security", "OpenSSL 3.x System Bundle (Encrypted HTTP/HTTPS)"));
+        aboutCard.addView(buildTransparencyItem("Data & Privacy Policy", "100% Local Storage Only (No remote metrics or telemetry tracking)"));
 
         layout.addView(aboutCard);
 
         scroll.addView(layout);
         return scroll;
+    }
+
+    private View buildTransparencyItem(String title, String detail) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setPadding(dp(10), dp(8), dp(10), dp(8));
+        item.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(10)));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.topMargin = dp(4);
+        params.bottomMargin = dp(4);
+        item.setLayoutParams(params);
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText(title);
+        titleTv.setTextSize(13);
+        titleTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        titleTv.setTextColor(getPrimaryTextColor());
+        item.addView(titleTv);
+
+        TextView detailTv = new TextView(this);
+        detailTv.setText(detail);
+        detailTv.setTextSize(12);
+        detailTv.setTextColor(getSecondaryTextColor());
+        detailTv.setPadding(0, dp(2), 0, 0);
+        item.addView(detailTv);
+
+        return item;
     }
 
     private void updateStorageInfoText() {
