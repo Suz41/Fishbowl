@@ -1,29 +1,15 @@
-<div align="center">
-
 # JellyfinDroid
 
-### Standalone, Native Jellyfin Media Server for Android (ARM64)
+[![Release](https://img.shields.io/badge/Release-v1.4.0-blue.svg)](https://github.com/Suz41/JellyfinDroid/releases/tag/v1.4.0)
+[![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-10.11.11-purple.svg)](https://jellyfin.org)
+[![Runtime](https://img.shields.io/badge/.NET-9.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
+[![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
+[![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE.md)
+[![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg)](#-permissions--privacy)
 
-[![Release](https://img.shields.io/badge/Release-v1.4.0-blue.svg?style=for-the-badge&logo=github)](https://github.com/Suz41/JellyfinDroid/releases/tag/v1.4.0)
-[![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-10.11.11-8B5CF6.svg?style=for-the-badge&logo=jellyfin)](https://jellyfin.org)
-[![Runtime](https://img.shields.io/badge/.NET-9.0%20ARM64-512BD4.svg?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com)
-[![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?style=for-the-badge&logo=android&logoColor=white)](https://android.com)
-[![License](https://img.shields.io/badge/License-GPLv3-yellow.svg?style=for-the-badge)](LICENSE.md)
-[![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg?style=for-the-badge)](#-permissions--privacy)
+JellyfinDroid is a native Android application that hosts and runs the full **Jellyfin Media Server (v10.11.11)** directly on your Android device (**ARM64**). 
 
-<p align="center">
-  <strong>Turn any spare Android smartphone, tablet, Android TV box, or SBC into a fully independent, low-power, 24/7 personal media streaming server.</strong>
-  <br />
-  <em>No root access required. No PRoot/chroot emulation overhead. Zero cloud subscriptions.</em>
-</p>
-
-</div>
-
----
-
-> [!NOTE]
-> **What is JellyfinDroid?**  
-> Unlike standard Jellyfin client apps that only *play* streams from an external PC or NAS, **JellyfinDroid hosts and runs the actual Jellyfin Server directly on your Android hardware**. It packages native Linux ARM64 Dotnet binaries, the SQLite3 database engine, Jellyfin-FFmpeg transcoding binaries, and an Android Foreground Service into a single, standalone APK.
+It transforms any Android phone, tablet, or TV box into a standalone, energy-efficient home media streaming server without requiring root access, Docker, or external PC hardware.
 
 ---
 
