@@ -29,11 +29,12 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle state) {
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
         super.onCreate(state);
         setupSystemBars();
 
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(isDarkTheme() ? Color.parseColor("#121316") : Color.parseColor("#F8F9FA"));
+        scroll.setBackgroundColor(Color.parseColor("#121316"));
 
         root = new LinearLayout(this);
         root.setPadding(dp(20), dp(20), dp(20), dp(20));
@@ -50,7 +51,7 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
         title.setText("Settings");
         title.setTextSize(24);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        title.setTextColor(isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
+        title.setTextColor(Color.parseColor("#E6E8EE"));
         title.setPadding(0, 0, 0, dp(16));
         root.addView(title);
 

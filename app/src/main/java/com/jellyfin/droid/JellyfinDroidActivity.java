@@ -146,9 +146,8 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         WindowCompat.setDecorFitsSystemWindows(window, false);
 
         WindowInsetsControllerCompat controllerCompat = new WindowInsetsControllerCompat(window, window.getDecorView());
-        boolean isDark = isDarkTheme();
-        controllerCompat.setAppearanceLightStatusBars(!isDark);
-        controllerCompat.setAppearanceLightNavigationBars(!isDark);
+        controllerCompat.setAppearanceLightStatusBars(false);
+        controllerCompat.setAppearanceLightNavigationBars(false);
 
         int color = getSurfaceColor();
         window.setStatusBarColor(color);
@@ -168,30 +167,23 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         });
     }
 
-    // ── Theme Engine ───────────────────────────────────────────────────────────
+    // ── Theme Engine (Pure Dark Mode Only) ───────────────────────────────────
 
     private void applySavedThemeMode() {
-        int mode = settingsPrefs.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
-        AppCompatDelegate.setDefaultNightMode(mode);
-    }
-
-    private void setThemeMode(int mode) {
-        settingsPrefs.edit().putInt("theme_mode", mode).apply();
-        AppCompatDelegate.setDefaultNightMode(mode);
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
     }
 
     private boolean isDarkTheme() {
-        int currentNightMode = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
-        return currentNightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        return true;
     }
 
     // ── Colors & Design Tokens ─────────────────────────────────────────────────
 
-    private int getBgColor() { return isDarkTheme() ? Color.parseColor("#121316") : Color.parseColor("#F8F9FA"); }
-    private int getSurfaceColor() { return isDarkTheme() ? Color.parseColor("#1E2025") : Color.parseColor("#FFFFFF"); }
-    private int getSurfaceElevatedColor() { return isDarkTheme() ? Color.parseColor("#272930") : Color.parseColor("#F1F3F9"); }
-    private int getPrimaryTextColor() { return isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"); }
-    private int getSecondaryTextColor() { return isDarkTheme() ? Color.parseColor("#9AA0A6") : Color.parseColor("#5F6368"); }
+    private int getBgColor() { return Color.parseColor("#121316"); }
+    private int getSurfaceColor() { return Color.parseColor("#1E2025"); }
+    private int getSurfaceElevatedColor() { return Color.parseColor("#272930"); }
+    private int getPrimaryTextColor() { return Color.parseColor("#E6E8EE"); }
+    private int getSecondaryTextColor() { return Color.parseColor("#9AA0A6"); }
     private int getAccentColor() { return Color.parseColor("#00A4DC"); }
 
     // ── Root UI Shell Construction ─────────────────────────────────────────────
@@ -246,20 +238,6 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         title.setTextColor(getPrimaryTextColor());
         header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
-
-        // Quick Theme Switch Button (NO EMOJIS)
-        TextView themeBtn = new TextView(this);
-        themeBtn.setText(isDarkTheme() ? "LIGHT" : "DARK");
-        themeBtn.setTextSize(12);
-        themeBtn.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        themeBtn.setTextColor(getPrimaryTextColor());
-        themeBtn.setPadding(dp(14), dp(6), dp(14), dp(6));
-        themeBtn.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(16)));
-        themeBtn.setOnClickListener(v -> {
-            int newMode = isDarkTheme() ? AppCompatDelegate.MODE_NIGHT_NO : AppCompatDelegate.MODE_NIGHT_YES;
-            setThemeMode(newMode);
-        });
-        header.addView(themeBtn);
 
         return header;
     }
@@ -771,19 +749,12 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         t1.setTextColor(getPrimaryTextColor());
         themeCard.addView(t1);
 
-        int currentMode = settingsPrefs.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
-
-        Button modeSystem = createPixelButton("System Default", currentMode == AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM ? getAccentColor() : getSurfaceElevatedColor(), currentMode == AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM ? Color.WHITE : getPrimaryTextColor());
-        modeSystem.setOnClickListener(v -> setThemeMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM));
-        themeCard.addView(modeSystem);
-
-        Button modeLight = createPixelButton("Light Mode", currentMode == AppCompatDelegate.MODE_NIGHT_NO ? getAccentColor() : getSurfaceElevatedColor(), currentMode == AppCompatDelegate.MODE_NIGHT_NO ? Color.WHITE : getPrimaryTextColor());
-        modeLight.setOnClickListener(v -> setThemeMode(AppCompatDelegate.MODE_NIGHT_NO));
-        themeCard.addView(modeLight);
-
-        Button modeDark = createPixelButton("Dark Mode", currentMode == AppCompatDelegate.MODE_NIGHT_YES ? getAccentColor() : getSurfaceElevatedColor(), currentMode == AppCompatDelegate.MODE_NIGHT_YES ? Color.WHITE : getPrimaryTextColor());
-        modeDark.setOnClickListener(v -> setThemeMode(AppCompatDelegate.MODE_NIGHT_YES));
-        themeCard.addView(modeDark);
+        TextView themeStatus = new TextView(this);
+        themeStatus.setText("Dark Mode (Always Active)");
+        themeStatus.setTextSize(13);
+        themeStatus.setTextColor(getSecondaryTextColor());
+        themeStatus.setPadding(0, dp(6), 0, 0);
+        themeCard.addView(themeStatus);
 
         layout.addView(themeCard);
 
