@@ -16,10 +16,17 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
-public final class JellyfinLogsActivity extends AppCompatActivity implements JellyfinController.Listener {
+public final class JellyfinLogsActivity extends AppCompatActivity
+        implements JellyfinController.Listener, JellyfinController.LogListener {
+
     private JellyfinController controller;
     private TextView output;
+    private ScrollView scroll;
     private LinearLayout root;
+
+    private final android.os.Handler logUpdateHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private boolean logUpdatePending = false;
+    private static final long LOG_REFRESH_THROTTLE_MS = 500;
 
     @Override
     public void onCreate(Bundle state) {
@@ -68,7 +75,7 @@ public final class JellyfinLogsActivity extends AppCompatActivity implements Jel
 
         root.addView(actions);
 
-        ScrollView scroll = new ScrollView(this);
+        scroll = new ScrollView(this);
         GradientDrawable gd = new GradientDrawable();
         gd.setColor(Color.parseColor("#121316"));
         gd.setCornerRadius(dp(12));
@@ -100,13 +107,24 @@ public final class JellyfinLogsActivity extends AppCompatActivity implements Jel
     protected void onStart() {
         super.onStart();
         controller.addListener(this);
+        controller.addLogListener(this);
         refresh();
     }
 
     @Override
     protected void onStop() {
         controller.removeListener(this);
+        controller.removeLogListener(this);
+        logUpdateHandler.removeCallbacksAndMessages(null);
+        logUpdatePending = false;
         super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        controller.removeLogListener(this);
+        logUpdateHandler.removeCallbacksAndMessages(null);
+        super.onDestroy();
     }
 
     private void refresh() {
@@ -116,8 +134,36 @@ public final class JellyfinLogsActivity extends AppCompatActivity implements Jel
     }
 
     @Override
+    public void onLogAppended() {
+        scheduleThrottledLogUpdate();
+    }
+
+    private void scheduleThrottledLogUpdate() {
+        if (logUpdatePending) return;
+        logUpdatePending = true;
+        logUpdateHandler.postDelayed(() -> {
+            logUpdatePending = false;
+            if (output != null && !isFinishing() && !isDestroyed()) {
+                boolean isNearBottom = isScrollAtBottom(scroll);
+                refresh();
+                if (isNearBottom && scroll != null) {
+                    scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+                }
+            }
+        }, LOG_REFRESH_THROTTLE_MS);
+    }
+
+    private boolean isScrollAtBottom(ScrollView s) {
+        if (s == null) return true;
+        View child = s.getChildAt(0);
+        if (child == null) return true;
+        int diff = (child.getBottom() - (s.getHeight() + s.getScrollY()));
+        return diff <= dp(60);
+    }
+
+    @Override
     public void onServerChanged(JellyfinController.State state) {
-        runOnUiThread(this::refresh);
+        // State updates do not refresh logs anymore
     }
 
     private boolean isDarkTheme() {

@@ -52,16 +52,16 @@ import java.net.NetworkInterface;
 import java.util.Enumeration;
 
 /**
- * Phase 15: JellfinDroid UI Polish, Simplified 3-Tab Navigation & Network Connection Card.
- *
- * Changes:
- *  - 3 Footer Tabs: Home (Server + Controls), Logs, Settings (Settings + Storage).
- *  - Network Connections Card: Distinct colored IP boxes for Local and LAN with dedicated COPY buttons.
- *  - Transparent JellfinDroid white header logo.
+ * Phase 15: JellyfinDroid UI Polish, Simplified 3-Tab Navigation & Network Connection Card.
+ *  - High-visibility Pure Dark Mode (#121316 surface background) with clean separation.
+ *  - Fully functional 3-Tab Bottom Navigation: Home (Hero, Stages, Actions, Network Cards), Logs, Settings (Server Config & Storage).
+ *  - Dual-band IP presentation (Local + LAN IP) with individual COPY IP buttons.
+ *  - Material Ripple touch effects and high-contrast Action buttons (Red STOP SERVER).
+ *  - Transparent JellyfinDroid white header logo.
  *  - Strict NO-EMOJI enforcement across all views.
  */
 public final class JellyfinDroidActivity extends AppCompatActivity
-        implements JellyfinController.Listener {
+        implements JellyfinController.Listener, JellyfinController.LogListener {
 
     private JellyfinController controller;
     private SharedPreferences settingsPrefs;
@@ -94,7 +94,13 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
     // Logs & Settings/Storage References
     private TextView logsOutputText;
+    private ScrollView logsScrollView;
     private TextView storageInfoText;
+
+    // Throttled Log Handler (§4 UI Thread Protection)
+    private final android.os.Handler logUpdateHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private boolean logUpdatePending = false;
+    private static final long LOG_REFRESH_THROTTLE_MS = 500;
 
     // Network Callback & Receiver
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -123,19 +129,36 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     protected void onStart() {
         super.onStart();
         controller.addListener(this);
+        controller.reconcileStateAsync();
+        if (activeTab == 1) {
+            controller.addLogListener(this);
+        }
         refreshLanAddress();
         renderCurrentState();
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (controller != null) {
+            controller.reconcileStateAsync();
+        }
+    }
+
+    @Override
     protected void onStop() {
         controller.removeListener(this);
+        controller.removeLogListener(this);
+        logUpdateHandler.removeCallbacksAndMessages(null);
+        logUpdatePending = false;
         super.onStop();
     }
 
     @Override
     protected void onDestroy() {
         teardownNetworkMonitor();
+        controller.removeLogListener(this);
+        logUpdateHandler.removeCallbacksAndMessages(null);
         super.onDestroy();
     }
 
@@ -233,7 +256,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         // Exact App Branding Name
         TextView title = new TextView(this);
-        title.setText("JellfinDroid");
+        title.setText("JellyfinDroid");
         title.setTextSize(19);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         title.setTextColor(getPrimaryTextColor());
@@ -324,6 +347,14 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private void renderActiveTab() {
         contentContainer.removeAllViews();
         updateBottomNavSelection();
+
+        if (activeTab == 1) {
+            controller.addLogListener(this);
+        } else {
+            controller.removeLogListener(this);
+            logUpdateHandler.removeCallbacksAndMessages(null);
+            logUpdatePending = false;
+        }
 
         switch (activeTab) {
             case 0:
@@ -647,8 +678,8 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         layout.addView(actions);
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackground(createRoundedDrawable(Color.parseColor("#121316"), dp(12)));
+        logsScrollView = new ScrollView(this);
+        logsScrollView.setBackground(createRoundedDrawable(Color.parseColor("#121316"), dp(12)));
 
         logsOutputText = new TextView(this);
         logsOutputText.setTextColor(Color.parseColor("#81C784"));
@@ -657,8 +688,8 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         logsOutputText.setPadding(dp(12), dp(12), dp(12), dp(12));
         refreshLogsDisplay();
 
-        scroll.addView(logsOutputText);
-        layout.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1.0f));
+        logsScrollView.addView(logsOutputText);
+        layout.addView(logsScrollView, new LinearLayout.LayoutParams(-1, 0, 1.0f));
 
         return layout;
     }
@@ -667,6 +698,35 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         if (logsOutputText != null && controller != null) {
             logsOutputText.setText(controller.getLogs());
         }
+    }
+
+    @Override
+    public void onLogAppended() {
+        if (activeTab != 1 || logsOutputText == null) return;
+        scheduleThrottledLogUpdate();
+    }
+
+    private void scheduleThrottledLogUpdate() {
+        if (logUpdatePending) return;
+        logUpdatePending = true;
+        logUpdateHandler.postDelayed(() -> {
+            logUpdatePending = false;
+            if (activeTab == 1 && logsOutputText != null && !isFinishing() && !isDestroyed()) {
+                boolean isNearBottom = isScrollAtBottom(logsScrollView);
+                refreshLogsDisplay();
+                if (isNearBottom && logsScrollView != null) {
+                    logsScrollView.post(() -> logsScrollView.fullScroll(View.FOCUS_DOWN));
+                }
+            }
+        }, LOG_REFRESH_THROTTLE_MS);
+    }
+
+    private boolean isScrollAtBottom(ScrollView scroll) {
+        if (scroll == null) return true;
+        View child = scroll.getChildAt(0);
+        if (child == null) return true;
+        int diff = (child.getBottom() - (scroll.getHeight() + scroll.getScrollY()));
+        return diff <= dp(60);
     }
 
     // ── Tab 2: Settings View (Integrated Settings & Media Storage) ────────────
@@ -763,7 +823,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         aboutCard.addView(buildTransparencyItem("Fontconfig & FreeType Engines", "libfontconfig.so / libfreetype.so\nNative C libraries used by FFmpeg for video subtitle burn-in and text rendering."));
         aboutCard.addView(buildTransparencyItem("SQLite3 Database Driver", "libe_sqlite3.so\nEmbedded lightweight relational database engine storing user library indexes, metadata, and watch progress locally."));
         aboutCard.addView(buildTransparencyItem("Minimal Linux Subsystem", "APT Package Manager & Android Bionic C Library (libc)\nMinimal Android-native POSIX execution container hosting Dotnet processes without background telemetry or tracker scripts."));
-        aboutCard.addView(buildTransparencyItem("Application Package & Scope", "com.jellyfin.droid\nIsolated Android package namespace. Runs strictly under Android OS user sandboxing rules."));
+        aboutCard.addView(buildTransparencyItem("Application Package & Scope", "com.jellyfin.droid (JellyfinDroid v1.4.0)\nIsolated Android package namespace. Runs strictly under Android OS user sandboxing rules."));
         aboutCard.addView(buildTransparencyItem("Privacy & Telemetry Verification", "0 Remote Trackers | 0 Analytics | 100% Local Storage\nNo background metrics are collected or transmitted to external servers. All media data stays strictly on your device."));
 
         layout.addView(aboutCard);
@@ -816,8 +876,23 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
     private long getFolderSizeMB(File dir) {
         if (dir == null || !dir.exists()) return 0;
-        long bytes = dir.length();
+        long bytes = calculateDirSize(dir);
         return bytes / (1024 * 1024);
+    }
+
+    private long calculateDirSize(File dir) {
+        long size = 0;
+        if (dir.isFile()) return dir.length();
+        File[] files = dir.listFiles();
+        if (files == null) return 0;
+        for (File f : files) {
+            if (f.isFile()) {
+                size += f.length();
+            } else if (f.isDirectory()) {
+                size += calculateDirSize(f);
+            }
+        }
+        return size;
     }
 
     // ── State Rendering Logic (NO EMOJIS) ──────────────────────────────────────
@@ -852,6 +927,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                     color = Color.parseColor("#FFB74D");
                     statusText = "SERVER STOPPING";
                     break;
+                case UNINITIALIZED:
                 case STOPPED:
                     color = Color.parseColor("#9AA0A6");
                     statusText = "SERVER STOPPED";

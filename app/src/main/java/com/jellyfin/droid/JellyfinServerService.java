@@ -46,23 +46,25 @@ public class JellyfinServerService extends Service implements JellyfinController
         createNotificationChannel();
         controller = JellyfinController.getInstance();
         controller.addListener(this);
-        // Start in foreground immediately with a placeholder notification
-        startForeground(NOTIFICATION_ID, buildNotification("Starting…", "Initializing Jellyfin"));
+        promoteToForeground(buildNotification("Jellyfin Server", "Starting server..."));
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null) return START_STICKY;
+        // Always promote to foreground immediately to satisfy Android 12+ 5-second startForeground rule
+        promoteToForeground(buildNotification("Jellyfin Server", "Starting server..."));
 
-        String action = intent.getAction();
-        if (ACTION_START.equals(action)) {
-            Log.i(TAG, "Service received START");
-            controller.start(getApplicationContext());
-        } else if (ACTION_STOP.equals(action)) {
-            Log.i(TAG, "Service received STOP");
-            releaseWakeLock();
-            controller.stop();
-            stopSelf();
+        if (intent != null) {
+            String action = intent.getAction();
+            if (ACTION_START.equals(action)) {
+                Log.i(TAG, "Service received START");
+                controller.start(getApplicationContext());
+            } else if (ACTION_STOP.equals(action)) {
+                Log.i(TAG, "Service received STOP");
+                releaseWakeLock();
+                controller.stop();
+                stopSelf();
+            }
         }
 
         return START_STICKY; // Restart service if killed by the OS
@@ -82,42 +84,47 @@ public class JellyfinServerService extends Service implements JellyfinController
     // ── JellyfinController.Listener ────────────────────────────────────────────
 
     @Override
-    public void onServerChanged(JellyfinController.State state) {
-        String title = "JellfinDroid";
-        String text;
+    public void onServerChanged(final JellyfinController.State state) {
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+            String title = "Jellyfin Server";
+            String text;
 
-        switch (state) {
-            case RUNNING:
-                acquireWakeLock();
-                String lan = getLanAddress();
-                text = "Jellyfin Server is running" + (lan != null ? " (" + lan + ")" : " (http://127.0.0.1:8096)");
-                break;
-            case STARTING:
-            case INITIALIZING:
-                title = "JellfinDroid";
-                text = "Starting Jellyfin Server";
-                break;
-            case STOPPING:
-                releaseWakeLock();
-                title = "JellfinDroid";
-                text = "Stopping Jellyfin Server";
-                break;
-            case STOPPED:
-            case CRASHED:
-            case CRASH_LOOP:
-            case FAILED:
-                releaseWakeLock();
-                stopSelf();
-                return;
-            default:
-                title = "JellfinDroid";
-                text = "Jellyfin Server: " + state.name();
-                break;
-        }
+            switch (state) {
+                case RUNNING:
+                    acquireWakeLock();
+                    String lan = getLanAddress();
+                    text = "Server is running" + (lan != null ? " (" + lan + ")" : " (http://127.0.0.1:8096)");
+                    break;
+                case STARTING:
+                case INITIALIZING:
+                    text = "Starting server...";
+                    break;
+                case STOPPING:
+                    releaseWakeLock();
+                    text = "Stopping server...";
+                    break;
+                case STOPPED:
+                case CRASHED:
+                case CRASH_LOOP:
+                case FAILED:
+                    releaseWakeLock();
+                    stopSelf();
+                    return;
+                default:
+                    text = "Server: " + state.name();
+                    break;
+            }
 
-        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (nm != null) {
-            nm.notify(NOTIFICATION_ID, buildNotification(title, text));
+            Notification notification = buildNotification(title, text);
+            promoteToForeground(notification);
+        });
+    }
+
+    private void promoteToForeground(Notification notification) {
+        try {
+            startForeground(NOTIFICATION_ID, notification);
+        } catch (Exception e) {
+            Log.e(TAG, "startForeground error: " + e.getMessage(), e);
         }
     }
 

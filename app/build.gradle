@@ -45,8 +45,8 @@ android {
         applicationId "com.jellyfin.droid"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 1003
-        versionName "0.118.0"
+        versionCode 101400
+        versionName "1.4.0"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)
@@ -54,7 +54,7 @@ android {
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
 
         manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.jellyfin.droid"
-        manifestPlaceholders.TERMUX_APP_NAME = "Termux"
+        manifestPlaceholders.TERMUX_APP_NAME = "JellyfinDroid"
         manifestPlaceholders.TERMUX_API_APP_NAME = "Termux:API"
         manifestPlaceholders.TERMUX_BOOT_APP_NAME = "Termux:Boot"
         manifestPlaceholders.TERMUX_FLOAT_APP_NAME = "Termux:Float"
@@ -90,6 +90,7 @@ android {
 
     buildTypes {
         release {
+            signingConfig signingConfigs.debug
             minifyEnabled true
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'

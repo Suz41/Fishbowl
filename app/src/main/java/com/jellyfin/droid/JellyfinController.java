@@ -44,7 +44,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class JellyfinController {
 
     private static final String TAG = "JellyfinController";
-    private static final int MAX_LOG_CHARS      = 100_000;
+    private static final int MAX_LOG_CHARS      = 30_000;
     private static final int MAX_AUTO_RESTARTS  = 3;
     private static final int HEALTH_INITIAL_DELAY_S = 2;
     private static final int HEALTH_PERIOD_S        = 3;
@@ -77,6 +77,7 @@ public class JellyfinController {
     }
 
     public interface Listener { void onServerChanged(State state); }
+    public interface LogListener { void onLogAppended(); }
 
     // ── Singleton ──────────────────────────────────────────────────────────────
     public static synchronized JellyfinController getInstance() {
@@ -96,6 +97,7 @@ public class JellyfinController {
     private ScheduledFuture<?> healthCheckFuture;
 
     private final CopyOnWriteArraySet<Listener> listeners = new CopyOnWriteArraySet<>();
+    private final CopyOnWriteArraySet<LogListener> logListeners = new CopyOnWriteArraySet<>();
     private final StringBuilder logs = new StringBuilder();
     private final SimpleDateFormat sdf =
             new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
@@ -111,7 +113,6 @@ public class JellyfinController {
     // ── Public accessors ───────────────────────────────────────────────────────
     public synchronized State getState()           { return currentState; }
     public synchronized StartupStage getStartupStage() { return currentStage; }
-    public synchronized State getStatus()          { return currentState; }
     public synchronized boolean isRunning()        { return currentState == State.RUNNING; }
     public synchronized Integer getLastExitCode()  { return lastExitCode; }
     public synchronized String  getLastError()     { return lastError; }
@@ -125,6 +126,7 @@ public class JellyfinController {
     public synchronized void clearDisplayedLogs() {
         logs.setLength(0);
         notifyListeners();
+        notifyLogListeners();
     }
 
     public void addListener(Listener l) {
@@ -132,6 +134,37 @@ public class JellyfinController {
         l.onServerChanged(getState());
     }
     public void removeListener(Listener l) { listeners.remove(l); }
+
+    public void addLogListener(LogListener l) { logListeners.add(l); }
+    public void removeLogListener(LogListener l) { logListeners.remove(l); }
+
+    /**
+     * §18.5: Immediate server state hydration / reconciliation.
+     * Synchronizes internal controller state with actual background process & HTTP endpoint status.
+     * Runs asynchronously on command executor to avoid UI thread blocking.
+     */
+    public void reconcileStateAsync() {
+        executor.execute(() -> {
+            synchronized (JellyfinController.this) {
+                if (currentState == State.STARTING || currentState == State.INITIALIZING || currentState == State.STOPPING) {
+                    return; // Do not interfere with active transitions
+                }
+            }
+            boolean ready = isReady();
+            synchronized (JellyfinController.this) {
+                if (ready) {
+                    if (currentState != State.RUNNING) {
+                        appendLogLocked("State reconciled -> HTTP 200 JSON confirmed (SERVER RUNNING)");
+                        setStateLocked(State.RUNNING);
+                    }
+                } else {
+                    if (currentState == State.UNINITIALIZED || currentState == State.RUNNING) {
+                        setStateLocked(State.STOPPED);
+                    }
+                }
+            }
+        });
+    }
 
     // ── Persistent data directory ──────────────────────────────────────────────
 
@@ -602,7 +635,11 @@ public class JellyfinController {
         if (logs.length() > MAX_LOG_CHARS) {
             logs.delete(0, logs.length() - MAX_LOG_CHARS);
         }
-        notifyListeners();
+        notifyLogListeners();
+    }
+
+    private void notifyLogListeners() {
+        for (LogListener l : logListeners) l.onLogAppended();
     }
 
     private void setStateLocked(State state) {
@@ -629,12 +666,6 @@ public class JellyfinController {
                 break;
         }
         Log.d(TAG, "State → " + state + " (Stage: " + currentStage + ")");
-        notifyListeners();
-    }
-
-    public void setStageLocked(StartupStage stage) {
-        currentStage = stage;
-        Log.d(TAG, "Stage → " + stage);
         notifyListeners();
     }
 
