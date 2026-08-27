@@ -120,7 +120,7 @@ Once JellyfinDroid is active on your device, you can stream your movies, shows, 
 | **Kodi Integration** | Windows, Linux, LibreELEC, Raspberry Pi | Jellyfin for Kodi Addon / Direct Path |
 
 > [!TIP]
-> **Connecting Clients:** Open any Jellyfin client on the same Wi-Fi network and enter the **LAN Address** shown on your JellyfinDroid Home screen (e.g., `http://192.168.1.150:8096`).
+> **Connecting Clients:** Open any Jellyfin client on the same Wi-Fi network and enter the **LAN Address** shown on your JellyfinDroid Home screen (e.g., `http://<YOUR-DEVICE-LAN-IP>:8096` or `http://192.168.x.x:8096`).
 
 ---
 
@@ -248,7 +248,7 @@ Generated APKs will be located in `app/build/outputs/apk/release/` and `app/buil
 **A:** Ensure battery optimization is set to **"Unrestricted"** for JellyfinDroid in Android Settings (`Apps -> JellyfinDroid -> Battery -> Unrestricted`). JellyfinDroid runs an ongoing Foreground Service with WakeLock, but aggressive OEM battery managers (e.g. Xiaomi MIUI/HyperOS, Huawei EMUI, Vivo OriginOS, Samsung OneUI) may require explicit permission to run in the background.
 
 #### Q: How do I access Jellyfin from other devices on my network?
-**A:** Open the JellyfinDroid app, locate the **LAN Address** under the Network Connection card (e.g. `http://192.168.1.150:8096`), and enter that URL into any browser or Jellyfin app on any device connected to the same Wi-Fi network.
+**A:** Open the JellyfinDroid app, locate the **LAN Address** under the Network Connection card (e.g. `http://<YOUR-DEVICE-LAN-IP>:8096` or `http://192.168.1.xxx:8096`), and enter that URL into any browser or Jellyfin app on any device connected to the same Wi-Fi network.
 
 #### Q: How do I update JellyfinDroid without losing my libraries or watch history?
 **A:** Simply install the updated APK over the existing installation. All database records, user accounts, and library configurations reside in `--datadir` (`~/.local/share/jellyfin`) which is preserved across APK updates.
