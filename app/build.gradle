@@ -54,7 +54,7 @@ android {
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
 
         manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.jellyfin.droid"
-        manifestPlaceholders.TERMUX_APP_NAME = "JellyfinDroid"
+        manifestPlaceholders.TERMUX_APP_NAME = "Fulmar"
         manifestPlaceholders.TERMUX_API_APP_NAME = "Termux:API"
         manifestPlaceholders.TERMUX_BOOT_APP_NAME = "Termux:Boot"
         manifestPlaceholders.TERMUX_FLOAT_APP_NAME = "Termux:Float"
@@ -135,10 +135,10 @@ android {
         variant.outputs.all { output ->
             if (variant.buildType.name == "debug") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("JellyfinDroid-v" + versionName + "-debug" + (abi ? "-" + abi : "-universal") + ".apk")
+                outputFileName = new File("Fulmar-v" + versionName + "-debug" + (abi ? "-" + abi : "-universal") + ".apk")
             } else if (variant.buildType.name == "release") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("JellyfinDroid-v" + versionName + "-release" + (abi ? "-" + abi : "-universal") + ".apk")
+                outputFileName = new File("Fulmar-v" + versionName + "-release" + (abi ? "-" + abi : "-universal") + ".apk")
             }
         }
     }
