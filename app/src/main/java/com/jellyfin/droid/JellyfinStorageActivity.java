@@ -213,7 +213,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         Set<String> set = new HashSet<>(prefs.getStringSet("folders", new HashSet<>()));
         set.add(folderUri);
         prefs.edit().putStringSet("folders", set).apply();
-        Toast.makeText(this, "Folder added to Fulmar storage bridge", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Folder added to Fishbowl storage bridge", Toast.LENGTH_SHORT).show();
         updateUI();
     }
 
