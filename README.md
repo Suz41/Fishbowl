@@ -204,11 +204,11 @@ All Jellyfin server configuration, database, and cache files are stored within t
 
 | Directory Type | Absolute Android Path | Purpose |
 | :--- | :--- | :--- |
-| **System Prefix** | `/data/data/com.jellyfin.droid/files/usr` | Native binaries, Dotnet assemblies, FFmpeg executables, and shared C/C++ libraries. |
-| **Persistent Data (`--datadir`)** | `/data/data/com.jellyfin.droid/files/home/.local/share/jellyfin` | Jellyfin SQLite database (`jellyfin.db`), user accounts, library definitions, and metadata. **Survives all updates.** |
-| **Configuration (`--configdir`)** | `/data/data/com.jellyfin.droid/files/home/.config/jellyfin` | Server XML configuration (`system.xml`, `network.xml`, `encoding.xml`). |
-| **Cache (`--cachedir`)** | `/data/data/com.jellyfin.droid/files/home/.cache/jellyfin` | Image thumbnail caches, transcoded media chunks, and temporary streaming buffers. |
-| **Logs (`--logdir`)** | `/data/data/com.jellyfin.droid/files/home/.local/share/jellyfin/log` | On-disk server execution logs. |
+| **System Prefix** | `/data/data/com.fishbowl.app/files/usr` | Native binaries, Dotnet assemblies, FFmpeg executables, and shared C/C++ libraries. |
+| **Persistent Data (`--datadir`)** | `/data/data/com.fishbowl.app/files/home/.local/share/jellyfin` | Jellyfin SQLite database (`jellyfin.db`), user accounts, library definitions, and metadata. **Survives all updates.** |
+| **Configuration (`--configdir`)** | `/data/data/com.fishbowl.app/files/home/.config/jellyfin` | Server XML configuration (`system.xml`, `network.xml`, `encoding.xml`). |
+| **Cache (`--cachedir`)** | `/data/data/com.fishbowl.app/files/home/.cache/jellyfin` | Image thumbnail caches, transcoded media chunks, and temporary streaming buffers. |
+| **Logs (`--logdir`)** | `/data/data/com.fishbowl.app/files/home/.local/share/jellyfin/log` | On-disk server execution logs. |
 
 ---
 
