@@ -7,7 +7,7 @@ An unofficial standalone server host/launcher for Jellyfin on Android (ARM64).
 [![Runtime](https://img.shields.io/badge/.NET-9.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
 [![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
 [![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE.md)
-[![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg)](#-permissions--privacy)
+[![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg)](#permissions--privacy)
 
 Fishbowl is a native Android application that hosts and runs the full **Jellyfin Media Server (v10.11.11)** directly on your Android device (**ARM64**). 
 
@@ -17,25 +17,25 @@ It transforms any Android phone, tablet, or TV box into a standalone, energy-eff
 
 ## 📑 Table of Contents
 
-- [AI/LLM Usage Disclosure](#-aillm-usage-disclosure)
-- [Overview & Architecture](#-overview--architecture)
-- [Key Features & Highlights](#-key-features--highlights)
-- [System Architecture](#-system-architecture)
-- [Client Ecosystem & Compatibility](#-client-ecosystem--compatibility)
-- [Step-by-Step Installation & Setup](#-step-by-step-installation--setup)
-- [Storage Access Framework (SAF) Bridge](#-storage-access-framework-saf-bridge)
-- [Dynamic Metadata DNS Pipeline](#-dynamic-metadata-dns-pipeline)
-- [Memory-Safe Logging Engine](#-memory-safe-logging-engine)
-- [Permissions & Privacy](#-permissions--privacy)
-- [Directory Hierarchy & Persistence](#-directory-hierarchy--persistence)
-- [Building From Source](#-building-from-source)
-- [Troubleshooting & FAQ](#-troubleshooting--faq)
-- [License & Acknowledgments](#-license--acknowledgments)
+- [AI/LLM Usage Disclosure](#aillm-usage-disclosure)
+- [Key Features & Highlights](#key-features--highlights)
+- [System Architecture](#system-architecture)
+- [Client Ecosystem & Compatibility](#client-ecosystem--compatibility)
+- [Step-by-Step Installation & Setup](#step-by-step-installation--setup)
+- [Storage Access Framework (SAF) Bridge](#storage-access-framework-saf-bridge)
+- [Dynamic Metadata DNS Pipeline](#dynamic-metadata-dns-pipeline)
+- [Memory-Safe Logging Engine](#memory-safe-logging-engine)
+- [Permissions & Privacy](#permissions--privacy)
+- [Directory Hierarchy & Persistence](#directory-hierarchy--persistence)
+- [Building From Source](#building-from-source)
+- [Troubleshooting & FAQ](#troubleshooting--faq)
+- [License & Acknowledgments](#license--acknowledgments)
 
 ## 🤖 AI/LLM Usage Disclosure
 
 In compliance with open-source community standards and the Jellyfin project's AI/LLM policies, we disclose that:
-* **Development Assistance:** This repository's Java wrappers, UI layouts, shell structures, and build configuration files were developed with the assistance of agentic AI coding tools (specifically Google Antigravity / Gemini models).
+* **Vibe Coding:** This project was built utilizing a "vibe coding" methodology—relying on conversational programming, interactive agent instruction, and iterative design loops to rapidly prototype and assemble the application.
+* **Development Assistance:** The Java wrappers, UI layouts, shell structures, and build configuration files were generated with the assistance of agentic AI coding tools (specifically Google Antigravity / Gemini models).
 * **Review & Verification:** All generated code has been manually audited, integrated, refactored, and empirically tested on physical hardware (ARM64 Android devices) to ensure reliability, security, and performance. No code is shipped without manual verification.
 * **Documentation & Assets:** README documentation, architectural diagrams, and project metadata templates were refined or generated with the aid of LLM tools.
 
