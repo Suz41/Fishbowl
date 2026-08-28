@@ -23,6 +23,8 @@ It transforms any Android phone, tablet, or TV box into a standalone, energy-eff
 - [Client Ecosystem & Compatibility](#client-ecosystem--compatibility)
 - [Step-by-Step Installation & Setup](#step-by-step-installation--setup)
 - [Storage Access Framework (SAF) Bridge](#storage-access-framework-saf-bridge)
+- [Dynamic Metadata DNS Pipeline](#dynamic-metadata-dns-pipeline)
+- [Memory-Safe Logging Engine](#memory-safe-logging-engine)
 - [Permissions & Privacy](#permissions--privacy)
 - [Directory Hierarchy & Persistence](#directory-hierarchy--persistence)
 - [Building From Source](#building-from-source)
@@ -148,6 +150,31 @@ Android 11+ enforces Scoped Storage boundaries. Fishbowl includes a built-in Sto
 2. Tap **Manage Media Storage (SAF)**.
 3. Tap **Add Media Folder** and select any directory on internal storage, microSD card, or OTG USB storage using Android's system document picker.
 4. Fishbowl preserves persistent URI permissions across device reboots and surfaces folder size calculations dynamically.
+
+---
+
+## 🌐 Dynamic Metadata DNS Pipeline
+
+Fishbowl uses dynamic multi-provider DNS resolution to ensure movie and TV show identification, metadata retrieval, and artwork fetching operate smoothly:
+
+- **DNS Resolvers:** Embedded POSIX environment dynamically resolves DNS via Google DNS (`8.8.8.8`) and Cloudflare DNS (`1.1.1.1`).
+- **Metadata Endpoints:** Seamlessly fetches data and posters from:
+  - The Movie Database (TMDb): `api.themoviedb.org`, `image.tmdb.org`
+  - The Open Movie Database (OMDb)
+  - Internet Movie Database (IMDb) metadata scrapers
+  - OpenSubtitles & MusicBrainz
+- **SSL / TLS Trust Store:** Built-in Mozilla CA Certificate bundle (`cacert.pem`) ensures secure HTTPS communication with all upstream providers.
+
+---
+
+## 📊 Memory-Safe Logging Engine
+
+Fishbowl features a hardened logging subsystem designed to prevent UI freezes during heavy transcoding or library imports:
+
+- **Decoupled Observers (`LogListener`):** Log stream updates are completely separated from Activity state rendering.
+- **500ms Handler Throttling:** Incoming log lines from stdout/stderr are batched and posted to the UI looper at most 2 times per second.
+- **30KB Bounded Ring Buffer:** Memory consumption is strictly capped at ~500 lines, automatically discarding stale log lines without triggering garbage collection spikes.
+- **Smart Viewport Auto-Scrolling:** Auto-scroll engages *only* when the user is already at the bottom of the log view, allowing you to scroll up and inspect past events without viewport jumping.
 
 ---
 
