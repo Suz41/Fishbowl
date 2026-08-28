@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug to help us improve JellyfinDroid
+about: Report a bug to help us improve Fishbowl
 title: "[BUG] "
 labels: bug
 assignees: ''

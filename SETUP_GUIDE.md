@@ -1,6 +1,6 @@
-# JellyfinDroid Setup Guide
+# Fishbowl Setup Guide
 
-Complete guide to installing and running JellyfinDroid on your Android ARM64 device.
+Complete guide to installing and running Fishbowl on your Android ARM64 device.
 
 ## 📋 Requirements
 
@@ -19,8 +19,8 @@ Complete guide to installing and running JellyfinDroid on your Android ARM64 dev
 ## 🚀 Installation Steps
 
 ### Step 1: Download the App
-1. Go to [JellyfinDroid Releases](https://github.com/Suz41/JellyfinDroid/releases)
-2. Download the latest `JellyfinDroid-v*-release-universal.apk`
+1. Go to [Fishbowl Releases](https://github.com/Suz41/Fishbowl/releases)
+2. Download the latest `Fishbowl-v*-release-universal.apk`
 3. Save to your Android device
 
 ### Step 2: Install the APK
@@ -31,7 +31,7 @@ Complete guide to installing and running JellyfinDroid on your Android ARM64 dev
 5. Wait for installation to complete
 
 ### Step 3: Initial Setup
-1. Launch JellyfinDroid
+1. Launch Fishbowl
 2. Enter your Jellyfin server address:
    - **Local Network**: `http://192.168.1.XXX:8096`
    - **Remote**: `https://your-domain.com:8920`
@@ -113,7 +113,7 @@ Media/
 
 ## 📱 Background Streaming
 
-JellyfinDroid supports background streaming with Material 3 UI:
+Fishbowl supports background streaming with Material 3 UI:
 
 1. Start playback
 2. Minimize app or press home
@@ -130,7 +130,7 @@ JellyfinDroid supports background streaming with Material 3 UI:
 
 ## 🆘 Need Help?
 
-- Check existing [Issues](https://github.com/Suz41/JellyfinDroid/issues)
+- Check existing [Issues](https://github.com/Suz41/Fishbowl/issues)
 - Open a new issue with bug report
 - Review [SECURITY.md](SECURITY.md) for security concerns
 
