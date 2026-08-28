@@ -1,4 +1,4 @@
-package com.jellyfin.droid;
+package com.fishbowl.app;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
