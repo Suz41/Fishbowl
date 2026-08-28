@@ -2,7 +2,7 @@
 
 <!DOCTYPE resources [
     <!ENTITY TERMUX_PACKAGE_NAME "com.jellyfin.droid">
-    <!ENTITY TERMUX_APP_NAME "Fulmar">
+    <!ENTITY TERMUX_APP_NAME "Fishbowl">
     <!ENTITY TERMUX_API_APP_NAME "Termux:API">
     <!ENTITY TERMUX_BOOT_APP_NAME "Termux:Boot">
     <!ENTITY TERMUX_FLOAT_APP_NAME "Termux:Float">
@@ -14,8 +14,8 @@
 <resources>
 
     <string name="application_name">&TERMUX_APP_NAME;</string>
-    <string name="jellyfindroid_name">Fulmar</string>
-    <string name="shared_user_label">Fulmar user</string>
+    <string name="jellyfindroid_name">Fishbowl</string>
+    <string name="shared_user_label">Fishbowl user</string>
     <string name="permission_run_command_label">Run commands in &TERMUX_APP_NAME; environment</string>
     <string name="permission_run_command_description">execute arbitrary commands within &TERMUX_APP_NAME;
         environment and access files</string>

@@ -1,6 +1,6 @@
 # Security Policy
 
-We take the security of **Fulmar** seriously. This document outlines our security policies, supported versions, and how to report vulnerabilities.
+We take the security of **Fishbowl** seriously. This document outlines our security policies, supported versions, and how to report vulnerabilities.
 
 ## Supported Versions
 
@@ -13,7 +13,7 @@ Security updates are actively applied to the following versions:
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Fulmar, please do **not** open a public issue. Instead, report it privately to ensure we can publish a fix before public disclosure:
+If you discover a security vulnerability in Fishbowl, please do **not** open a public issue. Instead, report it privately to ensure we can publish a fix before public disclosure:
 
 1. Send an email detailing the vulnerability to: **146562842+Suz41@users.noreply.github.com**
 2. Include step-by-step instructions, a proof-of-concept (PoC), and the target Android OS/SDK version.
@@ -22,7 +22,7 @@ We aim to acknowledge your report within 48 hours and coordinate a fix release w
 
 ## Security Architecture & Invariants
 
-Fulmar adheres to strict local-only execution and sandboxing models:
+Fishbowl adheres to strict local-only execution and sandboxing models:
 - **No Telemetry / Analytics:** 0 tracking, 0 metrics reporting, 0 telemetry sockets.
 - **Scoped Storage Protection:** Leverages the Android Storage Access Framework (SAF) to restrict file access strictly to user-selected media directories.
 - **Process Isolation:** The native .NET server runs entirely in the application's isolated runtime sandbox.

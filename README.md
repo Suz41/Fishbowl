@@ -1,15 +1,15 @@
-# Fulmar
+# Fishbowl
 
 An unofficial standalone server host/launcher for Jellyfin on Android (ARM64).
 
-[![Release](https://img.shields.io/badge/Release-v1.4.0-blue.svg)](https://github.com/Suz41/Fulmar/releases/tag/v1.4.0)
+[![Release](https://img.shields.io/badge/Release-v1.4.0-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.0)
 [![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-10.11.11-purple.svg)](https://jellyfin.org)
 [![Runtime](https://img.shields.io/badge/.NET-9.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
 [![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
 [![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE.md)
 [![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg)](#-permissions--privacy)
 
-Fulmar is a native Android application that hosts and runs the full **Jellyfin Media Server (v10.11.11)** directly on your Android device (**ARM64**). 
+Fishbowl is a native Android application that hosts and runs the full **Jellyfin Media Server (v10.11.11)** directly on your Android device (**ARM64**). 
 
 It transforms any Android phone, tablet, or TV box into a standalone, energy-efficient home media streaming server without requiring root access, Docker, or external PC hardware.
 
@@ -75,7 +75,7 @@ In compliance with open-source community standards and the Jellyfin project's AI
 |                           Android User Space                            |
 |                                                                         |
 |  +-------------------------------------------------------------------+  |
-|  |                     Fulmar UI Shell                           |  |
+|  |                     Fishbowl UI Shell                           |  |
 |  |   JellyfinDroidActivity (3-Tab Pixel UI / Home / Logs / Settings)  |  |
 |  |   JellyfinWebActivity   (Hardware-Accelerated WebView Client)     |  |
 |  |   JellyfinStorageActivity (SAF Document Tree File Bridge)         |  |
@@ -103,7 +103,7 @@ In compliance with open-source community standards and the Jellyfin project's AI
 
 ## 📺 Client Ecosystem & Compatibility
 
-Once Fulmar is active on your device, you can stream your movies, shows, and music to any official Jellyfin client across your local home network:
+Once Fishbowl is active on your device, you can stream your movies, shows, and music to any official Jellyfin client across your local home network:
 
 | Client App | Supported Platforms | Features & Direct Stream |
 | :--- | :--- | :--- |
@@ -116,19 +116,19 @@ Once Fulmar is active on your device, you can stream your movies, shows, and mus
 | **Kodi Integration** | Windows, Linux, LibreELEC, Raspberry Pi | Jellyfin for Kodi Addon / Direct Path |
 
 > [!TIP]
-> **Connecting Clients:** Open any Jellyfin client on the same Wi-Fi network and enter the **LAN Address** shown on your Fulmar Home screen (e.g., `http://<YOUR-DEVICE-LAN-IP>:8096` or `http://192.168.x.x:8096`).
+> **Connecting Clients:** Open any Jellyfin client on the same Wi-Fi network and enter the **LAN Address** shown on your Fishbowl Home screen (e.g., `http://<YOUR-DEVICE-LAN-IP>:8096` or `http://192.168.x.x:8096`).
 
 ---
 
 ## 🚀 Step-by-Step Installation & Setup
 
 ### 1. Download & Install
-1. Download the latest **`Fulmar-v1.4.0-release-universal.apk`** from [GitHub Releases](https://github.com/Suz41/Fulmar/releases/tag/v1.4.0).
+1. Download the latest **`Fishbowl-v1.4.0-release-universal.apk`** from [GitHub Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.0).
 2. Install the APK on your ARM64 Android device.
 3. Grant **Notification** and **Storage** permissions when prompted.
 
 ### 2. Starting the Server
-1. Launch **Fulmar**.
+1. Launch **Fishbowl**.
 2. Tap the **START SERVER** button.
 3. The authentic stage pipeline will verify runtime environment, start the Dotnet process, and poll HTTP readiness.
 4. Once the hero badge turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
@@ -144,18 +144,18 @@ Once Fulmar is active on your device, you can stream your movies, shows, and mus
 
 ## 📂 Storage Access Framework (SAF) Bridge
 
-Android 11+ enforces Scoped Storage boundaries. Fulmar includes a built-in Storage Access Framework (SAF) document tree bridge:
+Android 11+ enforces Scoped Storage boundaries. Fishbowl includes a built-in Storage Access Framework (SAF) document tree bridge:
 
-1. In Fulmar, navigate to the **Settings** tab.
+1. In Fishbowl, navigate to the **Settings** tab.
 2. Tap **Manage Media Storage (SAF)**.
 3. Tap **Add Media Folder** and select any directory on internal storage, microSD card, or OTG USB storage using Android's system document picker.
-4. Fulmar preserves persistent URI permissions across device reboots and surfaces folder size calculations dynamically.
+4. Fishbowl preserves persistent URI permissions across device reboots and surfaces folder size calculations dynamically.
 
 ---
 
 ## 🌐 Dynamic Metadata DNS Pipeline
 
-Fulmar uses dynamic multi-provider DNS resolution to ensure movie and TV show identification, metadata retrieval, and artwork fetching operate smoothly:
+Fishbowl uses dynamic multi-provider DNS resolution to ensure movie and TV show identification, metadata retrieval, and artwork fetching operate smoothly:
 
 - **DNS Resolvers:** Embedded POSIX environment dynamically resolves DNS via Google DNS (`8.8.8.8`) and Cloudflare DNS (`1.1.1.1`).
 - **Metadata Endpoints:** Seamlessly fetches data and posters from:
@@ -169,7 +169,7 @@ Fulmar uses dynamic multi-provider DNS resolution to ensure movie and TV show id
 
 ## 📊 Memory-Safe Logging Engine
 
-Fulmar features a hardened logging subsystem designed to prevent UI freezes during heavy transcoding or library imports:
+Fishbowl features a hardened logging subsystem designed to prevent UI freezes during heavy transcoding or library imports:
 
 - **Decoupled Observers (`LogListener`):** Log stream updates are completely separated from Activity state rendering.
 - **500ms Handler Throttling:** Incoming log lines from stdout/stderr are batched and posted to the UI looper at most 2 times per second.
@@ -180,7 +180,7 @@ Fulmar features a hardened logging subsystem designed to prevent UI freezes duri
 
 ## 🔒 Permissions & Privacy
 
-Fulmar operates strictly within standard Android OS application sandboxing rules:
+Fishbowl operates strictly within standard Android OS application sandboxing rules:
 
 | Android Permission | Purpose |
 | :--- | :--- |
@@ -224,8 +224,8 @@ All Jellyfin server configuration, database, and cache files are stored within t
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Suz41/Fulmar.git
-cd Fulmar
+git clone https://github.com/Suz41/Fishbowl.git
+cd Fishbowl
 
 # 2. Build Debug ARM64 APK
 ./gradlew assembleDebug
@@ -241,19 +241,19 @@ Generated APKs will be located in `app/build/outputs/apk/release/` and `app/buil
 ## ❓ Troubleshooting & FAQ
 
 #### Q: Server stops when I lock my phone or switch apps?
-**A:** Ensure battery optimization is set to **"Unrestricted"** for Fulmar in Android Settings (`Apps -> Fulmar -> Battery -> Unrestricted`). Fulmar runs an ongoing Foreground Service with WakeLock, but aggressive OEM battery managers (e.g. Xiaomi MIUI/HyperOS, Huawei EMUI, Vivo OriginOS, Samsung OneUI) may require explicit permission to run in the background.
+**A:** Ensure battery optimization is set to **"Unrestricted"** for Fishbowl in Android Settings (`Apps -> Fishbowl -> Battery -> Unrestricted`). Fishbowl runs an ongoing Foreground Service with WakeLock, but aggressive OEM battery managers (e.g. Xiaomi MIUI/HyperOS, Huawei EMUI, Vivo OriginOS, Samsung OneUI) may require explicit permission to run in the background.
 
 #### Q: How do I access Jellyfin from other devices on my network?
-**A:** Open the Fulmar app, locate the **LAN Address** under the Network Connection card (e.g. `http://<YOUR-DEVICE-LAN-IP>:8096` or `http://192.168.1.xxx:8096`), and enter that URL into any browser or Jellyfin app on any device connected to the same Wi-Fi network.
+**A:** Open the Fishbowl app, locate the **LAN Address** under the Network Connection card (e.g. `http://<YOUR-DEVICE-LAN-IP>:8096` or `http://192.168.1.xxx:8096`), and enter that URL into any browser or Jellyfin app on any device connected to the same Wi-Fi network.
 
-#### Q: How do I update Fulmar without losing my libraries or watch history?
+#### Q: How do I update Fishbowl without losing my libraries or watch history?
 **A:** Simply install the updated APK over the existing installation. All database records, user accounts, and library configurations reside in `--datadir` (`~/.local/share/jellyfin`) which is preserved across APK updates.
 
 ---
 
 ## 📄 License & Acknowledgments
 
-- **Fulmar:** Licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE.md).
+- **Fishbowl:** Licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE.md).
 - **Jellyfin Core:** [Jellyfin Project](https://jellyfin.org) (GPLv3).
 - **Packaging Foundation:** Built upon the [Termux](https://github.com/termux/termux-app) open-source container architecture.
 
