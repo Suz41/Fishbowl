@@ -128,9 +128,9 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         // The GUI owns this preference, but the existing foreground service remains the
         // lifecycle owner for the single Jellyfin process.
         if (getSharedPreferences("jellyfindroid", MODE_PRIVATE).getBoolean("auto_start", true)) {
-            com.jellyfin.droid.JellyfinController.getInstance().start(this);
+            com.fishbowl.app.JellyfinController.getInstance().start(this);
         } else {
-            new Thread(() -> com.jellyfin.droid.JellyfinBootstrapper.initializeIfNeeded(this),
+            new Thread(() -> com.fishbowl.app.JellyfinBootstrapper.initializeIfNeeded(this),
                     "JellyfinBootstrap").start();
         }
     }

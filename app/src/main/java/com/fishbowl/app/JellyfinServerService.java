@@ -1,4 +1,4 @@
-package com.jellyfin.droid;
+package com.fishbowl.app;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -30,8 +30,8 @@ import java.util.Enumeration;
 public class JellyfinServerService extends Service implements JellyfinController.Listener {
 
     private static final String TAG              = "JellyfinServerService";
-    public  static final String ACTION_START     = "com.jellyfin.droid.START";
-    public  static final String ACTION_STOP      = "com.jellyfin.droid.STOP";
+    public  static final String ACTION_START     = "com.fishbowl.app.START";
+    public  static final String ACTION_STOP      = "com.fishbowl.app.STOP";
     public  static final String CHANNEL_ID       = "jellyfin_server";
     private static final int    NOTIFICATION_ID  = 1001;
 

@@ -1,4 +1,4 @@
-package com.jellyfin.droid;
+package com.fishbowl.app;
 
 import android.annotation.SuppressLint;
 import android.content.pm.ActivityInfo;

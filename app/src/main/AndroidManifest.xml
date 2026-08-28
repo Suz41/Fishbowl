@@ -67,7 +67,7 @@
         </activity>
 
         <activity
-            android:name="com.jellyfin.droid.JellyfinDroidActivity"
+            android:name="com.fishbowl.app.JellyfinDroidActivity"
             android:exported="true"
             android:label="@string/jellyfindroid_name"
             android:launchMode="singleTop"
@@ -81,10 +81,10 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name="com.jellyfin.droid.JellyfinLogsActivity" android:exported="false" android:label="Jellyfin logs" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
-        <activity android:name="com.jellyfin.droid.JellyfinSettingsActivity" android:exported="false" android:label="Settings" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
-        <activity android:name="com.jellyfin.droid.JellyfinStorageActivity" android:exported="false" android:label="Media Storage" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
-        <activity android:name="com.jellyfin.droid.JellyfinWebActivity" android:exported="false" android:label="Jellyfin" android:configChanges="orientation|screenSize" />
+        <activity android:name="com.fishbowl.app.JellyfinLogsActivity" android:exported="false" android:label="Jellyfin logs" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
+        <activity android:name="com.fishbowl.app.JellyfinSettingsActivity" android:exported="false" android:label="Settings" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
+        <activity android:name="com.fishbowl.app.JellyfinStorageActivity" android:exported="false" android:label="Media Storage" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
+        <activity android:name="com.fishbowl.app.JellyfinWebActivity" android:exported="false" android:label="Jellyfin" android:configChanges="orientation|screenSize" />
 
         <activity-alias
             android:name=".HomeActivity"
@@ -202,7 +202,7 @@
 
         <!-- Phase 9: Auto-start on reboot -->
         <receiver
-            android:name="com.jellyfin.droid.JellyfinBootReceiver"
+            android:name="com.fishbowl.app.JellyfinBootReceiver"
             android:exported="false"
             android:enabled="true">
             <intent-filter>
@@ -231,7 +231,7 @@
 
         <!-- Phase 9: Foreground service for background reliability and notification -->
         <service
-            android:name="com.jellyfin.droid.JellyfinServerService"
+            android:name="com.fishbowl.app.JellyfinServerService"
             android:exported="false" />
 
 
