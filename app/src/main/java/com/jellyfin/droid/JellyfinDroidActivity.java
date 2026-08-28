@@ -256,7 +256,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         // Exact App Branding Name
         TextView title = new TextView(this);
-        title.setText("Fulmar");
+        title.setText("Fishbowl");
         title.setTextSize(19);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         title.setTextColor(getPrimaryTextColor());
@@ -823,7 +823,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         aboutCard.addView(buildTransparencyItem("Fontconfig & FreeType Engines", "libfontconfig.so / libfreetype.so\nNative C libraries used by FFmpeg for video subtitle burn-in and text rendering."));
         aboutCard.addView(buildTransparencyItem("SQLite3 Database Driver", "libe_sqlite3.so\nEmbedded lightweight relational database engine storing user library indexes, metadata, and watch progress locally."));
         aboutCard.addView(buildTransparencyItem("Minimal Linux Subsystem", "APT Package Manager & Android Bionic C Library (libc)\nMinimal Android-native POSIX execution container hosting Dotnet processes without background telemetry or tracker scripts."));
-        aboutCard.addView(buildTransparencyItem("Application Package & Scope", "com.jellyfin.droid (Fulmar v1.4.0)\nIsolated Android package namespace. Runs strictly under Android OS user sandboxing rules."));
+        aboutCard.addView(buildTransparencyItem("Application Package & Scope", "com.jellyfin.droid (Fishbowl v1.4.0)\nIsolated Android package namespace. Runs strictly under Android OS user sandboxing rules."));
         aboutCard.addView(buildTransparencyItem("Privacy & Telemetry Verification", "0 Remote Trackers | 0 Analytics | 100% Local Storage\nNo background metrics are collected or transmitted to external servers. All media data stays strictly on your device."));
 
         layout.addView(aboutCard);
