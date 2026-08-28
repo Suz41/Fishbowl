@@ -18,7 +18,7 @@ If you discover a security vulnerability in Fishbowl, please do **not** open a p
 1. Send an email detailing the vulnerability to: **sujalacharii@gmail.com**
 2. Include step-by-step instructions, a proof-of-concept (PoC), and the target Android OS/SDK version.
 
-We aim to acknowledge your report within 48 hours and coordinate a fix release within 14 days.
+We aim to acknowledge your report and coordinate a fix release.
 
 ## Security Architecture & Invariants
 
