@@ -1,6 +1,6 @@
-# Contributing to JellyfinDroid
+# Contributing to Fishbowl
 
-Thank you for your interest in contributing to JellyfinDroid! We welcome contributions from developers, designers, testers, and documentation enthusiasts.
+Thank you for your interest in contributing to Fishbowl! We welcome contributions from developers, designers, testers, and documentation enthusiasts.
 
 ## Ways to Contribute
 
@@ -48,8 +48,8 @@ Want to code? Here's how:
 ### Getting Started
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR-USERNAME/JellyfinDroid.git
-cd JellyfinDroid
+git clone https://github.com/YOUR-USERNAME/Fishbowl.git
+cd Fishbowl
 
 # Create a feature branch
 git checkout -b feature/your-feature

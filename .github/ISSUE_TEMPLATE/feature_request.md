@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest an idea for JellyfinDroid
+about: Suggest an idea for Fishbowl
 title: "[FEATURE] "
 labels: enhancement
 assignees: ''
