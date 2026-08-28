@@ -1,4 +1,4 @@
-The `JellyfinDroid` repository is released under the [GPLv3 only](https://www.gnu.org/licenses/gpl-3.0.html) license.
+The `Fulmar` repository is released under the [GPLv3 only](https://www.gnu.org/licenses/gpl-3.0.html) license.
 
 ### Exceptions
 
