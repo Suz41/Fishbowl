@@ -38,6 +38,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".app.TermuxApplication"
@@ -186,6 +187,16 @@
             android:exported="true"
             android:grantUriPermissions="true"
             android:permission="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${TERMUX_PACKAGE_NAME}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
 
         <receiver

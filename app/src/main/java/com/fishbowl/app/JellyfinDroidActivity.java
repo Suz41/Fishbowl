@@ -96,6 +96,8 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private TextView logsOutputText;
     private ScrollView logsScrollView;
     private TextView storageInfoText;
+    private TextView updateStatusText;
+    private Button updateActionBtn;
 
     // Throttled Log Handler (§4 UI Thread Protection)
     private final android.os.Handler logUpdateHandler = new android.os.Handler(android.os.Looper.getMainLooper());
@@ -133,8 +135,11 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         if (activeTab == 1) {
             controller.addLogListener(this);
         }
+        UpdateManager.getInstance(this).addListener(updateListener);
+        UpdateManager.getInstance(this).checkForUpdates(this, false);
         refreshLanAddress();
         renderCurrentState();
+        refreshUpdateUI();
     }
 
     @Override
@@ -143,12 +148,14 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         if (controller != null) {
             controller.reconcileStateAsync();
         }
+        refreshUpdateUI();
     }
 
     @Override
     protected void onStop() {
         controller.removeListener(this);
         controller.removeLogListener(this);
+        UpdateManager.getInstance(this).removeListener(updateListener);
         logUpdateHandler.removeCallbacksAndMessages(null);
         logUpdatePending = false;
         super.onStop();
@@ -793,6 +800,33 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         layout.addView(storageCard);
 
+        // Updates Card
+        LinearLayout updatesCard = new LinearLayout(this);
+        updatesCard.setOrientation(LinearLayout.VERTICAL);
+        updatesCard.setPadding(dp(18), dp(18), dp(18), dp(18));
+        updatesCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
+        LinearLayout.LayoutParams pUpdates = new LinearLayout.LayoutParams(-1, -2);
+        pUpdates.topMargin = dp(14);
+        updatesCard.setLayoutParams(pUpdates);
+
+        TextView tUpdatesTitle = new TextView(this);
+        tUpdatesTitle.setText("Updates");
+        tUpdatesTitle.setTextSize(17);
+        tUpdatesTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        tUpdatesTitle.setTextColor(getPrimaryTextColor());
+        updatesCard.addView(tUpdatesTitle);
+
+        updateStatusText = new TextView(this);
+        updateStatusText.setTextSize(13);
+        updateStatusText.setTextColor(getSecondaryTextColor());
+        updateStatusText.setPadding(0, dp(8), 0, dp(12));
+        updatesCard.addView(updateStatusText);
+
+        updateActionBtn = createPixelButton("Check for updates", getAccentColor(), Color.WHITE);
+        updatesCard.addView(updateActionBtn);
+
+        layout.addView(updatesCard);
+
         // Installed Packages & System Security Transparency Card
         LinearLayout aboutCard = new LinearLayout(this);
         aboutCard.setOrientation(LinearLayout.VERTICAL);
@@ -1139,5 +1173,117 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density);
+    }
+
+    private final UpdateManager.UpdateListener updateListener = new UpdateManager.UpdateListener() {
+        @Override
+        public void onUpdateStateChanged(UpdateManager.State state) {
+            refreshUpdateUI();
+        }
+
+        @Override
+        public void onDownloadProgress(long bytesDownloaded, long totalBytes) {
+            refreshUpdateProgress(bytesDownloaded, totalBytes);
+        }
+    };
+
+    private void refreshUpdateUI() {
+        if (updateStatusText == null || updateActionBtn == null) return;
+        UpdateManager manager = UpdateManager.getInstance(this);
+        UpdateManager.State state = manager.getCurrentState();
+
+        int currentCode = manager.getCurrentVersionCode(this);
+        String currentName = manager.getCurrentVersionName(this);
+
+        String verInfo = "Current version: " + currentName + " (" + currentCode + ")\n";
+
+        switch (state) {
+            case IDLE:
+                updateStatusText.setText(verInfo + "Status: Ready to check");
+                updateActionBtn.setText("Check for updates");
+                updateActionBtn.setVisibility(View.VISIBLE);
+                updateActionBtn.setOnClickListener(v -> manager.checkForUpdates(this, true));
+                break;
+            case CHECKING:
+                updateStatusText.setText(verInfo + "Checking for updates...");
+                updateActionBtn.setVisibility(View.GONE);
+                break;
+            case UP_TO_DATE:
+                updateStatusText.setText(verInfo + "Fishbowl is up to date.");
+                updateActionBtn.setText("Check for updates");
+                updateActionBtn.setVisibility(View.VISIBLE);
+                updateActionBtn.setOnClickListener(v -> manager.checkForUpdates(this, true));
+                break;
+            case UPDATE_AVAILABLE:
+                updateStatusText.setText(verInfo + "Fishbowl " + manager.getLatestVersionName() + " is available.\n\nWhat's new:\n" + manager.getLatestReleaseNotes());
+                updateActionBtn.setText("Download update");
+                updateActionBtn.setVisibility(View.VISIBLE);
+                updateActionBtn.setOnClickListener(v -> manager.startDownload(this));
+                break;
+            case DOWNLOADING:
+                updateStatusText.setText(verInfo + "Downloading update...");
+                updateActionBtn.setVisibility(View.GONE);
+                break;
+            case DOWNLOAD_COMPLETE:
+                updateStatusText.setText(verInfo + "Update downloaded.");
+                updateActionBtn.setText("Verify and install");
+                updateActionBtn.setVisibility(View.VISIBLE);
+                updateActionBtn.setOnClickListener(v -> manager.installUpdate(this));
+                break;
+            case VERIFYING:
+                updateStatusText.setText(verInfo + "Verifying update...");
+                updateActionBtn.setVisibility(View.GONE);
+                break;
+            case VERIFICATION_SUCCESSFUL:
+                updateStatusText.setText(verInfo + "Update verified.");
+                updateActionBtn.setText("Install update");
+                updateActionBtn.setVisibility(View.VISIBLE);
+                updateActionBtn.setOnClickListener(v -> manager.installUpdate(this));
+                break;
+            case VERIFICATION_FAILED:
+                updateStatusText.setText(verInfo + "Update verification failed.");
+                updateActionBtn.setText("Retry download");
+                updateActionBtn.setVisibility(View.VISIBLE);
+                updateActionBtn.setOnClickListener(v -> manager.startDownload(this));
+                break;
+            case PERMISSION_REQUIRED:
+                updateStatusText.setText(verInfo + "Installation permission is required.");
+                updateActionBtn.setText("Open settings");
+                updateActionBtn.setVisibility(View.VISIBLE);
+                updateActionBtn.setOnClickListener(v -> manager.openInstallPermissionSettings(this));
+                break;
+            case DOWNLOAD_FAILED:
+                updateStatusText.setText(verInfo + "Update download failed.");
+                updateActionBtn.setText("Retry download");
+                updateActionBtn.setVisibility(View.VISIBLE);
+                updateActionBtn.setOnClickListener(v -> manager.startDownload(this));
+                break;
+            case NETWORK_UNAVAILABLE:
+                updateStatusText.setText(verInfo + "Unable to check for updates.");
+                updateActionBtn.setText("Check for updates");
+                updateActionBtn.setVisibility(View.VISIBLE);
+                updateActionBtn.setOnClickListener(v -> manager.checkForUpdates(this, true));
+                break;
+            case RELEASE_UNAVAILABLE:
+                updateStatusText.setText(verInfo + "Update information is currently unavailable.");
+                updateActionBtn.setText("Check for updates");
+                updateActionBtn.setVisibility(View.VISIBLE);
+                updateActionBtn.setOnClickListener(v -> manager.checkForUpdates(this, true));
+                break;
+        }
+    }
+
+    private void refreshUpdateProgress(long downloaded, long total) {
+        if (updateStatusText == null) return;
+        UpdateManager manager = UpdateManager.getInstance(this);
+        String currentName = manager.getCurrentVersionName(this);
+        int currentCode = manager.getCurrentVersionCode(this);
+        String verInfo = "Current version: " + currentName + " (" + currentCode + ")\n";
+
+        long downloadedMb = downloaded / (1024 * 1024);
+        long totalMb = total / (1024 * 1024);
+        int percent = total > 0 ? (int) ((downloaded * 100) / total) : 0;
+
+        updateStatusText.setText(verInfo + "Downloading update...\nFishbowl " + manager.getLatestVersionName() + "\n" + percent + "%\nDownloaded: " + downloadedMb + " MB / " + totalMb + " MB");
     }
 }
