@@ -176,7 +176,7 @@ public class JellyfinServerService extends Service implements JellyfinController
                 .setContentIntent(openPi)
                 .setOngoing(true)
                 .addAction(R.drawable.ic_dns, "STOP SERVER", stopPi)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .build();
     }
 
@@ -185,7 +185,7 @@ public class JellyfinServerService extends Service implements JellyfinController
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
                     "Jellyfin Server",
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_DEFAULT
             );
             channel.setDescription("JellyfinDroid server status");
             channel.setShowBadge(false);

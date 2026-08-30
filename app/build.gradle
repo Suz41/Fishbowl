@@ -45,8 +45,8 @@ android {
         applicationId "com.fishbowl.app"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 101400
-        versionName "1.4.0"
+        versionCode 101401
+        versionName "1.4.1"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)
