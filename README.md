@@ -2,7 +2,7 @@
 
 An unofficial standalone server host/launcher for Jellyfin on Android (ARM64).
 
-[![Release](https://img.shields.io/badge/Release-v1.4.0-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.0)
+[![Release](https://img.shields.io/badge/Release-v1.4.2-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.2)
 [![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-10.11.11-purple.svg)](https://jellyfin.org)
 [![Runtime](https://img.shields.io/badge/.NET-9.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
 [![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
@@ -123,7 +123,7 @@ Once Fishbowl is active on your device, you can stream your movies, shows, and m
 ## 🚀 Step-by-Step Installation & Setup
 
 ### 1. Download & Install
-1. Download the latest **`Fishbowl-v1.4.0-release-universal.apk`** from [GitHub Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.0).
+1. Download the latest **`Fishbowl-v1.4.2-universal.apk`** from [GitHub Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.2).
 2. Install the APK on your ARM64 Android device.
 3. Grant **Notification** and **Storage** permissions when prompted.
 
