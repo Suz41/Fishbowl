@@ -630,6 +630,7 @@ public class JellyfinController {
     // ── Logging (§9) ───────────────────────────────────────────────────────────
 
     private void appendLogLocked(String message) {
+        Log.i(TAG, message);
         String ts = sdf.format(new Date());
         logs.append(ts).append("  ").append(message).append('\n');
         if (logs.length() > MAX_LOG_CHARS) {
@@ -665,7 +666,7 @@ public class JellyfinController {
                 currentStage = StartupStage.NONE;
                 break;
         }
-        Log.d(TAG, "State → " + state + " (Stage: " + currentStage + ")");
+        Log.i(TAG, "State → " + state + " (Stage: " + currentStage + ")");
         notifyListeners();
     }
 

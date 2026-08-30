@@ -287,12 +287,13 @@ public final class UpdateManager {
 
     private int parseVersionCodeFromTag(String tagName) {
         try {
-            String digits = tagName.replaceAll("[^0-9]", "");
-            if (digits.length() >= 3) {
-                int major = Character.getNumericValue(digits.charAt(0));
-                int minor = Character.getNumericValue(digits.charAt(1));
-                int patch = Character.getNumericValue(digits.charAt(2));
-                return 100000 + (major * 10000) + (minor * 100) + patch;
+            String cleanTag = tagName.replaceAll("[^0-9.]", "");
+            String[] parts = cleanTag.split("\\.");
+            if (parts.length >= 3) {
+                int major = Integer.parseInt(parts[0]);
+                int minor = Integer.parseInt(parts[1]);
+                int patch = Integer.parseInt(parts[2]);
+                return 100000 + (major * 1000) + (minor * 100) + patch;
             }
         } catch (Exception ignored) {}
         return -1;

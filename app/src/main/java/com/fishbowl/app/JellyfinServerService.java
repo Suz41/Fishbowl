@@ -37,6 +37,7 @@ public class JellyfinServerService extends Service implements JellyfinController
 
     private JellyfinController controller;
     private PowerManager.WakeLock wakeLock;
+    private boolean hasStarted = false;
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -91,12 +92,14 @@ public class JellyfinServerService extends Service implements JellyfinController
 
             switch (state) {
                 case RUNNING:
+                    hasStarted = true;
                     acquireWakeLock();
                     String lan = getLanAddress();
                     text = "Server is running" + (lan != null ? " (" + lan + ")" : " (http://127.0.0.1:8096)");
                     break;
                 case STARTING:
                 case INITIALIZING:
+                    hasStarted = true;
                     text = "Starting server...";
                     break;
                 case STOPPING:
@@ -107,6 +110,10 @@ public class JellyfinServerService extends Service implements JellyfinController
                 case CRASHED:
                 case CRASH_LOOP:
                 case FAILED:
+                    if (!hasStarted) {
+                        Log.i(TAG, "Ignoring initial/transitional state " + state.name() + " before active start");
+                        return;
+                    }
                     releaseWakeLock();
                     stopSelf();
                     return;
