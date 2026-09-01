@@ -2,7 +2,7 @@
 
 An unofficial standalone server host/launcher for Jellyfin on Android (ARM64).
 
-[![Release](https://img.shields.io/badge/Release-v1.4.2-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.2)
+[![Release](https://img.shields.io/badge/Release-v1.4.3-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.3)
 [![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-10.11.11-purple.svg)](https://jellyfin.org)
 [![Runtime](https://img.shields.io/badge/.NET-9.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
 [![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
@@ -49,10 +49,11 @@ In compliance with open-source community standards and the Jellyfin project's AI
 - **Jellyfin-FFmpeg Transcoder:** Mobile-optimized native FFmpeg binary for on-the-fly video transcoding, audio remuxing, and HLS segmenting.
 - **SQLite3 Database Engine (`libe_sqlite3.so`):** Low-latency local database storage managing media libraries, user watch states, and item metadata.
 
-### 🎨 Material 3 Pixel UI Shell
-- **Pure Dark Mode (`#121316`):** OLED-optimized dark theme with distinct surface cards, crisp typography, and fluid Material Touch Ripples.
+### 🎨 Material 3 Pixel UI Shell & Tactile Animations
+- **Automatic Server Auto-Start:** Launches server lifecycle automatically in background on app startup without requiring manual intervention.
+- **Pure Dark Mode (`#121316`):** OLED-optimized dark theme with distinct surface cards, crisp typography, and fluid spring press animations (0.96x compression) on all buttons.
 - **Real-Time Startup Progression:** Displays authentic multi-stage initialization (`STARTING_RUNTIME` -> `LAUNCHING_SERVER` -> `WAITING_FOR_SERVER` -> `CHECKING_READINESS` -> `READY`).
-- **Dual-Band Network Hub:** Instant local loopback (`http://127.0.0.1:8096`) and local Wi-Fi LAN IP display (`http://192.168.x.x:8096`) with one-tap `COPY IP` buttons.
+- **Multi-Network Address Hub:** Instant local loopback (`http://127.0.0.1:8096`), Wi-Fi LAN IP, and dynamic Tailscale VPN CGNAT (`100.x.x.x`) IP resolution with locked display across tab switches and one-tap `COPY IP` buttons.
 - **3-Tab Navigation:**
   - **Home:** Server lifecycle dashboard, status pills, address cards, and action buttons (`OPEN JELLYFIN`, `START`, `STOP`, `RESTART`).
   - **Logs:** Memory-capped, live-streaming diagnostic console with 500ms throttled rendering and smart auto-scrolling.
@@ -60,6 +61,7 @@ In compliance with open-source community standards and the Jellyfin project's AI
 
 ### 🛡️ Background Streaming Resilience
 - **Foreground Service Supervision:** Managed by `JellyfinServerService` with an ongoing status notification (ID `1001`) preventing Android OS aggressive memory killing.
+- **Battery Optimization Safeguard:** Prompts for `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` exemption to prevent background termination on aggressive OEM devices (Vivo, Xiaomi, Samsung, Moto).
 - **Smart CPU WakeLock:** Automatically acquires a `PARTIAL_WAKE_LOCK` with an automatic safety timeout to maintain uninterrupted streaming when the screen is locked.
 - **Immediate State Hydration:** Asynchronous `reconcileStateAsync()` directly resolves running server state on app launch/resume with zero UI latency.
 
@@ -123,20 +125,19 @@ Once Fishbowl is active on your device, you can stream your movies, shows, and m
 ## 🚀 Step-by-Step Installation & Setup
 
 ### 1. Download & Install
-1. Download the latest **`Fishbowl-v1.4.2-universal.apk`** from [GitHub Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.2).
+1. Download the latest **`Fishbowl-v1.4.3-release-universal.apk`** from [GitHub Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.3).
 2. Install the APK on your ARM64 Android device.
-3. Grant **Notification** and **Storage** permissions when prompted.
+3. Grant **Notification**, **Storage**, and **Battery Optimization Exception** permissions when prompted.
 
 ### 2. Starting the Server
-1. Launch **Fishbowl**.
-2. Tap the **START SERVER** button.
-3. The authentic stage pipeline will verify runtime environment, start the Dotnet process, and poll HTTP readiness.
-4. Once the hero badge turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
+1. Launch **Fishbowl** (server auto-starts automatically on app open).
+2. The stage pipeline will verify runtime environment, start the Dotnet process, and poll HTTP readiness.
+3. Once the hero badge turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
 
 ### 3. Initial Setup Wizard
 1. Select your preferred display language.
 2. Create your admin username and password.
-3. Add your media libraries (point to `/sdcard/Movies`, `/sdcard/Music`, or your SAF storage bridge path).
+3. Add your media libraries (point to `/storage/emulated/0/Movies`, `/storage/emulated/0/Music`, or your SAF storage bridge path).
 4. Configure your preferred metadata language (English, Spanish, French, German, etc.).
 5. Finish the wizard and start streaming!
 
@@ -146,10 +147,10 @@ Once Fishbowl is active on your device, you can stream your movies, shows, and m
 
 Android 11+ enforces Scoped Storage boundaries. Fishbowl includes a built-in Storage Access Framework (SAF) document tree bridge:
 
-1. In Fishbowl, navigate to the **Settings** tab.
-2. Tap **Manage Media Storage (SAF)**.
-3. Tap **Add Media Folder** and select any directory on internal storage, microSD card, or OTG USB storage using Android's system document picker.
-4. Fishbowl preserves persistent URI permissions across device reboots and surfaces folder size calculations dynamically.
+1. In Fishbowl, navigate to the **Settings** tab and tap **Manage Media Storage (SAF)**.
+2. Tap **`SELECT MEDIA FOLDER (SAF)`** and pick any directory on internal storage, microSD card, or USB OTG storage using Android's system document picker.
+3. Fishbowl automatically translates the virtual SAF Document Tree URI into a clean POSIX file path (e.g. `/storage/emulated/0/Movies`) and preserves persistent read/write permissions.
+4. Tap the **`COPY PATH`** button next to your folder and paste it into the Jellyfin Web UI when adding your media libraries!
 
 ---
 
