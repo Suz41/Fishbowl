@@ -57,8 +57,77 @@ public class JellyfinBootstrapper {
             try (FileOutputStream out = new FileOutputStream(resolvFile)) {
                 out.write(resolvContent.getBytes());
             }
+
+            // Ensure Jellyfin network configuration explicitly enables binding across all interfaces (0.0.0.0)
+            ensureJellyfinNetworkXml();
+            ensureStorageSymlinks();
         } catch (Exception e) {
             Log.e(TAG, "Failed to write network config: " + e.getMessage(), e);
+        }
+    }
+
+    public static void ensureStorageSymlinks() {
+        try {
+            File homeDir = TermuxConstants.TERMUX_HOME_DIR;
+            if (!homeDir.exists()) homeDir.mkdirs();
+
+            // 1. Symlink /storage/emulated/0 to ~/storage/shared
+            File storageDir = new File(homeDir, "storage");
+            if (!storageDir.exists()) storageDir.mkdirs();
+
+            File sharedLink = new File(storageDir, "shared");
+            if (!sharedLink.exists()) {
+                try {
+                    Os.symlink("/storage/emulated/0", sharedLink.getAbsolutePath());
+                    Log.i(TAG, "Created storage symlink ~/storage/shared -> /storage/emulated/0");
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to create ~/storage/shared symlink: " + e.getMessage());
+                }
+            }
+
+            // 2. Symlink /storage to ~/storage/external (for SD cards / USB OTG)
+            File extLink = new File(storageDir, "external");
+            if (!extLink.exists()) {
+                try {
+                    Os.symlink("/storage", extLink.getAbsolutePath());
+                    Log.i(TAG, "Created storage symlink ~/storage/external -> /storage");
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to create ~/storage/external symlink: " + e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to create storage symlinks: " + e.getMessage(), e);
+        }
+    }
+
+    public static void ensureJellyfinNetworkXml() {
+        try {
+            File configDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/jellyfin");
+            if (!configDir.exists()) configDir.mkdirs();
+
+            File networkXml = new File(configDir, "network.xml");
+            String xmlContent = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+                    + "<NetworkConfiguration xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n"
+                    + "  <RequireHttps>false</RequireHttps>\n"
+                    + "  <InternalHttpPort>8096</InternalHttpPort>\n"
+                    + "  <InternalHttpsPort>8920</InternalHttpsPort>\n"
+                    + "  <PublicHttpPort>8096</PublicHttpPort>\n"
+                    + "  <PublicHttpsPort>8920</PublicHttpsPort>\n"
+                    + "  <AutoRunWebApp>true</AutoRunWebApp>\n"
+                    + "  <EnableRemoteAccess>true</EnableRemoteAccess>\n"
+                    + "  <LocalNetworkAddresses />\n"
+                    + "  <LocalNetworkSubnets />\n"
+                    + "  <KnownProxies />\n"
+                    + "  <IgnoreVirtualInterfaces>false</IgnoreVirtualInterfaces>\n"
+                    + "  <VirtualInterfaceNames />\n"
+                    + "  <EnablePublishedServerUriByRequest>true</EnablePublishedServerUriByRequest>\n"
+                    + "</NetworkConfiguration>";
+            try (FileOutputStream out = new FileOutputStream(networkXml)) {
+                out.write(xmlContent.getBytes());
+            }
+            Log.i(TAG, "Written network.xml enabling remote access and virtual interface binding.");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to write network.xml: " + e.getMessage(), e);
         }
     }
 

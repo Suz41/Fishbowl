@@ -16,9 +16,11 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.PowerManager;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -33,6 +35,10 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.net.Inet4Address;
+import java.net.NetworkInterface;
+import java.util.Enumeration;
+import java.util.Locale;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
@@ -79,8 +85,10 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private TextView statusBadge;
     private TextView localIpValueText;
     private TextView lanIpValueText;
+    private TextView tailscaleIpValueText;
     private Button btnCopyLocalIp;
     private Button btnCopyLanIp;
+    private Button btnCopyTailscaleIp;
 
     private Button btnOpenJellyfin;
     private Button btnStartServer;
@@ -121,10 +129,16 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         // Request Android 13+ Notification Permission if needed (non-blocking)
         requestNotificationPermissionIfNeeded();
+        requestIgnoreBatteryOptimizationsIfNeeded();
 
         setContentView(buildMainPixelShell());
         setupSystemBarsAndInsets();
         setupNetworkMonitor();
+
+        // Auto-start server on app launch
+        if (controller.getState() == JellyfinController.State.STOPPED || controller.getState() == JellyfinController.State.UNINITIALIZED) {
+            triggerServerAction(JellyfinServerService.ACTION_START);
+        }
     }
 
     @Override
@@ -366,6 +380,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         switch (activeTab) {
             case 0:
                 contentContainer.addView(buildHomeTab());
+                refreshLanAddress();
                 break;
             case 1:
                 contentContainer.addView(buildLogsTab());
@@ -435,7 +450,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         card.addView(left, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         TextView versionBadge = new TextView(this);
-        versionBadge.setText("v10.11.11");
+        versionBadge.setText("v1.4.3");
         versionBadge.setTextSize(12);
         versionBadge.setTypeface(Typeface.MONOSPACE);
         versionBadge.setTextColor(getSecondaryTextColor());
@@ -476,6 +491,17 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         // LAN Address Box
         card.addView(buildLanAddressRow());
+
+        // Divider line 2
+        View divider2 = new View(this);
+        divider2.setBackgroundColor(colorWithAlpha(getSecondaryTextColor(), 30));
+        LinearLayout.LayoutParams divParams2 = new LinearLayout.LayoutParams(-1, dp(1));
+        divParams2.topMargin = dp(10);
+        divParams2.bottomMargin = dp(10);
+        card.addView(divider2, divParams2);
+
+        // Tailscale Address Box
+        card.addView(buildTailscaleAddressRow());
 
         return card;
     }
@@ -554,6 +580,42 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         return row;
     }
 
+    private View buildTailscaleAddressRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+
+        TextView lbl = new TextView(this);
+        lbl.setText("TAILSCALE ADDRESS");
+        lbl.setTextSize(11);
+        lbl.setTextColor(getSecondaryTextColor());
+        info.addView(lbl);
+
+        tailscaleIpValueText = new TextView(this);
+        tailscaleIpValueText.setText("Detecting Tailscale address…");
+        tailscaleIpValueText.setTextSize(14);
+        tailscaleIpValueText.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        tailscaleIpValueText.setTextColor(Color.parseColor("#81C784"));
+        tailscaleIpValueText.setPadding(0, dp(2), 0, 0);
+        info.addView(tailscaleIpValueText);
+
+        row.addView(info, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        btnCopyTailscaleIp = createPillCopyButton();
+        btnCopyTailscaleIp.setOnClickListener(v -> {
+            String text = tailscaleIpValueText.getText().toString();
+            if (text.startsWith("http://")) {
+                copyUrlToClipboard("Tailscale Server Address", text);
+            }
+        });
+        row.addView(btnCopyTailscaleIp);
+
+        return row;
+    }
+
 
 
     private void copyUrlToClipboard(String label, String url) {
@@ -628,7 +690,10 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         layout.addView(btnStartServer);
 
         btnStopServer = createPixelButton("STOP SERVER", Color.parseColor("#D32F2F"), Color.WHITE);
-        btnStopServer.setOnClickListener(v -> triggerServerAction(JellyfinServerService.ACTION_STOP));
+        btnStopServer.setOnClickListener(v -> {
+            controller.stop();
+            triggerServerAction(JellyfinServerService.ACTION_STOP);
+        });
         layout.addView(btnStopServer);
 
         btnRestartServer = createPixelButton("RESTART SERVER", getSurfaceColor(), getPrimaryTextColor());
@@ -1043,9 +1108,44 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                 if (btnCopyLanIp != null) btnCopyLanIp.setEnabled(true);
             }
         }
+        String tailscale = getTailscaleAddress();
+        if (tailscaleIpValueText != null) {
+            if (tailscale == null) {
+                tailscaleIpValueText.setText("TAILSCALE UNAVAILABLE");
+                tailscaleIpValueText.setTextColor(Color.parseColor("#FFB74D"));
+                if (btnCopyTailscaleIp != null) btnCopyTailscaleIp.setEnabled(false);
+            } else {
+                tailscaleIpValueText.setText(tailscale);
+                tailscaleIpValueText.setTextColor(Color.parseColor("#81C784"));
+                if (btnCopyTailscaleIp != null) btnCopyTailscaleIp.setEnabled(true);
+            }
+        }
     }
 
     private String getLanAddress() {
+        try {
+            Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
+            if (ifaces == null) return null;
+            while (ifaces.hasMoreElements()) {
+                NetworkInterface intf = ifaces.nextElement();
+                if (!intf.isUp() || intf.isLoopback()) continue;
+                String name = intf.getName().toLowerCase(Locale.ROOT);
+                if (name.startsWith("tun") || name.startsWith("tailscale")) continue;
+                Enumeration<java.net.InetAddress> addrs = intf.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    java.net.InetAddress addr = addrs.nextElement();
+                    if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
+                        String ip = addr.getHostAddress();
+                        if (isTailscaleIp(ip)) continue;
+                        return "http://" + ip + ":8096";
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private String getTailscaleAddress() {
         try {
             Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
             if (ifaces == null) return null;
@@ -1056,12 +1156,28 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                 while (addrs.hasMoreElements()) {
                     java.net.InetAddress addr = addrs.nextElement();
                     if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
-                        return "http://" + addr.getHostAddress() + ":8096";
+                        String ip = addr.getHostAddress();
+                        if (isTailscaleIp(ip)) {
+                            return "http://" + ip + ":8096";
+                        }
                     }
                 }
             }
         } catch (Exception ignored) {}
         return null;
+    }
+
+    private boolean isTailscaleIp(String ip) {
+        if (ip == null) return false;
+        String[] parts = ip.split("\\.");
+        if (parts.length != 4) return false;
+        try {
+            int first = Integer.parseInt(parts[0]);
+            int second = Integer.parseInt(parts[1]);
+            return first == 100 && (second >= 64 && second <= 127);
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     private void setupNetworkMonitor() {
@@ -1073,7 +1189,15 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                     @Override public void onLost(@NonNull Network n) { runOnUiThread(() -> refreshLanAddress()); }
                     @Override public void onCapabilitiesChanged(@NonNull Network n, @NonNull NetworkCapabilities c) { runOnUiThread(() -> refreshLanAddress()); }
                 };
-                try { cm.registerNetworkCallback(new NetworkRequest.Builder().build(), networkCallback); } catch (Exception ignored) {}
+                try {
+                    NetworkRequest req = new NetworkRequest.Builder()
+                            .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
+                            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+                            .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
+                            .build();
+                    cm.registerNetworkCallback(req, networkCallback);
+                } catch (Exception ignored) {}
             }
         } else {
             connectivityReceiver = new BroadcastReceiver() {
@@ -1102,6 +1226,19 @@ public final class JellyfinDroidActivity extends AppCompatActivity
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, 102);
+            }
+        }
+    }
+
+    private void requestIgnoreBatteryOptimizationsIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                try {
+                    Intent intent = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                    intent.setData(Uri.parse("package:" + getPackageName()));
+                    startActivity(intent);
+                } catch (Exception ignored) {}
             }
         }
     }
@@ -1157,6 +1294,16 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(46));
         params.topMargin = dp(8);
         b.setLayoutParams(params);
+
+        b.setOnTouchListener((v, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(70).start();
+            } else if (event.getAction() == android.view.MotionEvent.ACTION_UP || event.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
+                v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(70).start();
+            }
+            return false;
+        });
+
         return b;
     }
 
