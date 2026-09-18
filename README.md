@@ -125,7 +125,7 @@ Once Fishbowl is active on your device, you can stream your movies, shows, and m
 ## Step-by-Step Installation & Setup
 
 ### 1. Download & Install
-1. Download the latest **`Fishbowl-v1.4.5-debug-arm64-v8a.apk`** from [GitHub Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.5).
+1. Download the latest **`Fishbowl-v1.4.5-release-universal.apk`** from [GitHub Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.5).
 2. Install the APK on your ARM64 Android device.
 3. Grant **Notification**, **Storage**, and **Battery Optimization Exception** permissions when prompted.
 
@@ -165,7 +165,7 @@ Jellyfin runs as a native Linux process (`dotnet jellyfin.dll`) and requires rea
 
 ---
 
-## 🌐 Dynamic Metadata DNS Pipeline
+## Dynamic Metadata DNS Pipeline
 
 Fishbowl uses dynamic multi-provider DNS resolution to ensure movie and TV show identification, metadata retrieval, and artwork fetching operate smoothly:
 
@@ -179,7 +179,7 @@ Fishbowl uses dynamic multi-provider DNS resolution to ensure movie and TV show 
 
 ---
 
-## 📊 Memory-Safe Logging Engine
+## Memory-Safe Logging Engine
 
 Fishbowl features a hardened logging subsystem designed to prevent UI freezes during heavy transcoding or library imports:
 
@@ -190,7 +190,7 @@ Fishbowl features a hardened logging subsystem designed to prevent UI freezes du
 
 ---
 
-## 🔒 Permissions & Privacy
+## Permissions & Privacy
 
 Fishbowl operates strictly within standard Android OS application sandboxing rules:
 
@@ -210,7 +210,7 @@ Fishbowl operates strictly within standard Android OS application sandboxing rul
 
 ---
 
-## 📁 Directory Hierarchy & Persistence
+## Directory Hierarchy & Persistence
 
 All Jellyfin server configuration, database, and cache files are stored within the app's sandboxed data directory:
 
@@ -224,7 +224,7 @@ All Jellyfin server configuration, database, and cache files are stored within t
 
 ---
 
-## 🛠️ Building From Source
+## Building From Source
 
 ### Prerequisites
 - **Operating System:** Windows 10/11, macOS, or Linux
