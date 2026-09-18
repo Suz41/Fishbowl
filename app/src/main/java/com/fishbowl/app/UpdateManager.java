@@ -233,13 +233,55 @@ public final class UpdateManager {
                     String downloadUrl = "";
                     String checksumUrl = "";
                     if (assets != null) {
+                        String bestApkName = "";
+                        String bestShaName = "";
+
+                        // Pass 1: Look for arm64-v8a specific APK first (native performance)
                         for (int i = 0; i < assets.length(); i++) {
                             JSONObject asset = assets.getJSONObject(i);
                             String name = asset.optString("name", "");
-                            if (name.endsWith("-universal.apk")) {
+                            if (name.contains("arm64") && name.endsWith(".apk")) {
                                 downloadUrl = asset.optString("browser_download_url", "");
-                            } else if (name.endsWith("-universal.apk.sha256")) {
-                                checksumUrl = asset.optString("browser_download_url", "");
+                                bestApkName = name;
+                                break;
+                            }
+                        }
+
+                        // Pass 2: Fallback to universal APK
+                        if (downloadUrl.isEmpty()) {
+                            for (int i = 0; i < assets.length(); i++) {
+                                JSONObject asset = assets.getJSONObject(i);
+                                String name = asset.optString("name", "");
+                                if (name.endsWith("-universal.apk")) {
+                                    downloadUrl = asset.optString("browser_download_url", "");
+                                    bestApkName = name;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Pass 3: Fallback to any .apk asset
+                        if (downloadUrl.isEmpty()) {
+                            for (int i = 0; i < assets.length(); i++) {
+                                JSONObject asset = assets.getJSONObject(i);
+                                String name = asset.optString("name", "");
+                                if (name.endsWith(".apk") && !name.contains("indices")) {
+                                    downloadUrl = asset.optString("browser_download_url", "");
+                                    bestApkName = name;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Match checksum for the chosen APK
+                        if (!bestApkName.isEmpty()) {
+                            for (int i = 0; i < assets.length(); i++) {
+                                JSONObject asset = assets.getJSONObject(i);
+                                String name = asset.optString("name", "");
+                                if (name.equals(bestApkName + ".sha256") || name.endsWith(".apk.sha256") || name.endsWith(".sha256")) {
+                                    checksumUrl = asset.optString("browser_download_url", "");
+                                    break;
+                                }
                             }
                         }
                     }
@@ -391,8 +433,23 @@ public final class UpdateManager {
         }
 
         if (expectedHash.isEmpty()) {
-            Log.w(TAG, "Missing expected checksum. Skipping verification but logging safety warning (as per prompt instructions).");
-            notifyStateChanged(State.VERIFICATION_SUCCESSFUL);
+            Log.w(TAG, "Missing expected checksum. Performing package archive structural integrity check.");
+            try {
+                PackageInfo archiveInfo = context.getPackageManager().getPackageArchiveInfo(
+                        downloadedApkFile.getAbsolutePath(), PackageManager.GET_ACTIVITIES);
+                if (archiveInfo != null && archiveInfo.packageName != null) {
+                    Log.i(TAG, "Package archive integrity check succeeded for " + archiveInfo.packageName);
+                    notifyStateChanged(State.VERIFICATION_SUCCESSFUL);
+                    return;
+                }
+            } catch (Throwable t) {
+                Log.e(TAG, "Package archive check threw exception", t);
+            }
+            Log.e(TAG, "Downloaded APK is corrupt or invalid package structure");
+            if (downloadedApkFile != null && downloadedApkFile.exists()) {
+                downloadedApkFile.delete();
+            }
+            notifyStateChanged(State.VERIFICATION_FAILED);
             return;
         }
 

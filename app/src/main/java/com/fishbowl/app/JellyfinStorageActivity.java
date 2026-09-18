@@ -125,7 +125,49 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         grantBtn.setOnClickListener(v -> requestStoragePermission());
         card.addView(grantBtn);
 
-        Button pickFolderBtn = createPixelButton("SELECT MEDIA FOLDER (SAF)", isDarkTheme() ? Color.parseColor("#272930") : Color.parseColor("#F1F3F9"), isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
+        // SAF / USB ACCESS Card Section
+        LinearLayout safSection = new LinearLayout(this);
+        safSection.setOrientation(LinearLayout.VERTICAL);
+        safSection.setPadding(0, dp(14), 0, dp(6));
+
+        TextView safTitle = new TextView(this);
+        safTitle.setText("SAF / USB ACCESS");
+        safTitle.setTextSize(13);
+        safTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        safTitle.setTextColor(isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
+        safSection.addView(safTitle);
+
+        LinearLayout badgesRow = new LinearLayout(this);
+        badgesRow.setOrientation(LinearLayout.HORIZONTAL);
+        badgesRow.setPadding(0, dp(4), 0, dp(8));
+
+        TextView underProcessBadge = new TextView(this);
+        underProcessBadge.setText("[ UNDER PROCESS ]");
+        underProcessBadge.setTextSize(11);
+        underProcessBadge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        underProcessBadge.setTextColor(Color.parseColor("#FFD54F"));
+        underProcessBadge.setPadding(0, 0, dp(10), 0);
+        badgesRow.addView(underProcessBadge);
+
+        TextView testModeBadge = new TextView(this);
+        testModeBadge.setText("[ TEST MODE ]");
+        testModeBadge.setTextSize(11);
+        testModeBadge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        testModeBadge.setTextColor(Color.parseColor("#FFB74D"));
+        badgesRow.addView(testModeBadge);
+
+        safSection.addView(badgesRow);
+
+        TextView safNotice = new TextView(this);
+        safNotice.setText("SAF support is currently under development and is available for testing only.\nSelected SAF folders may not yet be accessible to the embedded Jellyfin server.");
+        safNotice.setTextSize(12);
+        safNotice.setTextColor(isDarkTheme() ? Color.parseColor("#9AA0A6") : Color.parseColor("#5F6368"));
+        safNotice.setPadding(0, 0, 0, dp(8));
+        safSection.addView(safNotice);
+
+        card.addView(safSection);
+
+        Button pickFolderBtn = createPixelButton("SELECT MEDIA FOLDER (SAF - TEST MODE)", isDarkTheme() ? Color.parseColor("#272930") : Color.parseColor("#F1F3F9"), isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
         pickFolderBtn.setOnClickListener(v -> openFolderPicker());
         card.addView(pickFolderBtn);
 
@@ -164,7 +206,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         tutorialCard.setLayoutParams(pTutorial);
 
         TextView tutorialHeader = new TextView(this);
-        tutorialHeader.setText("📖 How to Add Media Folders (Simple Guide)");
+        tutorialHeader.setText("How to Add Media Folders (Simple Guide)");
         tutorialHeader.setTextSize(16);
         tutorialHeader.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         tutorialHeader.setTextColor(Color.parseColor("#00A4DC"));
@@ -177,11 +219,11 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         tutorialText.setLineSpacing(dp(3), 1.1f);
         String guide = "Follow these 3 easy steps to add movies or TV shows to your Jellyfin library:\n\n"
                 + "Step 1: Pick Your Folder\n"
-                + "Tap 'SELECT MEDIA FOLDER (SAF)' above and choose your movie or music folder. Tap 'ALLOW ACCESS'.\n\n"
+                + "Tap 'SELECT MEDIA FOLDER (SAF - TEST MODE)' above and choose your movie or music folder. Tap 'ALLOW ACCESS'.\n\n"
                 + "Step 2: Copy the POSIX Path\n"
                 + "Tap the 'COPY PATH' button next to your folder below.\n\n"
                 + "Step 3: Add Path in Jellyfin Web UI\n"
-                + "Open Jellyfin ➔ Settings (⚙️) ➔ Dashboard ➔ Libraries ➔ Add Media Library. Paste the path into the Folder field!";
+                + "Open Jellyfin -> Settings -> Dashboard -> Libraries -> Add Media Library. Paste the path into the Folder field!";
         tutorialText.setText(guide);
         tutorialCard.addView(tutorialText);
 
@@ -203,8 +245,20 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         folderListContainer.removeAllViews();
 
         // 1. Default Storage Paths with COPY buttons
-        folderListContainer.addView(createPathRow("Shared Internal Storage", "/storage/emulated/0"));
-        folderListContainer.addView(createPathRow("External SD Cards / USB", "/storage"));
+        folderListContainer.addView(createPathRow("Shared Internal Storage", "/storage/emulated/0", true));
+
+        // Detect physical external storage (SD Card or USB OTG) with guaranteed POSIX access
+        File[] extDirs = ContextCompat.getExternalFilesDirs(this, null);
+        if (extDirs != null) {
+            for (File dir : extDirs) {
+                if (dir != null) {
+                    String fullPath = dir.getAbsolutePath();
+                    if (!fullPath.startsWith("/storage/emulated/0")) {
+                        folderListContainer.addView(createPathRow("USB / SD Card App Directory (Guaranteed POSIX)", fullPath, true));
+                    }
+                }
+            }
+        }
 
         Set<String> folders = prefs.getStringSet("folders", new HashSet<>());
         if (!folders.isEmpty()) {
@@ -212,18 +266,28 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             safHeader.setText("SAF PICKED FOLDERS:");
             safHeader.setTextSize(12);
             safHeader.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-            safHeader.setTextColor(Color.parseColor("#00A4DC"));
+            safHeader.setTextColor(Color.parseColor("#00B4D8"));
             safHeader.setPadding(0, dp(12), 0, dp(6));
             folderListContainer.addView(safHeader);
 
             for (String f : folders) {
-                String cleanPath = extractCleanPath(f);
-                folderListContainer.addView(createPathRow(f, cleanPath));
+                if (f.contains("VIRTUAL_SAF:")) {
+                    folderListContainer.addView(createVirtualNoticeRow(f));
+                } else {
+                    String cleanPath = extractCleanPath(f);
+                    File checkFile = new File(cleanPath);
+                    boolean canRead = checkFile.exists() && checkFile.canRead();
+                    if (canRead) {
+                        folderListContainer.addView(createPathRow(f, cleanPath, true));
+                    } else {
+                        folderListContainer.addView(createUnreadablePathRow(f, cleanPath));
+                    }
+                }
             }
         }
 
         TextView noteText = new TextView(this);
-        noteText.setText("💡 Simple Note: Jellyfin requires clean file paths (like /storage/emulated/0/Movies) to scan your media files. Use the COPY PATH buttons above to easily copy paths for Jellyfin Library setup!");
+        noteText.setText("Note: Jellyfin runs as a native Linux server and requires real filesystem paths. Virtual cloud providers (RSAF, Google Drive) do not create Linux directories and cannot be read by Jellyfin.");
         noteText.setTextSize(12);
         noteText.setTextColor(isDarkTheme() ? Color.parseColor("#9AA0A6") : Color.parseColor("#5F6368"));
         noteText.setPadding(0, dp(12), 0, 0);
@@ -241,7 +305,51 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         return entry;
     }
 
-    private View createPathRow(String labelText, String pathText) {
+    private View createVirtualNoticeRow(String entry) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(0, dp(6), 0, dp(6));
+
+        TextView lbl = new TextView(this);
+        lbl.setText("VIRTUAL CLOUD / SAF PROVIDER (INCOMPATIBLE)");
+        lbl.setTextSize(11);
+        lbl.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        lbl.setTextColor(Color.parseColor("#E57373"));
+        row.addView(lbl);
+
+        TextView val = new TextView(this);
+        val.setText("Virtual network drives (RSAF, Nextcloud, Drive) exist only in Android Java and do not have a Linux disk path. Jellyfin cannot read virtual SAF streams.");
+        val.setTextSize(12);
+        val.setTextColor(isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
+        val.setPadding(0, dp(2), 0, 0);
+        row.addView(val);
+
+        return row;
+    }
+
+    private View createUnreadablePathRow(String labelText, String pathText) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(0, dp(6), 0, dp(6));
+
+        TextView lbl = new TextView(this);
+        lbl.setText("RESTRICTED BY ANDROID SELINUX: " + labelText);
+        lbl.setTextSize(11);
+        lbl.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        lbl.setTextColor(Color.parseColor("#FFB74D"));
+        row.addView(lbl);
+
+        TextView val = new TextView(this);
+        val.setText(pathText + "\n(Android blocks direct Linux read to this volume. Use the app directory on the USB drive instead.)");
+        val.setTextSize(12);
+        val.setTextColor(isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
+        val.setPadding(0, dp(2), 0, 0);
+        row.addView(val);
+
+        return row;
+    }
+
+    private View createPathRow(String labelText, String pathText, boolean showCopy) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -266,44 +374,46 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
         row.addView(info, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
-        Button btnCopy = new Button(this);
-        btnCopy.setText("COPY PATH");
-        btnCopy.setTextSize(11);
-        btnCopy.setAllCaps(false);
-        btnCopy.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        btnCopy.setTextColor(Color.WHITE);
-        GradientDrawable gd = new GradientDrawable();
-        gd.setColor(Color.parseColor("#00A4DC"));
-        gd.setCornerRadius(dp(14));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            android.graphics.drawable.RippleDrawable ripple = new android.graphics.drawable.RippleDrawable(
-                    android.content.res.ColorStateList.valueOf(Color.argb(90, 255, 255, 255)),
-                    gd,
-                    null);
-            btnCopy.setBackground(ripple);
-        } else {
-            btnCopy.setBackground(gd);
-        }
-        btnCopy.setOnTouchListener((v, event) -> {
-            if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
-                v.animate().scaleX(0.95f).scaleY(0.95f).setDuration(80).start();
-            } else if (event.getAction() == android.view.MotionEvent.ACTION_UP || event.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
-                v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(80).start();
+        if (showCopy) {
+            Button btnCopy = new Button(this);
+            btnCopy.setText("COPY PATH");
+            btnCopy.setTextSize(11);
+            btnCopy.setAllCaps(false);
+            btnCopy.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+            btnCopy.setTextColor(Color.WHITE);
+            GradientDrawable gd = new GradientDrawable();
+            gd.setColor(Color.parseColor("#00B4D8"));
+            gd.setCornerRadius(dp(14));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                android.graphics.drawable.RippleDrawable ripple = new android.graphics.drawable.RippleDrawable(
+                        android.content.res.ColorStateList.valueOf(Color.argb(90, 255, 255, 255)),
+                        gd,
+                        null);
+                btnCopy.setBackground(ripple);
+            } else {
+                btnCopy.setBackground(gd);
             }
-            return false;
-        });
-        btnCopy.setOnClickListener(v -> {
-            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-            android.content.ClipData clip = android.content.ClipData.newPlainText("Folder Path", pathText);
-            if (clipboard != null) {
-                clipboard.setPrimaryClip(clip);
-                Toast.makeText(this, "Copied: " + pathText, Toast.LENGTH_SHORT).show();
-            }
-        });
+            btnCopy.setOnTouchListener((v, event) -> {
+                if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                    v.animate().scaleX(0.95f).scaleY(0.95f).setDuration(80).start();
+                } else if (event.getAction() == android.view.MotionEvent.ACTION_UP || event.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
+                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(80).start();
+                }
+                return false;
+            });
+            btnCopy.setOnClickListener(v -> {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                android.content.ClipData clip = android.content.ClipData.newPlainText("Folder Path", pathText);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(clip);
+                    Toast.makeText(this, "Copied: " + pathText, Toast.LENGTH_SHORT).show();
+                }
+            });
 
-        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(dp(90), dp(32));
-        btnParams.leftMargin = dp(8);
-        row.addView(btnCopy, btnParams);
+            LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(dp(90), dp(32));
+            btnParams.leftMargin = dp(8);
+            row.addView(btnCopy, btnParams);
+        }
 
         return row;
     }
@@ -344,23 +454,30 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     }
 
     private void saveSelectedFolder(Uri treeUri) {
+        String authority = treeUri.getAuthority();
         String pathOrUri = treeUri.toString();
-        // Try parsing raw POSIX path from SAF Document Tree URI (e.g. content://com.android.externalstorage.documents/tree/primary%3AMovies)
-        try {
-            String docId = android.provider.DocumentsContract.getTreeDocumentId(treeUri);
-            if (docId != null) {
-                String[] parts = docId.split(":");
-                if (parts.length >= 2) {
-                    String type = parts[0];
-                    String relativePath = parts[1];
-                    if ("primary".equalsIgnoreCase(type)) {
-                        pathOrUri = "/storage/emulated/0/" + relativePath + " (POSIX: /storage/emulated/0/" + relativePath + ")";
-                    } else {
-                        pathOrUri = "/storage/" + type + "/" + relativePath + " (POSIX: /storage/" + type + "/" + relativePath + ")";
+
+        // Check if authority is external storage document provider
+        if ("com.android.externalstorage.documents".equals(authority)) {
+            try {
+                String docId = android.provider.DocumentsContract.getTreeDocumentId(treeUri);
+                if (docId != null) {
+                    String[] parts = docId.split(":");
+                    if (parts.length >= 2) {
+                        String type = parts[0];
+                        String relativePath = parts[1];
+                        if ("primary".equalsIgnoreCase(type)) {
+                            pathOrUri = "/storage/emulated/0/" + relativePath + " (POSIX: /storage/emulated/0/" + relativePath + ")";
+                        } else {
+                            pathOrUri = "/storage/" + type + "/" + relativePath + " (POSIX: /storage/" + type + "/" + relativePath + ")";
+                        }
                     }
                 }
-            }
-        } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+        } else {
+            // Virtual DocumentsProvider (e.g., RSAF, Google Drive, Nextcloud)
+            pathOrUri = "VIRTUAL_SAF: " + authority + " (" + treeUri.toString() + ")";
+        }
 
         Set<String> set = new HashSet<>(prefs.getStringSet("folders", new HashSet<>()));
         set.add(pathOrUri);
@@ -379,10 +496,34 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         GradientDrawable gd = new GradientDrawable();
         gd.setColor(bgColor);
         gd.setCornerRadius(dp(20));
-        b.setBackground(gd);
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            int rippleColor = (textColor == Color.WHITE)
+                    ? Color.argb(100, 255, 255, 255)
+                    : Color.argb(80, 0, 164, 220);
+            android.graphics.drawable.RippleDrawable ripple = new android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(rippleColor),
+                    gd,
+                    null);
+            b.setBackground(ripple);
+        } else {
+            b.setBackground(gd);
+        }
+
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, dp(44));
         p.topMargin = dp(6);
         b.setLayoutParams(p);
+
+        b.setOnTouchListener((v, event) -> {
+            if (!v.isEnabled()) return false;
+            if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(60).start();
+            } else if (event.getAction() == android.view.MotionEvent.ACTION_UP || event.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
+                v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(80).start();
+            }
+            return false;
+        });
+
         return b;
     }
 
