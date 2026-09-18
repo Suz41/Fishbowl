@@ -4,7 +4,7 @@ An unofficial standalone server host/launcher for Jellyfin on Android (ARM64).
 
 [![Release](https://img.shields.io/badge/Release-v1.4.5-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.5)
 [![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-12.1.0-purple.svg)](https://jellyfin.org)
-[![Runtime](https://img.shields.io/badge/.NET-9.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
+[![Runtime](https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
 [![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
 [![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE.md)
 [![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg)](#permissions--privacy)
@@ -45,7 +45,7 @@ In compliance with open-source community standards and the Jellyfin project's AI
 
 ### Native ARM64 Server Engine
 - **Full Jellyfin 12.1.0 Core:** Direct POSIX execution on Android's Bionic C runtime (`libc.so`) without virtualization or Docker containers.
-- **Embedded .NET 9.0 Host:** High-throughput JIT-compiled server core with optimized memory management.
+- **Embedded .NET 10 Host:** High-throughput JIT-compiled server core (.NET 10.0.12 Linux Bionic) with optimized memory management.
 - **Jellyfin-FFmpeg Transcoder:** Mobile-optimized native FFmpeg binary for on-the-fly video transcoding, audio remuxing, and HLS segmenting.
 - **SQLite3 Database Engine (`libe_sqlite3.so`):** Low-latency local database storage managing media libraries, user watch states, and item metadata.
 
@@ -92,7 +92,7 @@ In compliance with open-source community standards and the Jellyfin project's AI
 |                                  |                                      |
 |  +-------------------------------------------------------------------+  |
 |  |                     Native Subsystem (POSIX)                      |  |
-|  |   .NET 9.0 Host (dotnet) ---> Jellyfin.Server.dll (12.1.0)        |  |
+|  |   .NET 10 Host (dotnet) ---> Jellyfin.Server.dll (12.1.0)         |  |
 |  |   Jellyfin-FFmpeg Engine ---> Hardware Transcoding / HLS Remux     |  |
 |  |   libe_sqlite3.so Engine ---> Database Storage (~/.local/share)   |  |
 |  |   libfontconfig / libfreetype ---> Subtitle Burn-In Engine        |  |
