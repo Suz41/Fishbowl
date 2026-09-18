@@ -1,6 +1,6 @@
 # Architecture & Internals
 
-Fishbowl runs Jellyfin natively inside the Android user space without virtualization, containers, or root access. Here is an overview of the internal mechanisms.
+Fishbowl runs Jellyfin natively inside the Android user space without virtualization, containers, or root access.
 
 ```
 +-------------------------------------------------------------------------+
@@ -22,7 +22,7 @@ Fishbowl runs Jellyfin natively inside the Android user space without virtualiza
 |                                  |                                      |
 |  +-------------------------------------------------------------------+  |
 |  |                     Native Subsystem (POSIX)                      |  |
-|  |   .NET 9.0 Host (dotnet) ---> Jellyfin.Server.dll (10.11.11)      |  |
+|  |   .NET 10 Host (dotnet) ---> Jellyfin.Server.dll (12.1.0)         |  |
 |  |   Jellyfin-FFmpeg Engine ---> Hardware Transcoding / HLS Remux     |  |
 |  |   libe_sqlite3.so Engine ---> Database Storage (~/.local/share)   |  |
 |  |   libfontconfig / libfreetype ---> Subtitle Burn-In Engine        |  |
@@ -34,13 +34,13 @@ Fishbowl runs Jellyfin natively inside the Android user space without virtualiza
 ## Core Subsystems
 
 ### 1. Foreground Service (`JellyfinServerService`)
-To protect the server process from being killed by the Android OS's Out-Of-Memory (OOM) manager during background streaming, the server process runs inside a Foreground Service. It spawns a persistent status notification and acquires a `PARTIAL_WAKE_LOCK` to keep the CPU awake during active playback even when the screen is locked.
+To protect the server process from being killed by the Android OS's Out-Of-Memory (OOM) manager during background streaming, the server process runs inside an ongoing Foreground Service with `foregroundServiceType="mediaPlayback"`. It maintains a persistent status notification and acquires a `PARTIAL_WAKE_LOCK` to keep the CPU awake during active playback even when the screen is turned off.
 
 ### 2. State Machine (`JellyfinController`)
 Manages the lifecycle of the Jellyfin process. When the application resumes or launches, the controller runs an asynchronous check (`reconcileStateAsync()`) to verify if the server process is already running. This prevents redundant startups and refreshes the UI dashboard instantly.
 
 ### 3. Native Bionic Environment
-The native components (.NET 9.0 CLR host, FFmpeg binary, and SQLite dependencies) run directly compiled against the Android Bionic C runtime (`libc.so`).
+The native components (.NET 10 CLR host v10.0.12, FFmpeg binary, and SQLite dependencies) run directly compiled against the Android Bionic C runtime (`libc.so`).
 
 ### 4. Memory-Safe Logging (`LogListener`)
-Logging stdout/stderr feeds from the active Jellyfin process can generate massive amounts of data, leading to memory inflation and UI freezes. Fishbowl decouples log streams and batches them onto a `500ms` handler throttle. The log console is capped with a `30KB` bounding ring buffer (~500 lines) to avoid GC thrashing.
+Logging stdout/stderr feeds from the active Jellyfin process can generate high data volume during library scanning. Fishbowl decouples log streams and batches them onto a `500ms` handler throttle. The log console is capped with a `30KB` bounding ring buffer (~500 lines) to prevent garbage collection spikes.

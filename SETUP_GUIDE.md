@@ -1,146 +1,73 @@
 # Fishbowl Setup Guide
 
-Complete guide to installing and running Fishbowl on your Android ARM64 device.
-
-## 📋 Requirements
-
-### Device Requirements
-- **Android Version**: 5.0 (API 21) or higher
-- **Architecture**: ARM64 (ARMv8)
-- **RAM**: Minimum 2GB (4GB+ recommended)
-- **Storage**: Depends on media library size
-- **Network**: Stable WiFi or cellular connection
-
-### Server Requirements
-- Stable internet connection
-- Port forwarding (optional, for external access)
-- Dynamic DNS service (optional, for remote access)
-
-## 🚀 Installation Steps
-
-### Step 1: Download the App
-1. Go to [Fishbowl Releases](https://github.com/Suz41/Fishbowl/releases)
-2. Download the latest `Fishbowl-v*-release-universal.apk`
-3. Save to your Android device
-
-### Step 2: Install the APK
-1. Open your device's file manager
-2. Navigate to the downloaded APK file
-3. Tap to install
-4. Grant necessary permissions when prompted
-5. Wait for installation to complete
-
-### Step 3: Initial Setup
-1. Launch Fishbowl
-2. Enter your Jellyfin server address:
-   - **Local Network**: `http://192.168.1.XXX:8096`
-   - **Remote**: `https://your-domain.com:8920`
-3. Enter your credentials (Jellyfin username & password)
-4. Tap "Connect"
-
-### Step 4: Configure Settings
-1. **Server Settings**
-   - Media folders
-   - Transcoding options
-   - User permissions
-
-2. **App Settings**
-   - UI Theme (Material 3)
-   - Playback quality
-   - Background streaming
-
-## 🔧 Configuration
-
-### Local Network Setup
-```
-Server Address: http://[LOCAL_IP]:8096
-Example: http://192.168.1.100:8096
-```
-
-### Remote Access (Port Forwarding)
-```
-Server Address: https://[YOUR_DOMAIN]:8920
-Example: https://jellyfin.example.com:8920
-```
-
-## 🎵 Media Library
-
-### Supported Formats
-- **Video**: MP4, MKV, AVI, MOV, WebM
-- **Audio**: MP3, FLAC, WAV, AAC, OGG
-- **Subtitles**: SRT, ASS, SSA, VTT
-
-### Organizing Media
-```
-Media/
-├── Movies/
-│   ├── Action/
-│   └── Comedy/
-├── TV Shows/
-│   ├── Series Name/
-│   │   ├── Season 1/
-│   │   └── Season 2/
-└── Music/
-    ├── Artist Name/
-    └── Album Name/
-```
-
-## ⚙️ Troubleshooting
-
-### App Won't Connect
-- Check server address is correct
-- Verify network connectivity
-- Ensure server is running and accessible
-- Check firewall settings
-
-### Playback Issues
-- Confirm device supports video codec
-- Try lowering playback quality
-- Check available storage space
-- Restart the app and server
-
-### Background Streaming Not Working
-- Enable background permissions in Android settings
-- Check battery optimization settings
-- Verify sufficient RAM available
-- Update to latest app version
-
-### Performance Issues
-- Disable background tasks
-- Lower resolution/quality settings
-- Reduce number of concurrent streams
-- Free up device storage
-
-## 📱 Background Streaming
-
-Fishbowl supports background streaming with Material 3 UI:
-
-1. Start playback
-2. Minimize app or press home
-3. Music/audio continues playing
-4. Control playback from notification or lock screen
-
-## 🔐 Security Tips
-
-- Use strong passwords for Jellyfin account
-- Enable HTTPS for remote access
-- Keep app updated
-- Use firewall protection
-- Avoid sharing credentials
-
-## 🆘 Need Help?
-
-- Check existing [Issues](https://github.com/Suz41/Fishbowl/issues)
-- Open a new issue with bug report
-- Review [SECURITY.md](SECURITY.md) for security concerns
-
-## 📞 Support
-
-For additional help:
-- Visit Jellyfin documentation: https://jellyfin.org/docs/
-- Check app settings for debug logs
-- Open an issue on GitHub
+Complete guide to setting up and hosting Jellyfin on your Android ARM64 device with Fishbowl.
 
 ---
 
-**Happy streaming! 🎬🎵**
+## Quick Overview
+
+Fishbowl hosts the full, native **Jellyfin Media Server (v12.1.0)** on your Android device without requiring root access or Docker containers.
+
+### Requirements
+- **Android Version:** 5.0 (API 21) or higher (Android 11–16 fully supported)
+- **Architecture:** ARM64 (ARMv8 64-bit)
+- **RAM:** Minimum 2GB (4GB+ recommended)
+- **Network:** Connected to local Wi-Fi or hotspot
+
+---
+
+## Step-by-Step Setup
+
+### Step 1: Download & Install
+1. Go to [Fishbowl Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.5).
+2. Download the latest `Fishbowl-v1.4.5-release-universal.apk`.
+3. Open the downloaded file and install the app.
+4. Grant Notification, Storage, and Battery Optimization permissions when prompted.
+
+### Step 2: Start the Server
+1. Launch Fishbowl. The server auto-starts in the background on app open.
+2. Wait for the status indicator to transition to **SERVER RUNNING**.
+3. Tap **OPEN JELLYFIN** to launch the built-in setup wizard.
+
+### Step 3: Run the Setup Wizard
+1. Choose your preferred display language.
+2. Create an admin username and password.
+3. Add your media libraries:
+   - **Internal Storage:** `/storage/emulated/0/Movies` or `/storage/emulated/0/Music`
+   - **External USB / SD Card:** Copy the dedicated app directory path from **Settings ➔ Manage Media Storage** (`/storage/<UUID>/Android/data/com.fishbowl.app/files`)
+4. Finish the wizard and log into your dashboard.
+
+### Step 4: Stream to Other Devices
+1. Look at the **LAN Address** card on Fishbowl's home screen (e.g. `http://192.168.1.xxx:8096`).
+2. Open any web browser or official Jellyfin client (Android TV, Apple TV, iOS, Roku) connected to the same Wi-Fi network.
+3. Enter the server address and your login credentials to start streaming.
+
+---
+
+## Media Organization
+
+Organize media inside standard folder structures for automatic metadata matching:
+
+```
+Media/
+|-- Movies/
+|   |-- Inception (2010)/
+|   |   `-- Inception (2010).mkv
+|-- TV Shows/
+|   `-- Breaking Bad/
+|       `-- Season 01/
+|           `-- Breaking Bad - S01E01.mkv
+`-- Music/
+    `-- Artist Name/
+        `-- Album Name/
+            |-- 01 - Track Name.flac
+            `-- cover.jpg
+```
+
+---
+
+## Troubleshooting & Tips
+
+- **Server Stops in Background:** Set Fishbowl's battery optimization to **Unrestricted** in Android Settings (`Apps ➔ Fishbowl ➔ Battery ➔ Unrestricted`).
+- **Cannot Connect from Another Device:** Ensure both devices are connected to the same Wi-Fi network and AP isolation is disabled on your router.
+- **Updating the App:** Install new APK releases directly over the existing app. All user data, accounts, and libraries in `--datadir` (`~/.local/share/jellyfin`) are automatically preserved.
