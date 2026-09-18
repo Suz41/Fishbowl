@@ -2,27 +2,27 @@
 
 An unofficial standalone server host/launcher for Jellyfin on Android (ARM64).
 
-[![Release](https://img.shields.io/badge/Release-v1.4.3-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.3)
-[![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-10.11.11-purple.svg)](https://jellyfin.org)
+[![Release](https://img.shields.io/badge/Release-v1.4.5-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.5)
+[![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-12.1.0-purple.svg)](https://jellyfin.org)
 [![Runtime](https://img.shields.io/badge/.NET-9.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
 [![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
 [![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE.md)
 [![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg)](#permissions--privacy)
 
-Fishbowl is a native Android application that hosts and runs the full **Jellyfin Media Server (v10.11.11)** directly on your Android device (**ARM64**). 
+Fishbowl is a native Android application that hosts and runs the full **Jellyfin Media Server (v12.1.0)** directly on your Android device (**ARM64**). 
 
 It transforms any Android phone, tablet, or TV box into a standalone, energy-efficient home media streaming server without requiring root access, Docker, or external PC hardware.
 
 ---
 
-## 📑 Table of Contents
+## Table of Contents
 
 - [AI/LLM Usage Disclosure](#aillm-usage-disclosure)
 - [Key Features & Highlights](#key-features--highlights)
 - [System Architecture](#system-architecture)
 - [Client Ecosystem & Compatibility](#client-ecosystem--compatibility)
 - [Step-by-Step Installation & Setup](#step-by-step-installation--setup)
-- [Storage Access Framework (SAF) Bridge](#storage-access-framework-saf-bridge)
+- [Storage & Media Library Access](#storage--media-library-access)
 - [Dynamic Metadata DNS Pipeline](#dynamic-metadata-dns-pipeline)
 - [Memory-Safe Logging Engine](#memory-safe-logging-engine)
 - [Permissions & Privacy](#permissions--privacy)
@@ -31,7 +31,7 @@ It transforms any Android phone, tablet, or TV box into a standalone, energy-eff
 - [Troubleshooting & FAQ](#troubleshooting--faq)
 - [License & Acknowledgments](#license--acknowledgments)
 
-## 🤖 AI/LLM Usage Disclosure
+## AI/LLM Usage Disclosure
 
 In compliance with open-source community standards and the Jellyfin project's AI/LLM policies, we disclose that:
 * **Vibe Coding:** This project was built utilizing a "vibe coding" methodology—relying on conversational programming, interactive agent instruction, and iterative design loops to rapidly prototype and assemble the application.
@@ -41,15 +41,15 @@ In compliance with open-source community standards and the Jellyfin project's AI
 
 ---
 
-## 🌟 Key Features & Highlights
+## Key Features & Highlights
 
-### ⚡ Native ARM64 Server Engine
-- **Full Jellyfin 10.11.11 Core:** Direct POSIX execution on Android's Bionic C runtime (`libc.so`) without virtualization or Docker containers.
+### Native ARM64 Server Engine
+- **Full Jellyfin 12.1.0 Core:** Direct POSIX execution on Android's Bionic C runtime (`libc.so`) without virtualization or Docker containers.
 - **Embedded .NET 9.0 Host:** High-throughput JIT-compiled server core with optimized memory management.
 - **Jellyfin-FFmpeg Transcoder:** Mobile-optimized native FFmpeg binary for on-the-fly video transcoding, audio remuxing, and HLS segmenting.
 - **SQLite3 Database Engine (`libe_sqlite3.so`):** Low-latency local database storage managing media libraries, user watch states, and item metadata.
 
-### 🎨 Material 3 Pixel UI Shell & Tactile Animations
+### Material 3 Pixel UI Shell & Tactile Animations
 - **Automatic Server Auto-Start:** Launches server lifecycle automatically in background on app startup without requiring manual intervention.
 - **Pure Dark Mode (`#121316`):** OLED-optimized dark theme with distinct surface cards, crisp typography, and fluid spring press animations (0.96x compression) on all buttons.
 - **Real-Time Startup Progression:** Displays authentic multi-stage initialization (`STARTING_RUNTIME` -> `LAUNCHING_SERVER` -> `WAITING_FOR_SERVER` -> `CHECKING_READINESS` -> `READY`).
@@ -59,18 +59,18 @@ In compliance with open-source community standards and the Jellyfin project's AI
   - **Logs:** Memory-capped, live-streaming diagnostic console with 500ms throttled rendering and smart auto-scrolling.
   - **Settings:** Storage breakdown, SAF media folder bridge, software stack audit, and boot auto-start switches.
 
-### 🛡️ Background Streaming Resilience
-- **Foreground Service Supervision:** Managed by `JellyfinServerService` with an ongoing status notification (ID `1001`) preventing Android OS aggressive memory killing.
+### Background Streaming Resilience
+- **Foreground Service Supervision:** Managed by `JellyfinServerService` with media playback classification (`foregroundServiceType="mediaPlayback"`) and an ongoing status notification (ID `1001`) preventing Android OS memory killing.
 - **Battery Optimization Safeguard:** Prompts for `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` exemption to prevent background termination on aggressive OEM devices (Vivo, Xiaomi, Samsung, Moto).
 - **Smart CPU WakeLock:** Automatically acquires a `PARTIAL_WAKE_LOCK` with an automatic safety timeout to maintain uninterrupted streaming when the screen is locked.
 - **Immediate State Hydration:** Asynchronous `reconcileStateAsync()` directly resolves running server state on app launch/resume with zero UI latency.
 
-### 🎬 Built-in Hardware-Accelerated WebView
+### Built-in Hardware-Accelerated WebView
 - Native in-app WebView container allowing immediate local playback and administrative server configuration without leaving the application.
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```
 +-------------------------------------------------------------------------+
@@ -92,7 +92,7 @@ In compliance with open-source community standards and the Jellyfin project's AI
 |                                  |                                      |
 |  +-------------------------------------------------------------------+  |
 |  |                     Native Subsystem (POSIX)                      |  |
-|  |   .NET 9.0 Host (dotnet) ---> Jellyfin.Server.dll (10.11.11)      |  |
+|  |   .NET 9.0 Host (dotnet) ---> Jellyfin.Server.dll (12.1.0)        |  |
 |  |   Jellyfin-FFmpeg Engine ---> Hardware Transcoding / HLS Remux     |  |
 |  |   libe_sqlite3.so Engine ---> Database Storage (~/.local/share)   |  |
 |  |   libfontconfig / libfreetype ---> Subtitle Burn-In Engine        |  |
@@ -103,7 +103,7 @@ In compliance with open-source community standards and the Jellyfin project's AI
 
 ---
 
-## 📺 Client Ecosystem & Compatibility
+## Client Ecosystem & Compatibility
 
 Once Fishbowl is active on your device, you can stream your movies, shows, and music to any official Jellyfin client across your local home network:
 
@@ -122,10 +122,10 @@ Once Fishbowl is active on your device, you can stream your movies, shows, and m
 
 ---
 
-## 🚀 Step-by-Step Installation & Setup
+## Step-by-Step Installation & Setup
 
 ### 1. Download & Install
-1. Download the latest **`Fishbowl-v1.4.3-release-universal.apk`** from [GitHub Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.3).
+1. Download the latest **`Fishbowl-v1.4.5-debug-arm64-v8a.apk`** from [GitHub Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.5).
 2. Install the APK on your ARM64 Android device.
 3. Grant **Notification**, **Storage**, and **Battery Optimization Exception** permissions when prompted.
 
@@ -137,20 +137,31 @@ Once Fishbowl is active on your device, you can stream your movies, shows, and m
 ### 3. Initial Setup Wizard
 1. Select your preferred display language.
 2. Create your admin username and password.
-3. Add your media libraries (point to `/storage/emulated/0/Movies`, `/storage/emulated/0/Music`, or your SAF storage bridge path).
+3. Add your media libraries (point to `/storage/emulated/0/Movies`, `/storage/emulated/0/Music`, or your external USB/SD card app path).
 4. Configure your preferred metadata language (English, Spanish, French, German, etc.).
 5. Finish the wizard and start streaming!
 
 ---
 
-## 📂 Storage Access Framework (SAF) Bridge
+## Storage & Media Library Access
 
-Android 11+ enforces Scoped Storage boundaries. Fishbowl includes a built-in Storage Access Framework (SAF) document tree bridge:
+Jellyfin runs as a native Linux process (`dotnet jellyfin.dll`) and requires real POSIX filesystem paths (`/storage/...`) to read media files.
 
-1. In Fishbowl, navigate to the **Settings** tab and tap **Manage Media Storage (SAF)**.
-2. Tap **`SELECT MEDIA FOLDER (SAF)`** and pick any directory on internal storage, microSD card, or USB OTG storage using Android's system document picker.
-3. Fishbowl automatically translates the virtual SAF Document Tree URI into a clean POSIX file path (e.g. `/storage/emulated/0/Movies`) and preserves persistent read/write permissions.
-4. Tap the **`COPY PATH`** button next to your folder and paste it into the Jellyfin Web UI when adding your media libraries!
+### 1. Internal Shared Storage (Standard)
+* When **All-Files Access** (`MANAGE_EXTERNAL_STORAGE`) is granted, Jellyfin can directly index and read standard internal paths:
+  * `/storage/emulated/0/Movies`
+  * `/storage/emulated/0/Music`
+  * `/storage/emulated/0/Download`
+
+### 2. External USB OTG & MicroSD Drives (Guaranteed POSIX)
+* Due to Android SELinux security boundaries on modern Android (11–16), direct raw root access to external USB drives (e.g. `/storage/XXXX-XXXX/`) is blocked at the kernel level for non-system native binaries.
+* Fishbowl automatically detects connected external storage and provides the guaranteed app package directory:
+  * `/storage/<UUID>/Android/data/com.fishbowl.app/files`
+* Files placed inside this directory are 100% accessible to Jellyfin's POSIX engine without permission errors. Use the built-in **`COPY PATH`** button in the Storage settings.
+
+### 3. SAF Document Tree Bridge [TEST MODE]
+* Fishbowl includes an experimental Storage Access Framework (SAF) folder picker for translating document URIs.
+* **Virtual Cloud Providers (RSAF, Google Drive, Nextcloud):** These services exist strictly in Android Java (`content://`) space and do not create Linux kernel mount points. Fishbowl quarantines these selections and informs the user, preventing broken path entries from crashing Jellyfin's directory scanner.
 
 ---
 
@@ -239,7 +250,7 @@ Generated APKs will be located in `app/build/outputs/apk/release/` and `app/buil
 
 ---
 
-## ❓ Troubleshooting & FAQ
+## Troubleshooting & FAQ
 
 #### Q: Server stops when I lock my phone or switch apps?
 **A:** Ensure battery optimization is set to **"Unrestricted"** for Fishbowl in Android Settings (`Apps -> Fishbowl -> Battery -> Unrestricted`). Fishbowl runs an ongoing Foreground Service with WakeLock, but aggressive OEM battery managers (e.g. Xiaomi MIUI/HyperOS, Huawei EMUI, Vivo OriginOS, Samsung OneUI) may require explicit permission to run in the background.
@@ -247,12 +258,15 @@ Generated APKs will be located in `app/build/outputs/apk/release/` and `app/buil
 #### Q: How do I access Jellyfin from other devices on my network?
 **A:** Open the Fishbowl app, locate the **LAN Address** under the Network Connection card (e.g. `http://<YOUR-DEVICE-LAN-IP>:8096` or `http://192.168.1.xxx:8096`), and enter that URL into any browser or Jellyfin app on any device connected to the same Wi-Fi network.
 
+#### Q: Why can't Jellyfin read my USB drive directly from the root folder?
+**A:** Android 11+ applies strict kernel-level SELinux policies that block native non-root Linux processes from arbitrary external mount access. However, Android explicitly guarantees read/write access to the application's package directory on the drive (`/storage/<UUID>/Android/data/com.fishbowl.app/files`). Move your media into this folder and copy the path directly from Fishbowl's Storage settings.
+
 #### Q: How do I update Fishbowl without losing my libraries or watch history?
 **A:** Simply install the updated APK over the existing installation. All database records, user accounts, and library configurations reside in `--datadir` (`~/.local/share/jellyfin`) which is preserved across APK updates.
 
 ---
 
-## 📄 License & Acknowledgments
+## License & Acknowledgments
 
 - **Fishbowl:** Licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE.md).
 - **Jellyfin Core:** [Jellyfin Project](https://jellyfin.org) (GPLv3).
