@@ -24,6 +24,22 @@ Fishbowl runs the full **Jellyfin Media Server (v12.1.0)** natively on your Andr
 
 ---
 
+## Preview & Interface
+
+<p align="center">
+  <img src="docs/screenshots/fishbowl_demo.gif" width="280" alt="Fishbowl UI Demo" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/01_home_screen.png" width="30%" alt="Home Screen" />
+  &nbsp;
+  <img src="docs/screenshots/02_logs_tab.png" width="30%" alt="Logs Console" />
+  &nbsp;
+  <img src="docs/screenshots/03_settings_tab.png" width="30%" alt="Settings & Diagnostics" />
+</p>
+
+---
+
 ## Table of Contents
 
 - [Quick Start (3 Steps)](#quick-start-3-steps)
