@@ -129,7 +129,12 @@ public class JellyfinServerService extends Service implements JellyfinController
 
     private void promoteToForeground(Notification notification) {
         try {
-            startForeground(NOTIFICATION_ID, notification);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                int type = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
+                startForeground(NOTIFICATION_ID, notification, type);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
         } catch (Exception e) {
             Log.e(TAG, "startForeground error: " + e.getMessage(), e);
         }
@@ -146,9 +151,8 @@ public class JellyfinServerService extends Service implements JellyfinController
             }
         }
         if (wakeLock != null && !wakeLock.isHeld()) {
-            // Indefinite acquire while server is running — released on stop or state change
             wakeLock.acquire(24 * 60 * 60 * 1000L); // 24 hours
-            Log.i(TAG, "CPU WakeLock acquired for server & streaming execution");
+            Log.i(TAG, "CPU WakeLock acquired for Fishbowl server & automation execution");
         }
     }
 
@@ -162,14 +166,12 @@ public class JellyfinServerService extends Service implements JellyfinController
     // ── Notification helpers ───────────────────────────────────────────────────
 
     private Notification buildNotification(String title, String text) {
-        // Tap notification → open main activity
         Intent openIntent = new Intent(this, JellyfinDroidActivity.class);
         openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent openPi = PendingIntent.getActivity(
                 this, 0, openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        // STOP action
         Intent stopIntent = new Intent(this, JellyfinServerService.class);
         stopIntent.setAction(ACTION_STOP);
         PendingIntent stopPi = PendingIntent.getService(

@@ -12,6 +12,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.zip.GZIPInputStream;
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
@@ -20,18 +23,21 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 public class JellyfinBootstrapper {
 
     private static final String TAG = "JellyfinBootstrapper";
-    private static final String INITIALIZED_MARKER_FILE = ".jellyfin_initialized_v10.11.11";
+    private static final String INITIALIZED_MARKER_FILE = ".jellyfin_initialized_v12.1.0";
     private static final String[] ASSET_PARTS = {
             "jellyfin-bootstrap.tar.gz.part_aa",
             "jellyfin-bootstrap.tar.gz.part_ab",
-            "jellyfin-bootstrap.tar.gz.part_ac"
+            "jellyfin-bootstrap.tar.gz.part_ac",
+            "jellyfin-bootstrap.tar.gz.part_ad",
+            "jellyfin-bootstrap.tar.gz.part_ae"
     };
 
     public static synchronized boolean isInitialized(Context context) {
         File marker = new File(TermuxConstants.TERMUX_FILES_DIR, INITIALIZED_MARKER_FILE);
         File jellyfinDll = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.dll");
         File dotnetBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/dotnet/dotnet");
-        return marker.exists() && jellyfinDll.exists() && dotnetBin.exists();
+        File ffmpegBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "opt/jellyfin/bin/ffmpeg");
+        return marker.exists() && jellyfinDll.exists() && dotnetBin.exists() && ffmpegBin.exists();
     }
 
     /**
@@ -143,6 +149,10 @@ public class JellyfinBootstrapper {
         if (marker.exists()) {
             marker.delete();
         }
+        File legacyMarker = new File(TermuxConstants.TERMUX_FILES_DIR, ".jellyfin_initialized_v10.11.11");
+        if (legacyMarker.exists()) {
+            legacyMarker.delete();
+        }
 
         File prefixDir = TermuxConstants.TERMUX_PREFIX_DIR;
         if (!prefixDir.exists()) {
@@ -152,9 +162,26 @@ public class JellyfinBootstrapper {
         File cacheTarGz = new File(context.getCacheDir(), "jellyfin-bootstrap.tar.gz");
         try {
             Log.i(TAG, "Recombining split bootstrap assets into cache...");
+            List<String> partFiles = new ArrayList<>();
+            try {
+                String[] allAssets = context.getAssets().list("");
+                if (allAssets != null) {
+                    for (String asset : allAssets) {
+                        if (asset.startsWith("jellyfin-bootstrap.tar.gz.part_")) {
+                            partFiles.add(asset);
+                        }
+                    }
+                    Collections.sort(partFiles);
+                }
+            } catch (Exception ignored) {}
+            if (partFiles.isEmpty()) {
+                Collections.addAll(partFiles, ASSET_PARTS);
+            }
+            Log.i(TAG, "Found bootstrap asset parts: " + partFiles);
+
             try (OutputStream out = new BufferedOutputStream(new FileOutputStream(cacheTarGz))) {
                 byte[] buffer = new byte[65536];
-                for (String part : ASSET_PARTS) {
+                for (String part : partFiles) {
                     try (InputStream in = context.getAssets().open(part)) {
                         int read;
                         while ((read = in.read(buffer)) != -1) {

@@ -109,6 +109,65 @@ public class JellyfinController {
     private Integer lastExitCode;
     private String  lastError;
     private final AtomicInteger autoRestartCount = new AtomicInteger(0);
+    private long serverStartTimeMs = 0;
+
+    public static class ServerHealth {
+        public final boolean isHealthy;
+        public final String status;
+        public final long uptimeSeconds;
+        public final long totalRamMb;
+        public final long usedRamMb;
+        public final int ramUsagePercent;
+
+        public ServerHealth(boolean isHealthy, String status, long uptimeSeconds, long totalRamMb, long usedRamMb, int ramUsagePercent) {
+            this.isHealthy = isHealthy;
+            this.status = status;
+            this.uptimeSeconds = uptimeSeconds;
+            this.totalRamMb = totalRamMb;
+            this.usedRamMb = usedRamMb;
+            this.ramUsagePercent = ramUsagePercent;
+        }
+    }
+
+    /** Real-time server health and system resource sampler. */
+    public ServerHealth getServerHealth() {
+        boolean healthy = isHealthy();
+        String status = healthy ? "Healthy" : (currentState == State.RUNNING ? "Degraded" : currentState.name());
+        long uptime = 0;
+        if (serverStartTimeMs > 0 && (currentState == State.RUNNING || healthy)) {
+            uptime = Math.max(0, (System.currentTimeMillis() - serverStartTimeMs) / 1000);
+        }
+
+        long totalKb = 0;
+        long availKb = 0;
+        try (BufferedReader br = new BufferedReader(new java.io.FileReader("/proc/meminfo"))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (line.startsWith("MemTotal:")) {
+                    totalKb = parseMemKb(line);
+                } else if (line.startsWith("MemAvailable:")) {
+                    availKb = parseMemKb(line);
+                }
+                if (totalKb > 0 && availKb > 0) break;
+            }
+        } catch (Throwable ignored) {}
+
+        long totalMb = totalKb / 1024;
+        long usedMb = Math.max(0, (totalKb - availKb) / 1024);
+        int percent = totalMb > 0 ? (int) ((usedMb * 100) / totalMb) : 0;
+
+        return new ServerHealth(healthy, status, uptime, totalMb, usedMb, percent);
+    }
+
+    private static long parseMemKb(String line) {
+        try {
+            String[] parts = line.split("\\s+");
+            if (parts.length >= 2) {
+                return Long.parseLong(parts[1]);
+            }
+        } catch (Throwable ignored) {}
+        return 0;
+    }
 
     // ── Public accessors ───────────────────────────────────────────────────────
     public synchronized State getState()           { return currentState; }
@@ -118,6 +177,7 @@ public class JellyfinController {
     public synchronized String  getLastError()     { return lastError; }
     public synchronized String  getLogs()          { return logs.toString(); }
     public synchronized int     getRestartCount()  { return autoRestartCount.get(); }
+    public synchronized long    getServerStartTimeMs() { return serverStartTimeMs; }
 
     /**
      * §9: CLEAR DISPLAY only clears the UI log buffer.
@@ -158,6 +218,11 @@ public class JellyfinController {
                         setStateLocked(State.RUNNING);
                     }
                 } else {
+                    // Do not mark STOPPED if the process is actually running or starting
+                    if (jellyfinProcess != null && jellyfinProcess.isAlive()) {
+                        Log.d(TAG, "reconcileStateAsync: process is alive, waiting for HTTP readiness without marking STOPPED");
+                        return;
+                    }
                     if (currentState == State.UNINITIALIZED || currentState == State.RUNNING) {
                         setStateLocked(State.STOPPED);
                     }
@@ -327,6 +392,7 @@ public class JellyfinController {
             ProcessBuilder pb = new ProcessBuilder(
                     dotnetBin.getAbsolutePath(),
                     jellyfinDll.getAbsolutePath(),
+                    "--nonetchange",
                     "--ffmpeg", ffmpegBin.getAbsolutePath(),
                     "--datadir", dataDir.getAbsolutePath(),
                     "--configdir", configDir.getAbsolutePath(),
@@ -338,9 +404,9 @@ public class JellyfinController {
             Map<String, String> env = pb.environment();
             env.put("HOME", homeDir.getAbsolutePath());
             env.put("DOTNET_ROOT", new File(prefixDir, "lib/dotnet").getAbsolutePath());
-            env.put("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1");
             String existingPath = env.getOrDefault("PATH", "");
             env.put("PATH", new File(prefixDir, "lib/dotnet").getAbsolutePath()
+                    + ":" + new File(prefixDir, "opt/jellyfin/bin").getAbsolutePath()
                     + ":" + new File(prefixDir, "bin").getAbsolutePath()
                     + (existingPath.isEmpty() ? "" : ":" + existingPath));
 
@@ -629,6 +695,10 @@ public class JellyfinController {
 
     // ── Logging (§9) ───────────────────────────────────────────────────────────
 
+    public synchronized void appendLog(String message) {
+        appendLogLocked(message);
+    }
+
     private void appendLogLocked(String message) {
         Log.i(TAG, message);
         String ts = sdf.format(new Date());
@@ -654,16 +724,21 @@ public class JellyfinController {
                 break;
             case RUNNING:
                 currentStage = StartupStage.READY;
+                if (serverStartTimeMs == 0) {
+                    serverStartTimeMs = System.currentTimeMillis();
+                }
                 break;
             case FAILED:
             case CRASHED:
             case CRASH_LOOP:
                 currentStage = StartupStage.FAILED;
+                serverStartTimeMs = 0;
                 break;
             case STOPPED:
             case STOPPING:
             default:
                 currentStage = StartupStage.NONE;
+                serverStartTimeMs = 0;
                 break;
         }
         Log.i(TAG, "State → " + state + " (Stage: " + currentStage + ")");
