@@ -26,15 +26,18 @@ jobs:
     - name: Grant Execute Permission for Gradlew
       run: chmod +x gradlew
 
+    - name: Download Termux Bootstraps
+      run: ./gradlew downloadBootstraps
+
     - name: Build Release APK
       run: ./gradlew assembleRelease
 
-    - name: Create GitHub Release
+    - name: Upload Release Assets
       id: create_release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         draft: false
         prerelease: false
-        generate_release_notes: true
         files: |
           app/build/outputs/apk/release/Fishbowl-*-release-universal.apk
+
