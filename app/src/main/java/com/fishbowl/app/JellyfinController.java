@@ -10,6 +10,8 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -76,7 +78,10 @@ public class JellyfinController {
         FAILED
     }
 
-    public interface Listener { void onServerChanged(State state); }
+    public interface Listener {
+        void onServerChanged(State state);
+        default void onBootstrapProgress(String message, int percent) {}
+    }
     public interface LogListener { void onLogAppended(); }
 
     // ── Singleton ──────────────────────────────────────────────────────────────
@@ -108,6 +113,8 @@ public class JellyfinController {
     private boolean stopRequested;
     private Integer lastExitCode;
     private String  lastError;
+    private String  bootstrapProgressMessage = "";
+    private int     bootstrapProgressPercent = 0;
     private final AtomicInteger autoRestartCount = new AtomicInteger(0);
     private long serverStartTimeMs = 0;
 
@@ -118,14 +125,18 @@ public class JellyfinController {
         public final long totalRamMb;
         public final long usedRamMb;
         public final int ramUsagePercent;
+        public final long storageFreeMb;
+        public final long storageTotalMb;
 
-        public ServerHealth(boolean isHealthy, String status, long uptimeSeconds, long totalRamMb, long usedRamMb, int ramUsagePercent) {
+        public ServerHealth(boolean isHealthy, String status, long uptimeSeconds, long totalRamMb, long usedRamMb, int ramUsagePercent, long storageFreeMb, long storageTotalMb) {
             this.isHealthy = isHealthy;
             this.status = status;
             this.uptimeSeconds = uptimeSeconds;
             this.totalRamMb = totalRamMb;
             this.usedRamMb = usedRamMb;
             this.ramUsagePercent = ramUsagePercent;
+            this.storageFreeMb = storageFreeMb;
+            this.storageTotalMb = storageTotalMb;
         }
     }
 
@@ -156,7 +167,15 @@ public class JellyfinController {
         long usedMb = Math.max(0, (totalKb - availKb) / 1024);
         int percent = totalMb > 0 ? (int) ((usedMb * 100) / totalMb) : 0;
 
-        return new ServerHealth(healthy, status, uptime, totalMb, usedMb, percent);
+        long storageFreeMb = 0;
+        long storageTotalMb = 0;
+        try {
+            android.os.StatFs stat = new android.os.StatFs(TermuxConstants.TERMUX_FILES_DIR.getAbsolutePath());
+            storageFreeMb = stat.getAvailableBytes() / (1024 * 1024);
+            storageTotalMb = stat.getTotalBytes() / (1024 * 1024);
+        } catch (Throwable ignored) {}
+
+        return new ServerHealth(healthy, status, uptime, totalMb, usedMb, percent, storageFreeMb, storageTotalMb);
     }
 
     private static long parseMemKb(String line) {
@@ -175,6 +194,8 @@ public class JellyfinController {
     public synchronized boolean isRunning()        { return currentState == State.RUNNING; }
     public synchronized Integer getLastExitCode()  { return lastExitCode; }
     public synchronized String  getLastError()     { return lastError; }
+    public synchronized String  getBootstrapProgressMessage() { return bootstrapProgressMessage; }
+    public synchronized int     getBootstrapProgressPercent() { return bootstrapProgressPercent; }
     public synchronized String  getLogs()          { return logs.toString(); }
     public synchronized int     getRestartCount()  { return autoRestartCount.get(); }
     public synchronized long    getServerStartTimeMs() { return serverStartTimeMs; }
@@ -209,6 +230,14 @@ public class JellyfinController {
                 if (currentState == State.STARTING || currentState == State.INITIALIZING || currentState == State.STOPPING) {
                     return; // Do not interfere with active transitions
                 }
+            }
+            if (!JellyfinBootstrapper.isInitialized(null)) {
+                synchronized (JellyfinController.this) {
+                    if (currentState != State.INITIALIZING && currentState != State.STARTING) {
+                        setStateLocked(State.UNINITIALIZED);
+                    }
+                }
+                return;
             }
             boolean ready = isReady();
             synchronized (JellyfinController.this) {
@@ -286,9 +315,55 @@ public class JellyfinController {
             }
 
             final Context appContext = context.getApplicationContext();
-            if (!JellyfinBootstrapper.initializeIfNeeded(appContext)) {
+            boolean initialized = JellyfinBootstrapper.initializeIfNeeded(appContext, (msg, pct) -> {
                 synchronized (JellyfinController.this) {
-                    lastError = "Runtime initialization failed — bootstrap error";
+                    bootstrapProgressMessage = msg;
+                    bootstrapProgressPercent = pct;
+                    appendLogLocked("[BOOTSTRAP " + pct + "%] " + msg);
+                }
+                notifyBootstrapProgress(msg, pct);
+            });
+
+            if (!initialized) {
+                synchronized (JellyfinController.this) {
+                    String detail = JellyfinBootstrapper.getLastError();
+                    lastError = (detail != null && !detail.isEmpty())
+                            ? "Runtime initialization failed — " + detail
+                            : "Runtime initialization failed — bootstrap error";
+                    appendLogLocked("ERROR: " + lastError);
+                    setStateLocked(State.FAILED);
+                }
+                return;
+            }
+            launchServer(appContext);
+        });
+    }
+
+    /** Reinstall Jellyfin runtime from scratch without losing media, database, or settings. */
+    public void reinstallRuntime(final Context context) {
+        executor.execute(() -> {
+            stopAndWait();
+            waitForPortRelease();
+            synchronized (JellyfinController.this) {
+                lastError = null;
+                setStateLocked(State.INITIALIZING);
+                appendLogLocked("Reinstalling Jellyfin runtime from bundled packages...");
+            }
+            final Context appContext = context.getApplicationContext();
+            boolean ok = JellyfinBootstrapper.reinstallRuntime(appContext, (msg, pct) -> {
+                synchronized (JellyfinController.this) {
+                    bootstrapProgressMessage = msg;
+                    bootstrapProgressPercent = pct;
+                    appendLogLocked("[REINSTALL " + pct + "%] " + msg);
+                }
+                notifyBootstrapProgress(msg, pct);
+            });
+            if (!ok) {
+                synchronized (JellyfinController.this) {
+                    String detail = JellyfinBootstrapper.getLastError();
+                    lastError = (detail != null && !detail.isEmpty())
+                            ? "Runtime reinstallation failed — " + detail
+                            : "Runtime reinstallation failed";
                     appendLogLocked("ERROR: " + lastError);
                     setStateLocked(State.FAILED);
                 }
@@ -622,18 +697,17 @@ public class JellyfinController {
     // ── Port conflict detection ────────────────────────────────────────────────
 
     private boolean isPortOccupied() {
-        HttpURLConnection conn = null;
-        try {
-            conn = (HttpURLConnection) new URL("http://127.0.0.1:8096/health").openConnection();
-            conn.setConnectTimeout(1000);
-            conn.setReadTimeout(1000);
-            conn.setRequestMethod("GET");
-            conn.getResponseCode();
-            return true; // any response = port occupied
-        } catch (Exception e) {
+        if (jellyfinProcess != null && jellyfinProcess.isAlive()) {
             return false;
-        } finally {
-            if (conn != null) conn.disconnect();
+        }
+        if (isReady()) {
+            return false;
+        }
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress("127.0.0.1", 8096), 500);
+            return true; // Connection succeeded, another application is holding port 8096
+        } catch (Exception e) {
+            return false; // Port is available
         }
     }
 
@@ -646,7 +720,17 @@ public class JellyfinController {
             conn.setRequestMethod("GET");
             if (conn.getResponseCode() == 200) {
                 String contentType = conn.getContentType();
-                return contentType != null && contentType.contains("application/json");
+                if (contentType != null && contentType.contains("application/json")) {
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            sb.append(line);
+                        }
+                        String body = sb.toString();
+                        return body.contains("\"ProductName\":\"Jellyfin\"") || body.toLowerCase().contains("jellyfin");
+                    }
+                }
             }
             return false;
         } catch (Exception e) {
@@ -665,7 +749,13 @@ public class JellyfinController {
             conn.setConnectTimeout(2000);
             conn.setReadTimeout(2000);
             conn.setRequestMethod("GET");
-            return conn.getResponseCode() == 200;
+            if (conn.getResponseCode() == 200) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                    String line = reader.readLine();
+                    return line != null && line.contains("Healthy");
+                }
+            }
+            return false;
         } catch (Exception e) {
             return false;
         } finally {
@@ -747,5 +837,13 @@ public class JellyfinController {
 
     private void notifyListeners() {
         for (Listener l : listeners) l.onServerChanged(currentState);
+    }
+
+    private void notifyBootstrapProgress(String message, int percent) {
+        for (Listener l : listeners) {
+            try {
+                l.onBootstrapProgress(message, percent);
+            } catch (Throwable ignored) {}
+        }
     }
 }
