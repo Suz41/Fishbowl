@@ -59,8 +59,13 @@ Fishbowl runs the full **Jellyfin Media Server (v12.1.0)** natively on your Andr
 - **Embedded .NET 10 Host:** High-throughput JIT execution powered by Microsoft .NET 10.0.12 (Linux Bionic ARM64).
 - **Jellyfin-FFmpeg Engine:** Native mobile FFmpeg binary supporting on-the-fly transcoding, audio remuxing, and HLS streaming.
 - **SQLite3 Database Engine:** Local low-latency database storage (`libe_sqlite3.so`) for library indexes, user states, and metadata.
+- **Port Conflict & Health Guard:** Pre-flight socket inspection and strict verification of public Jellyfin system endpoints (`/system/info/public` and `/health`) to prevent false-positive reconciles and Emby port 8096 collisions.
 
 ### User Interface
+- **Interactive Setup & Extraction Overlay:** Dedicated onboarding overlay with real-time percentage progress (0% to 100%), five-stage checklist, and live log stream during initial runtime extraction or reinstallations.
+- **Zero-Crash Resilient Architecture:** Pre-cached tab navigation (Home, Logs, Settings) eliminates fragment recreation crashes and state loss.
+- **Throttled Log Queue:** Thread-safe UI log buffer eliminates main thread looper congestion and ANRs during high-volume server operations.
+- **Safe Background Minimization:** Back-press safely moves application to background (`moveTaskToBack`) without terminating or restarting the active server session.
 - **Automatic Auto-Start:** Server lifecycle begins immediately on app launch without manual intervention.
 - **Material 3 Pixel UI:** OLED pure dark mode (`#121316`) with tactile spring animations on all touch targets.
 - **Live Lifecycle Pipeline:** Step-by-step progress tracking (`STARTING_RUNTIME` -> `LAUNCHING_SERVER` -> `WAITING_FOR_SERVER` -> `READY`).
