@@ -239,8 +239,21 @@ task downloadBootstraps() {
     }
 }
 
+tasks.matching {
+    it.name.startsWith("buildNdkBuild") ||
+    it.name.startsWith("configureNdkBuild") ||
+    it.name.startsWith("externalNativeBuild")
+}.configureEach {
+    dependsOn(downloadBootstraps)
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(downloadBootstraps)
+}
+
 afterEvaluate {
     android.applicationVariants.all { variant ->
         variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
     }
 }
+
