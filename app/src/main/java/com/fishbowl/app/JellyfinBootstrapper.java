@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
 
+import android.os.StatFs;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 
@@ -31,13 +32,86 @@ public class JellyfinBootstrapper {
             "jellyfin-bootstrap.tar.gz.part_ad",
             "jellyfin-bootstrap.tar.gz.part_ae"
     };
+    private static final long MIN_REQUIRED_BYTES = 1000L * 1024L * 1024L; // ~1.0 GB minimum required free space
+    private static volatile String lastError = null;
 
-    public static synchronized boolean isInitialized(Context context) {
+    public interface ProgressCallback {
+        void onProgress(String statusMessage, int percent);
+    }
+
+    public static String getLastError() {
+        return lastError;
+    }
+
+    private static void setLastError(String error) {
+        lastError = error;
+    }
+
+    private static String formatSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        int z = (63 - Long.numberOfLeadingZeros(bytes)) / 10;
+        return String.format(java.util.Locale.US, "%.1f %cB", (double) bytes / (1L << (z * 10)), " KMGTPE".charAt(z));
+    }
+
+    private static final Object EXTRACT_LOCK = new Object();
+    private static volatile Boolean isInitializedCached = null;
+
+    public static boolean isInitialized(Context context) {
+        if (isInitializedCached != null && isInitializedCached) {
+            return true;
+        }
         File marker = new File(TermuxConstants.TERMUX_FILES_DIR, INITIALIZED_MARKER_FILE);
         File jellyfinDll = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.dll");
         File dotnetBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/dotnet/dotnet");
         File ffmpegBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "opt/jellyfin/bin/ffmpeg");
-        return marker.exists() && jellyfinDll.exists() && dotnetBin.exists() && ffmpegBin.exists();
+        boolean ready = marker.exists() && jellyfinDll.exists() && dotnetBin.exists() && ffmpegBin.exists();
+        if (ready) {
+            isInitializedCached = true;
+        }
+        return ready;
+    }
+
+    /**
+     * Completely purges the replaceable runtime files and marker to allow a clean reinstall.
+     * Note: Does NOT touch persistent user data in ~/.local/share/jellyfin or configs in ~/.config/jellyfin.
+     */
+    public static boolean reinstallRuntime(Context context, ProgressCallback callback) {
+        synchronized (EXTRACT_LOCK) {
+            isInitializedCached = false;
+            lastError = null;
+            if (callback != null) {
+                callback.onProgress("Clearing previous runtime...", 0);
+            }
+            File marker = new File(TermuxConstants.TERMUX_FILES_DIR, INITIALIZED_MARKER_FILE);
+            if (marker.exists()) {
+                marker.delete();
+            }
+            File legacyMarker = new File(TermuxConstants.TERMUX_FILES_DIR, ".jellyfin_initialized_v10.11.11");
+            if (legacyMarker.exists()) {
+                legacyMarker.delete();
+            }
+            File prefixDir = TermuxConstants.TERMUX_PREFIX_DIR;
+            if (prefixDir.exists()) {
+                deleteRecursively(prefixDir);
+            }
+            File cacheTarGz = new File(context.getCacheDir(), "jellyfin-bootstrap.tar.gz");
+            if (cacheTarGz.exists()) {
+                cacheTarGz.delete();
+            }
+            return initializeInternal(context, callback);
+        }
+    }
+
+    private static boolean deleteRecursively(File fileOrDir) {
+        if (fileOrDir.isDirectory()) {
+            File[] children = fileOrDir.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+        return fileOrDir.delete();
     }
 
     /**
@@ -137,13 +211,52 @@ public class JellyfinBootstrapper {
         }
     }
 
-    public static synchronized boolean initializeIfNeeded(Context context) {
+    public static boolean initializeIfNeeded(Context context) {
+        return initializeIfNeeded(context, null);
+    }
+
+    public static boolean initializeIfNeeded(Context context, ProgressCallback callback) {
+        synchronized (EXTRACT_LOCK) {
+            return initializeInternal(context, callback);
+        }
+    }
+
+    private static boolean initializeInternal(Context context, ProgressCallback callback) {
+        lastError = null;
         ensureNetworkConfig(context);
         if (isInitialized(context)) {
             Log.i(TAG, "Jellyfin environment already initialized.");
+            if (callback != null) {
+                callback.onProgress("Runtime verified and ready", 100);
+            }
             return true;
         }
 
+        File filesDir = TermuxConstants.TERMUX_FILES_DIR;
+        try {
+            if (!filesDir.exists()) {
+                filesDir.mkdirs();
+            }
+            StatFs stat = new StatFs(filesDir.getAbsolutePath());
+            long availableBytes = stat.getAvailableBytes();
+            Log.i(TAG, "Available internal storage: " + formatSize(availableBytes));
+            if (availableBytes < MIN_REQUIRED_BYTES) {
+                String err = "Insufficient internal storage: " + formatSize(availableBytes)
+                        + " free, but at least " + formatSize(MIN_REQUIRED_BYTES) + " is required to unpack Jellyfin runtime.";
+                Log.e(TAG, err);
+                setLastError(err);
+                if (callback != null) {
+                    callback.onProgress(err, 0);
+                }
+                return false;
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Unable to inspect available storage: " + e.getMessage());
+        }
+
+        if (callback != null) {
+            callback.onProgress("Recombining runtime packages...", 10);
+        }
         Log.i(TAG, "Initializing Jellyfin self-contained environment...");
         File marker = new File(TermuxConstants.TERMUX_FILES_DIR, INITIALIZED_MARKER_FILE);
         if (marker.exists()) {
@@ -179,9 +292,16 @@ public class JellyfinBootstrapper {
             }
             Log.i(TAG, "Found bootstrap asset parts: " + partFiles);
 
+            int totalParts = partFiles.size();
+            int partIndex = 0;
             try (OutputStream out = new BufferedOutputStream(new FileOutputStream(cacheTarGz))) {
                 byte[] buffer = new byte[65536];
                 for (String part : partFiles) {
+                    partIndex++;
+                    if (callback != null) {
+                        int pct = 10 + (int) ((partIndex / (float) totalParts) * 25);
+                        callback.onProgress("Recombining part " + partIndex + " of " + totalParts + "...", pct);
+                    }
                     try (InputStream in = context.getAssets().open(part)) {
                         int read;
                         while ((read = in.read(buffer)) != -1) {
@@ -191,6 +311,9 @@ public class JellyfinBootstrapper {
                 }
             }
 
+            if (callback != null) {
+                callback.onProgress("Extracting Jellyfin runtime & FFmpeg...", 40);
+            }
             Log.i(TAG, "Unpacking combined bootstrap archive via Java TarArchiveInputStream...");
             try (InputStream fileIn = new BufferedInputStream(new java.io.FileInputStream(cacheTarGz));
                  GZIPInputStream gzIn = new GZIPInputStream(fileIn);
@@ -211,7 +334,7 @@ public class JellyfinBootstrapper {
                     } else if (entry.isSymbolicLink()) {
                         targetFile.getParentFile().mkdirs();
                         if (targetFile.exists()) {
-                            targetFile.delete();
+                            deleteRecursively(targetFile);
                         }
                         try {
                             Os.symlink(entry.getLinkName(), targetFile.getAbsolutePath());
@@ -234,12 +357,19 @@ public class JellyfinBootstrapper {
                         }
                     }
                     extractedCount++;
+                    if (callback != null && extractedCount % 100 == 0) {
+                        int pct = Math.min(88, 40 + (extractedCount / 50));
+                        callback.onProgress("Extracting runtime files (" + extractedCount + ")...", pct);
+                    }
                 }
                 Log.i(TAG, "Extracted " + extractedCount + " entries from tar.gz!");
             }
 
             cacheTarGz.delete();
 
+            if (callback != null) {
+                callback.onProgress("Configuring permissions & binaries...", 90);
+            }
             File dotnetBin = new File(prefixDir, "lib/dotnet/dotnet");
             if (dotnetBin.exists()) {
                 Os.chmod(dotnetBin.getAbsolutePath(), 0755);
@@ -256,17 +386,38 @@ public class JellyfinBootstrapper {
                 marker.getParentFile().mkdirs();
             }
             marker.createNewFile();
+            isInitializedCached = null;
 
             if (!isInitialized(context)) {
-                Log.e(TAG, "Extraction finished but validation failed.");
+                StringBuilder missing = new StringBuilder();
+                if (!marker.exists()) missing.append("marker file, ");
+                if (!jellyfinDll.exists()) missing.append("jellyfin.dll, ");
+                if (!dotnetBin.exists()) missing.append("dotnet binary, ");
+                if (!ffmpegBin.exists()) missing.append("ffmpeg binary, ");
+                String missingFiles = missing.length() > 2 ? missing.substring(0, missing.length() - 2) : "unknown components";
+                String valErr = "Extraction finished but validation failed: missing " + missingFiles;
+                Log.e(TAG, valErr);
+                setLastError(valErr);
+                if (callback != null) {
+                    callback.onProgress(valErr, 0);
+                }
                 return false;
             }
 
             Log.i(TAG, "Jellyfin self-contained environment initialized successfully!");
+            if (callback != null) {
+                callback.onProgress("Runtime installation complete!", 100);
+            }
             return true;
 
         } catch (Exception e) {
             Log.e(TAG, "Failed to initialize Jellyfin bootstrap environment", e);
+            String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            String fullErr = "Bootstrap extraction failed: " + errorMsg;
+            setLastError(fullErr);
+            if (callback != null) {
+                callback.onProgress(fullErr, 0);
+            }
             if (cacheTarGz.exists()) {
                 cacheTarGz.delete();
             }
