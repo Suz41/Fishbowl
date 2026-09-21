@@ -14,6 +14,9 @@ An unofficial standalone server host and launcher for Jellyfin on Android (ARM64
 > Fishbowl is an independent, unofficial community project and is **not affiliated with, maintained by, or endorsed by the official Jellyfin project or its core developers**. This project was built using an independent vibe-coding workflow with agentic AI assistants.
 > - **Upstream Protection:** **Please do not contact, bother, or submit bug reports to the official Jellyfin developers, forums, or issue trackers for issues with Fishbowl.** All bug reports and questions must be directed exclusively to this repository's [GitHub Issues](https://github.com/Suz41/Fishbowl/issues).
 > - **Security, Transparency & Voluntary Use:** Nobody is forced or pressured to download or install this application. We recognize that because this is a vibe-coded project, security-conscious users may have questions or concerns. The entire project is 100% open-source with full transparency, zero trackers, and zero telemetry. You are freely welcome and encouraged to inspect, decompile, audit the code and network traffic, or test the APK in an isolated environment.
+> - **Self-Build Verification:** You do not have to trust pre-compiled release binaries. All build scripts are open and reproducible; you can build your own APK directly from source using `./gradlew assembleRelease`.
+> - **Mobile Hardware Expectations:** Smartphones and TV boxes are not rackmount servers. Continuous high-bitrate video transcoding generates heat and consumes battery. For 24/7 reliability, prioritize Direct Play/Stream and ensure proper device ventilation.
+> - **Provided "As-Is":** Distributed freely under the GPLv3 license for personal experimentation and home lab use without commercial warranties or service-level agreements.
 
 Fishbowl runs the full **Jellyfin Media Server (v12.1.0)** natively on your Android device (**ARM64**). It transforms any spare Android phone, tablet, or TV box into a dedicated, low-power home streaming server without requiring root access, Docker, or external PC hardware.
 
@@ -249,6 +252,9 @@ Generated APKs will be located in `app/build/outputs/apk/release/` and `app/buil
 - **Complete Open Transparency:** Every line of application code, build script, packaging routine, and CI workflow is published openly in this repository. There are no obfuscated blobs, no closed-source analytics SDKs, and zero telemetry endpoints.
 - **Open to Auditing & Inspection:** We recognize that because this project is vibe-coded, users may naturally have security or stability questions. Anyone is freely welcome and actively encouraged to inspect the source code, decompile the APK, monitor background sockets, or test network traffic in a sandbox or isolated network environment.
 - **Voluntary Exploration:** Nobody is forced, pressured, or obligated to download or install Fishbowl. It is provided freely for enthusiasts and community members who wish to explore, test, or run self-hosted media streaming on Android hardware.
+- **Independent Self-Build Verification:** You do not have to rely on pre-compiled release artifacts. Full build commands and Gradle configuration files are maintained in the repository, enabling anyone to compile their own release APK directly from clean source via `./gradlew assembleRelease`.
+- **Hardware & Thermal Expectations:** Running a multi-threaded media server on mobile SoC architectures naturally differs from running on active-cooled x86 servers. Extended software transcoding tasks generate heat and battery drain. Users are encouraged to prioritize Direct Play configurations and keep host devices properly ventilated on stable power.
+- **"As-Is" Hobbyist Basis:** Distributed under the terms of the GNU GPLv3 without warranties or SLAs. It is built as a community exploration project to prove what mobile hardware can do.
 
 ### Licenses & Upstream
 - **Fishbowl:** Licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE.md).
