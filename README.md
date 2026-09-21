@@ -9,6 +9,11 @@ An unofficial standalone server host and launcher for Jellyfin on Android (ARM64
 [![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE.md)
 [![Privacy](https://img.shields.io/badge/Telemetry-0%25%20(100%25%20Local)-success.svg)](#permissions--privacy)
 
+> [!IMPORTANT]
+> **Disclaimer & Upstream Notice:**
+> Fishbowl is an independent, unofficial community project and is **not affiliated with, maintained by, or endorsed by the official Jellyfin project or its core developers**. This project was built using an independent vibe-coding workflow with agentic AI assistants.
+> **Please do not contact, bother, or submit bug reports to the official Jellyfin developers, forums, or issue trackers for issues with Fishbowl.** All bug reports and questions must be directed exclusively to this repository's [GitHub Issues](https://github.com/Suz41/Fishbowl/issues).
+
 Fishbowl runs the full **Jellyfin Media Server (v12.1.0)** natively on your Android device (**ARM64**). It transforms any spare Android phone, tablet, or TV box into a dedicated, low-power home streaming server without requiring root access, Docker, or external PC hardware.
 
 ---
@@ -234,10 +239,10 @@ Generated APKs will be located in `app/build/outputs/apk/release/` and `app/buil
 
 ## Disclosures & License
 
-### AI / LLM Disclosure
-In compliance with open-source community standards:
-- **Development Approach:** This project was assembled utilizing a vibe-coding methodology with conversational agentic AI coding assistants (Google Antigravity / Gemini models).
-- **Verification:** All generated code and configurations have been manually reviewed, audited, and empirically tested on physical ARM64 hardware.
+### Unofficial Community Project & Upstream Notice
+- **Not an Official Jellyfin Product:** Fishbowl is an independent, unofficial launcher and container environment. It is not affiliated with, endorsed by, maintained by, or supported by the official Jellyfin project or its development team.
+- **Do Not Contact Official Jellyfin Developers:** Please **do not contact, trouble, or open bug reports with the official Jellyfin developers, Discord, or community forums** regarding Fishbowl crashes, packaging errors, or port issues. All bug reports and feature requests must be opened exclusively on this project's [GitHub Issues](https://github.com/Suz41/Fishbowl/issues).
+- **Vibe-Coded Architecture:** This project was developed utilizing a vibe-coding methodology with conversational agentic AI coding assistants (Google Antigravity / Gemini models) and tested empirically on physical ARM64 hardware.
 
 ### Licenses & Upstream
 - **Fishbowl:** Licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE.md).
