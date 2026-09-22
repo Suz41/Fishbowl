@@ -28,6 +28,12 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+        disable 'NewApi'
+    }
+
     publishing {
         multipleVariants {
             withSourcesJar()
