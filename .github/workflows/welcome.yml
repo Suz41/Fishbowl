@@ -1,0 +1,34 @@
+name: Welcome Bot
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/first-interaction@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: |
+            Thank you for opening an issue on Fishbowl.
+
+            - Please verify that you are running the latest version from [Releases](https://github.com/Suz41/Fishbowl/releases).
+            - For device-specific setup or playback issues, please attach your console logs (Logs tab -> COPY) and specify your exact device model and Android version.
+            - Consult the [Troubleshooting & FAQ](https://github.com/Suz41/Fishbowl/wiki/Troubleshooting-&-FAQ) for common resolutions.
+            - Maintainers will review your report shortly.
+          pr-message: |
+            Thank you for opening your first pull request on Fishbowl.
+
+            Please ensure that your code adheres to the project standards:
+            - Pure Dark Mode styling only
+            - Zero emojis across code, UI, and logs
+            - Targeted surgical diffs without extraneous whitespace
+            - Verification via `./gradlew compileDebugJava`
