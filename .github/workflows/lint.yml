@@ -28,7 +28,7 @@ jobs:
       run: ./gradlew downloadBootstraps
 
     - name: Run Android Lint
-      run: ./gradlew lintDebug
+      run: ./gradlew :app:lintDebug
 
     - name: Upload Lint Report
       uses: actions/upload-artifact@v7
