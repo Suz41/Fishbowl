@@ -68,11 +68,13 @@ Fishbowl runs the full **Jellyfin Media Server (v12.1.0)** natively on your Andr
 - **Embedded .NET 10 Host:** High-throughput JIT execution powered by Microsoft .NET 10.0.12 (Linux Bionic ARM64).
 - **Jellyfin-FFmpeg Engine:** Native mobile FFmpeg binary supporting on-the-fly transcoding, audio remuxing, and HLS streaming.
 - **SQLite3 Database Engine:** Local low-latency database storage (`libe_sqlite3.so`) for library indexes, user states, and metadata.
-- **Port Conflict & Health Guard:** Pre-flight socket inspection and strict verification of public Jellyfin system endpoints (`/system/info/public` and `/health`) to prevent false-positive reconciles and Emby port 8096 collisions.
+- **Port Conflict & Health Guard:** Active socket loopback probing (`isPortListening`) and strict verification of public Jellyfin system endpoints (`/system/info/public` and `/health`) to prevent false-positive reconciles, startup staging hangs, and Emby port 8096 collisions.
+- **Hardened Bootstrap Extraction:** Proactive write permission enforcement (`setWritable`) and destination unlinking eliminates Android `EACCES (Permission denied)` errors during clean installs.
 
 ### User Interface
 - **Interactive Setup & Extraction Overlay:** Dedicated onboarding overlay with real-time percentage progress (0% to 100%), five-stage checklist, and live log stream during initial runtime extraction or reinstallations.
 - **Zero-Crash Resilient Architecture:** Pre-cached tab navigation (Home, Logs, Settings) eliminates fragment recreation crashes and state loss.
+- **On-Disk Serilog Log Reader:** Dedicated `DISK LOG` / `CONSOLE` toggle and `COPY` button on both the home dashboard and full-screen Logs viewer to inspect internal Jellyfin logs directly from disk.
 - **Throttled Log Queue:** Thread-safe UI log buffer eliminates main thread looper congestion and ANRs during high-volume server operations.
 - **Safe Background Minimization:** Back-press safely moves application to background (`moveTaskToBack`) without terminating or restarting the active server session.
 - **Automatic Auto-Start:** Server lifecycle begins immediately on app launch without manual intervention.
