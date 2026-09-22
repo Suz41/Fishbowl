@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
 
+import android.os.PowerManager;
 import android.os.StatFs;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
@@ -103,6 +104,12 @@ public class JellyfinBootstrapper {
     }
 
     private static boolean deleteRecursively(File fileOrDir) {
+        if (fileOrDir == null || !fileOrDir.exists()) {
+            return true;
+        }
+        try {
+            fileOrDir.setWritable(true, false);
+        } catch (Exception ignored) {}
         if (fileOrDir.isDirectory()) {
             File[] children = fileOrDir.listFiles();
             if (children != null) {
@@ -112,6 +119,20 @@ public class JellyfinBootstrapper {
             }
         }
         return fileOrDir.delete();
+    }
+
+    private static void ensureParentWritable(File file) {
+        if (file == null) return;
+        File parent = file.getParentFile();
+        if (parent != null) {
+            if (!parent.exists()) {
+                parent.mkdirs();
+            }
+            try {
+                parent.setWritable(true, false);
+                parent.setExecutable(true, false);
+            } catch (Exception ignored) {}
+        }
     }
 
     /**
@@ -193,7 +214,7 @@ public class JellyfinBootstrapper {
                     + "  <InternalHttpsPort>8920</InternalHttpsPort>\n"
                     + "  <PublicHttpPort>8096</PublicHttpPort>\n"
                     + "  <PublicHttpsPort>8920</PublicHttpsPort>\n"
-                    + "  <AutoRunWebApp>true</AutoRunWebApp>\n"
+                    + "  <AutoRunWebApp>false</AutoRunWebApp>\n"
                     + "  <EnableRemoteAccess>true</EnableRemoteAccess>\n"
                     + "  <LocalNetworkAddresses />\n"
                     + "  <LocalNetworkSubnets />\n"
@@ -232,48 +253,68 @@ public class JellyfinBootstrapper {
             return true;
         }
 
-        File filesDir = TermuxConstants.TERMUX_FILES_DIR;
-        try {
-            if (!filesDir.exists()) {
-                filesDir.mkdirs();
+        PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        PowerManager.WakeLock wakeLock = null;
+        if (pm != null) {
+            try {
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Fishbowl:BootstrapWakeLock");
+                wakeLock.acquire(10 * 60 * 1000L);
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to acquire bootstrap WakeLock: " + e.getMessage());
             }
-            StatFs stat = new StatFs(filesDir.getAbsolutePath());
-            long availableBytes = stat.getAvailableBytes();
-            Log.i(TAG, "Available internal storage: " + formatSize(availableBytes));
-            if (availableBytes < MIN_REQUIRED_BYTES) {
-                String err = "Insufficient internal storage: " + formatSize(availableBytes)
-                        + " free, but at least " + formatSize(MIN_REQUIRED_BYTES) + " is required to unpack Jellyfin runtime.";
-                Log.e(TAG, err);
-                setLastError(err);
-                if (callback != null) {
-                    callback.onProgress(err, 0);
-                }
-                return false;
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Unable to inspect available storage: " + e.getMessage());
-        }
-
-        if (callback != null) {
-            callback.onProgress("Recombining runtime packages...", 10);
-        }
-        Log.i(TAG, "Initializing Jellyfin self-contained environment...");
-        File marker = new File(TermuxConstants.TERMUX_FILES_DIR, INITIALIZED_MARKER_FILE);
-        if (marker.exists()) {
-            marker.delete();
-        }
-        File legacyMarker = new File(TermuxConstants.TERMUX_FILES_DIR, ".jellyfin_initialized_v10.11.11");
-        if (legacyMarker.exists()) {
-            legacyMarker.delete();
-        }
-
-        File prefixDir = TermuxConstants.TERMUX_PREFIX_DIR;
-        if (!prefixDir.exists()) {
-            prefixDir.mkdirs();
         }
 
         File cacheTarGz = new File(context.getCacheDir(), "jellyfin-bootstrap.tar.gz");
         try {
+            File filesDir = TermuxConstants.TERMUX_FILES_DIR;
+            try {
+                if (!filesDir.exists()) {
+                    filesDir.mkdirs();
+                }
+                StatFs stat = new StatFs(filesDir.getAbsolutePath());
+                long availableBytes = stat.getAvailableBytes();
+                Log.i(TAG, "Available internal storage: " + formatSize(availableBytes));
+                if (availableBytes < MIN_REQUIRED_BYTES) {
+                    String err = "Insufficient internal storage: " + formatSize(availableBytes)
+                            + " free, but at least " + formatSize(MIN_REQUIRED_BYTES) + " is required to unpack Jellyfin runtime.";
+                    Log.e(TAG, err);
+                    setLastError(err);
+                    if (callback != null) {
+                        callback.onProgress(err, 0);
+                    }
+                    return false;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Unable to inspect available storage: " + e.getMessage());
+            }
+
+            if (callback != null) {
+                callback.onProgress("Recombining runtime packages...", 10);
+            }
+            Log.i(TAG, "Initializing Jellyfin self-contained environment...");
+            File marker = new File(TermuxConstants.TERMUX_FILES_DIR, INITIALIZED_MARKER_FILE);
+            if (marker.exists()) {
+                marker.delete();
+            }
+            File legacyMarker = new File(TermuxConstants.TERMUX_FILES_DIR, ".jellyfin_initialized_v10.11.11");
+            if (legacyMarker.exists()) {
+                legacyMarker.delete();
+            }
+
+            File prefixDir = TermuxConstants.TERMUX_PREFIX_DIR;
+            // Purge incomplete or uninitialized prefix directory to guarantee clean slate and avoid EACCES collisions
+            if (prefixDir.exists()) {
+                Log.i(TAG, "Purging uninitialized/incomplete prefix directory before extraction: " + prefixDir);
+                deleteRecursively(prefixDir);
+            }
+            if (!prefixDir.exists()) {
+                prefixDir.mkdirs();
+            }
+            try {
+                prefixDir.setWritable(true, false);
+                prefixDir.setExecutable(true, false);
+            } catch (Exception ignored) {}
+
             Log.i(TAG, "Recombining split bootstrap assets into cache...");
             List<String> partFiles = new ArrayList<>();
             try {
@@ -331,8 +372,13 @@ public class JellyfinBootstrapper {
 
                     if (entry.isDirectory()) {
                         targetFile.mkdirs();
+                        try {
+                            targetFile.setWritable(true, false);
+                            targetFile.setReadable(true, false);
+                            targetFile.setExecutable(true, false);
+                        } catch (Exception ignored) {}
                     } else if (entry.isSymbolicLink()) {
-                        targetFile.getParentFile().mkdirs();
+                        ensureParentWritable(targetFile);
                         if (targetFile.exists()) {
                             deleteRecursively(targetFile);
                         }
@@ -342,7 +388,15 @@ public class JellyfinBootstrapper {
                             Log.w(TAG, "Failed to create symlink " + targetFile + " -> " + entry.getLinkName() + ": " + e.getMessage());
                         }
                     } else {
-                        targetFile.getParentFile().mkdirs();
+                        ensureParentWritable(targetFile);
+                        if (targetFile.exists()) {
+                            if (!targetFile.delete()) {
+                                try {
+                                    targetFile.setWritable(true, false);
+                                    targetFile.delete();
+                                } catch (Exception ignored) {}
+                            }
+                        }
                         try (OutputStream out = new BufferedOutputStream(new FileOutputStream(targetFile))) {
                             int count;
                             while ((count = tarIn.read(buffer, 0, buffer.length)) != -1) {
@@ -422,6 +476,12 @@ public class JellyfinBootstrapper {
                 cacheTarGz.delete();
             }
             return false;
+        } finally {
+            if (wakeLock != null && wakeLock.isHeld()) {
+                try {
+                    wakeLock.release();
+                } catch (Exception ignored) {}
+            }
         }
     }
 }

@@ -100,6 +100,7 @@ public class JellyfinServerService extends Service implements JellyfinController
                 case STARTING:
                 case INITIALIZING:
                     hasStarted = true;
+                    acquireWakeLock();
                     text = "Starting server...";
                     break;
                 case STOPPING:

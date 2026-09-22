@@ -25,6 +25,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -137,6 +138,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     // Throttled Log Handler (§4 UI Thread Protection)
     private final android.os.Handler logUpdateHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private boolean logUpdatePending = false;
+    private boolean showingDiskLog = false;
     private static final long LOG_REFRESH_THROTTLE_MS = 500;
 
     // Server Health Poller
@@ -631,7 +633,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         setupRetryBtn = createPixelButton("RETRY SETUP", getAccentColor(), Color.WHITE);
         setupRetryBtn.setOnClickListener(v -> {
             setupRetryBtn.setVisibility(View.GONE);
-            triggerServerAction(JellyfinServerService.ACTION_START);
+            controller.reinstallRuntime(this);
         });
         setupRetryBtn.setVisibility(View.GONE);
         container.addView(setupRetryBtn);
@@ -670,8 +672,16 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         setupOverlayView.setVisibility(showOverlay ? View.VISIBLE : View.GONE);
         if (!showOverlay) {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             return;
         }
+
+        if (isInitializing || isStarting) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+
         setupOverlayView.bringToFront();
 
         int pct = controller.getBootstrapProgressPercent();
@@ -1286,17 +1296,41 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         Button btnRefresh = createPixelButton("REFRESH", getSurfaceColor(), getPrimaryTextColor());
         btnRefresh.setOnClickListener(v -> refreshLogsDisplay());
         LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        p1.rightMargin = dp(6);
+        p1.rightMargin = dp(4);
         actions.addView(btnRefresh, p1);
 
-        Button btnClear = createPixelButton("CLEAR DISPLAY", getSurfaceColor(), getPrimaryTextColor());
+        Button btnToggleLog = createPixelButton("DISK LOG", getSurfaceColor(), getPrimaryTextColor());
+        btnToggleLog.setOnClickListener(v -> {
+            showingDiskLog = !showingDiskLog;
+            btnToggleLog.setText(showingDiskLog ? "CONSOLE" : "DISK LOG");
+            refreshLogsDisplay();
+        });
+        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        p2.rightMargin = dp(4);
+        actions.addView(btnToggleLog, p2);
+
+        Button btnCopy = createPixelButton("COPY", getSurfaceColor(), getPrimaryTextColor());
+        btnCopy.setOnClickListener(v -> {
+            String content = (logsOutputText != null) ? logsOutputText.getText().toString() : "";
+            if (!content.isEmpty()) {
+                android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Fishbowl Logs", content));
+                    android.widget.Toast.makeText(this, "Logs copied to clipboard", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+        LinearLayout.LayoutParams p3 = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        p3.rightMargin = dp(4);
+        actions.addView(btnCopy, p3);
+
+        Button btnClear = createPixelButton("CLEAR", getSurfaceColor(), getPrimaryTextColor());
         btnClear.setOnClickListener(v -> {
             controller.clearDisplayedLogs();
             refreshLogsDisplay();
         });
-        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        p2.leftMargin = dp(6);
-        actions.addView(btnClear, p2);
+        LinearLayout.LayoutParams p4 = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        actions.addView(btnClear, p4);
 
         layout.addView(actions);
 
@@ -1318,7 +1352,12 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
     private void refreshLogsDisplay() {
         if (logsOutputText != null && controller != null) {
-            logsOutputText.setText(controller.getLogs());
+            if (showingDiskLog) {
+                String disk = controller.getDiskLogs();
+                logsOutputText.setText(disk.isEmpty() ? "--- No Jellyfin disk log found yet in $DATA_DIR/log ---" : disk);
+            } else {
+                logsOutputText.setText(controller.getLogs());
+            }
         }
     }
 
@@ -1788,7 +1827,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         btnSettingsRetry = createPixelButton("RETRY SETUP", getAccentColor(), Color.WHITE);
         btnSettingsRetry.setOnClickListener(v -> {
             Toast.makeText(this, "Retrying Jellyfin setup...", Toast.LENGTH_SHORT).show();
-            triggerServerAction(JellyfinServerService.ACTION_START);
+            controller.reinstallRuntime(this);
         });
         btnSettingsRetry.setVisibility(View.GONE);
         item.addView(btnSettingsRetry);
@@ -1992,12 +2031,12 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                             stageText = "2/4 Launching Jellyfin server process...";
                             break;
                         case WAITING_FOR_SERVER:
-                            progressVal = 75;
-                            stageText = "3/4 Binding HTTP ports & migrating database...";
+                            progressVal = 70;
+                            stageText = "3/4 Binding HTTP ports...";
                             break;
                         case CHECKING_READINESS:
                             progressVal = 90;
-                            stageText = "4/4 Verifying API readiness...";
+                            stageText = "4/4 Polling readiness & migrating database...";
                             break;
                         case READY:
                             progressVal = 100;
@@ -2036,8 +2075,8 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                 String stage1Label = (bMsg != null && !bMsg.isEmpty()) ? "1. " + bMsg + " (" + bPct + "%)" : "1. Starting runtime environment";
                 updateStageRow(txtStage1, stage1Label, stage.ordinal() >= JellyfinController.StartupStage.STARTING_RUNTIME.ordinal() && bPct == 100, stage == JellyfinController.StartupStage.STARTING_RUNTIME || state == JellyfinController.State.INITIALIZING);
                 updateStageRow(txtStage2, "2. Launching Jellyfin server process", stage.ordinal() >= JellyfinController.StartupStage.LAUNCHING_SERVER.ordinal(), stage == JellyfinController.StartupStage.LAUNCHING_SERVER);
-                updateStageRow(txtStage3, "3. Waiting for server (binding port 8096)", stage.ordinal() >= JellyfinController.StartupStage.WAITING_FOR_SERVER.ordinal(), stage == JellyfinController.StartupStage.WAITING_FOR_SERVER);
-                updateStageRow(txtStage4, "4. Polling readiness (/system/info/public)", stage.ordinal() >= JellyfinController.StartupStage.CHECKING_READINESS.ordinal(), stage == JellyfinController.StartupStage.CHECKING_READINESS);
+                updateStageRow(txtStage3, "3. Waiting for server (binding port 8096)", stage.ordinal() > JellyfinController.StartupStage.WAITING_FOR_SERVER.ordinal(), stage == JellyfinController.StartupStage.WAITING_FOR_SERVER);
+                updateStageRow(txtStage4, "4. Polling readiness & migrating database", stage.ordinal() >= JellyfinController.StartupStage.CHECKING_READINESS.ordinal(), stage == JellyfinController.StartupStage.CHECKING_READINESS);
                 updateStageRow(txtStage5, "5. Ready", stage == JellyfinController.StartupStage.READY, false);
             }
         }

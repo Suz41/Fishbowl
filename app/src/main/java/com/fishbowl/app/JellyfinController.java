@@ -116,6 +116,7 @@ public class JellyfinController {
     private String  bootstrapProgressMessage = "";
     private int     bootstrapProgressPercent = 0;
     private final AtomicInteger autoRestartCount = new AtomicInteger(0);
+    private final AtomicInteger healthPollAttempt = new AtomicInteger(0);
     private long serverStartTimeMs = 0;
 
     public static class ServerHealth {
@@ -587,21 +588,27 @@ public class JellyfinController {
 
     private synchronized void startHealthCheck(final Process process) {
         cancelHealthCheckLocked();
+        healthPollAttempt.set(0);
         healthCheckExecutor = Executors.newSingleThreadScheduledExecutor();
         healthCheckFuture = healthCheckExecutor.scheduleAtFixedRate(() -> {
             boolean ready = isReady();
+            boolean listening = isPortListening(8096);
+            int attempt = healthPollAttempt.incrementAndGet();
             synchronized (JellyfinController.this) {
                 if (process != jellyfinProcess || stopRequested) return;
                 if (!process.isAlive()) return; // exit monitor handles
                 if (ready && currentState == State.STARTING) {
                     autoRestartCount.set(0); // successful start resets crash counter
-                    appendLogLocked("Public System Info → HTTP 200 JSON — server is RUNNING (READY)");
+                    appendLogLocked("Public System Info -> HTTP 200 JSON - server is RUNNING (READY)");
                     setStateLocked(State.RUNNING);
                     // §3/§12: Stop polling once healthy — avoid unnecessary background polling
                     cancelHealthCheckLocked();
                 } else if (currentState == State.STARTING) {
-                    if (isPortOccupied()) {
+                    if (listening) {
                         currentStage = StartupStage.CHECKING_READINESS;
+                        if (attempt % 4 == 0) {
+                            appendLogLocked("Port 8096 listening — database migration & startup in progress (attempt " + attempt + ")...");
+                        }
                     } else {
                         currentStage = StartupStage.WAITING_FOR_SERVER;
                     }
@@ -711,6 +718,15 @@ public class JellyfinController {
         }
     }
 
+    public boolean isPortListening(int port) {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress("127.0.0.1", port), 500);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private boolean isReady() {
         HttpURLConnection conn = null;
         try {
@@ -760,6 +776,34 @@ public class JellyfinController {
             return false;
         } finally {
             if (conn != null) conn.disconnect();
+        }
+    }
+
+    /**
+     * Read the latest Jellyfin server log file directly from disk ($DATA_DIR/log).
+     * Provides immediate visibility into database migrations, SQLite errors, and startup details.
+     */
+    public synchronized String getDiskLogs() {
+        File dataDir = getProgramDataDir();
+        File logDir = new File(dataDir, "log");
+        if (!logDir.exists() || !logDir.isDirectory()) return "";
+        File[] files = logDir.listFiles((dir, name) -> name.endsWith(".log"));
+        if (files == null || files.length == 0) return "";
+        File latest = files[0];
+        for (File f : files) {
+            if (f.lastModified() > latest.lastModified()) {
+                latest = f;
+            }
+        }
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(latest, "r")) {
+            long len = raf.length();
+            long start = Math.max(0, len - 32768);
+            raf.seek(start);
+            byte[] bytes = new byte[(int) (len - start)];
+            raf.readFully(bytes);
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Throwable e) {
+            return "Error reading disk log: " + e.getMessage();
         }
     }
 
