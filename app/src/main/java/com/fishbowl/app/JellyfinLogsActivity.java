@@ -26,6 +26,7 @@ public final class JellyfinLogsActivity extends AppCompatActivity
 
     private final android.os.Handler logUpdateHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private boolean logUpdatePending = false;
+    private boolean showingDiskLog = false;
     private static final long LOG_REFRESH_THROTTLE_MS = 500;
 
     @Override
@@ -61,17 +62,41 @@ public final class JellyfinLogsActivity extends AppCompatActivity
         Button btnRefresh = createPixelButton("REFRESH", isDarkTheme() ? Color.parseColor("#272930") : Color.parseColor("#FFFFFF"), isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
         btnRefresh.setOnClickListener(v -> refresh());
         LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        p1.rightMargin = dp(6);
+        p1.rightMargin = dp(4);
         actions.addView(btnRefresh, p1);
 
-        Button btnClear = createPixelButton("CLEAR DISPLAY", isDarkTheme() ? Color.parseColor("#272930") : Color.parseColor("#FFFFFF"), isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
+        Button btnToggleLog = createPixelButton("DISK LOG", isDarkTheme() ? Color.parseColor("#272930") : Color.parseColor("#FFFFFF"), isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
+        btnToggleLog.setOnClickListener(v -> {
+            showingDiskLog = !showingDiskLog;
+            btnToggleLog.setText(showingDiskLog ? "CONSOLE" : "DISK LOG");
+            refresh();
+        });
+        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        p2.rightMargin = dp(4);
+        actions.addView(btnToggleLog, p2);
+
+        Button btnCopy = createPixelButton("COPY", isDarkTheme() ? Color.parseColor("#272930") : Color.parseColor("#FFFFFF"), isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
+        btnCopy.setOnClickListener(v -> {
+            String content = (output != null) ? output.getText().toString() : "";
+            if (!content.isEmpty()) {
+                android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Fishbowl Logs", content));
+                    android.widget.Toast.makeText(this, "Logs copied to clipboard", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+        LinearLayout.LayoutParams p3 = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        p3.rightMargin = dp(4);
+        actions.addView(btnCopy, p3);
+
+        Button btnClear = createPixelButton("CLEAR", isDarkTheme() ? Color.parseColor("#272930") : Color.parseColor("#FFFFFF"), isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
         btnClear.setOnClickListener(v -> {
             controller.clearDisplayedLogs();
             refresh();
         });
-        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        p2.leftMargin = dp(6);
-        actions.addView(btnClear, p2);
+        LinearLayout.LayoutParams p4 = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        actions.addView(btnClear, p4);
 
         root.addView(actions);
 
@@ -129,7 +154,12 @@ public final class JellyfinLogsActivity extends AppCompatActivity
 
     private void refresh() {
         if (output != null && controller != null) {
-            output.setText(controller.getLogs());
+            if (showingDiskLog) {
+                String disk = controller.getDiskLogs();
+                output.setText(disk.isEmpty() ? "--- No Jellyfin disk log found yet in $DATA_DIR/log ---" : disk);
+            } else {
+                output.setText(controller.getLogs());
+            }
         }
     }
 
