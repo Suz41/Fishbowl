@@ -1,0 +1,19 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: ['docs/**', 'wiki/**', '*.md']
+
+workflows:
+  - changed-files:
+      - any-glob-to-any-file: ['.github/**']
+
+ui:
+  - changed-files:
+      - any-glob-to-any-file: ['app/src/main/res/**', 'app/src/main/java/com/fishbowl/app/*Activity.java']
+
+backend:
+  - changed-files:
+      - any-glob-to-any-file: ['app/src/main/java/com/fishbowl/app/JellyfinController.java', 'app/src/main/java/com/fishbowl/app/JellyfinBootstrapper.java', 'app/src/main/java/com/fishbowl/app/JellyfinServerService.java']
+
+termux:
+  - changed-files:
+      - any-glob-to-any-file: ['terminal-emulator/**', 'terminal-view/**', 'termux-shared/**', 'app/src/main/cpp/**']

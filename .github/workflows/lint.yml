@@ -2,9 +2,9 @@ name: Linter Bot
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ master, develop ]
+    branches: [ main, develop ]
 
 jobs:
   lint:
@@ -23,6 +23,9 @@ jobs:
 
     - name: Grant Execute Permission for Gradlew
       run: chmod +x gradlew
+
+    - name: Download Termux Bootstraps
+      run: ./gradlew downloadBootstraps
 
     - name: Run Android Lint
       run: ./gradlew lintDebug
