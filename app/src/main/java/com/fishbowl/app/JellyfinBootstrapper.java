@@ -363,12 +363,17 @@ public class JellyfinBootstrapper {
                 TarArchiveEntry entry;
                 byte[] buffer = new byte[65536];
                 int extractedCount = 0;
+                String canonicalDestPath = prefixDir.getCanonicalPath();
                 while ((entry = tarIn.getNextTarEntry()) != null) {
                     String name = entry.getName();
                     while (name.startsWith("./") || name.startsWith("/")) {
                         name = name.startsWith("./") ? name.substring(2) : name.substring(1);
                     }
                     File targetFile = new File(prefixDir, name);
+                    String canonicalTargetPath = targetFile.getCanonicalPath();
+                    if (!canonicalTargetPath.startsWith(canonicalDestPath + File.separator) && !canonicalTargetPath.equals(canonicalDestPath)) {
+                        throw new SecurityException("Zip slip detected in archive entry: " + name);
+                    }
 
                     if (entry.isDirectory()) {
                         targetFile.mkdirs();
