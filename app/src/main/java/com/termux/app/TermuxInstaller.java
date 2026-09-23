@@ -156,6 +156,9 @@ final class TermuxInstaller {
                     final byte[] buffer = new byte[8096];
                     final List<Pair<String, String>> symlinks = new ArrayList<>(50);
 
+                    File stagingDir = new File(TERMUX_STAGING_PREFIX_DIR_PATH);
+                    String canonicalStagingDir = stagingDir.getCanonicalPath();
+
                     final byte[] zipBytes = loadZipBytes();
                     try (ZipInputStream zipInput = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
                         ZipEntry zipEntry;
@@ -168,10 +171,16 @@ final class TermuxInstaller {
                                     if (parts.length != 2)
                                         throw new RuntimeException("Malformed symlink line: " + line);
                                     String oldPath = parts[0];
-                                    String newPath = TERMUX_STAGING_PREFIX_DIR_PATH + "/" + parts[1];
+                                    String symlinkRel = parts[1];
+                                    File symlinkTarget = new File(stagingDir, symlinkRel);
+                                    String canonicalSymlinkTarget = symlinkTarget.getCanonicalPath();
+                                    if (!canonicalSymlinkTarget.startsWith(canonicalStagingDir + File.separator) && !canonicalSymlinkTarget.equals(canonicalStagingDir)) {
+                                        throw new SecurityException("Zip slip detected in bootstrap symlink: " + symlinkRel);
+                                    }
+                                    String newPath = symlinkTarget.getAbsolutePath();
                                     symlinks.add(Pair.create(oldPath, newPath));
 
-                                    error = ensureDirectoryExists(new File(newPath).getParentFile());
+                                    error = ensureDirectoryExists(symlinkTarget.getParentFile());
                                     if (error != null) {
                                         showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
                                         return;
@@ -179,7 +188,11 @@ final class TermuxInstaller {
                                 }
                             } else {
                                 String zipEntryName = zipEntry.getName();
-                                File targetFile = new File(TERMUX_STAGING_PREFIX_DIR_PATH, zipEntryName);
+                                File targetFile = new File(stagingDir, zipEntryName);
+                                String canonicalTargetPath = targetFile.getCanonicalPath();
+                                if (!canonicalTargetPath.startsWith(canonicalStagingDir + File.separator) && !canonicalTargetPath.equals(canonicalStagingDir)) {
+                                    throw new SecurityException("Zip slip detected in bootstrap entry: " + zipEntryName);
+                                }
                                 boolean isDirectory = zipEntry.isDirectory();
 
                                 error = ensureDirectoryExists(isDirectory ? targetFile : targetFile.getParentFile());

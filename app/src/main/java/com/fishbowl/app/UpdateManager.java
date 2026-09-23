@@ -214,10 +214,20 @@ public final class UpdateManager {
                     JSONArray assets = releaseJson.optJSONArray("assets");
 
                     int parsedVersionCode = -1;
-                    Pattern pattern = Pattern.compile("versionCode\\s*[:=]?\\s*(\\d+)");
-                    Matcher matcher = pattern.matcher(body);
-                    if (matcher.find()) {
-                        parsedVersionCode = Integer.parseInt(matcher.group(1));
+                    if (body != null) {
+                        for (String bLine : body.split("\n")) {
+                            String trimmed = bLine.trim();
+                            if (trimmed.startsWith("versionCode")) {
+                                String rest = trimmed.substring("versionCode".length()).trim();
+                                if (rest.startsWith(":") || rest.startsWith("=")) {
+                                    rest = rest.substring(1).trim();
+                                }
+                                try {
+                                    parsedVersionCode = Integer.parseInt(rest);
+                                    break;
+                                } catch (NumberFormatException ignored) {}
+                            }
+                        }
                     }
 
                     if (parsedVersionCode <= 0) {
@@ -350,8 +360,29 @@ public final class UpdateManager {
     }
 
     private String cleanReleaseNotes(String body) {
-        String clean = body.replaceAll("(?m)^versionCode\\s*[:=]?\\s*\\d+\\s*$", "");
-        return clean.trim();
+        if (body == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String line : body.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("versionCode")) {
+                String rest = trimmed.substring("versionCode".length()).trim();
+                if (rest.startsWith(":") || rest.startsWith("=")) {
+                    rest = rest.substring(1).trim();
+                }
+                boolean isAllDigits = !rest.isEmpty();
+                for (int i = 0; i < rest.length(); i++) {
+                    if (!Character.isDigit(rest.charAt(i))) {
+                        isAllDigits = false;
+                        break;
+                    }
+                }
+                if (isAllDigits) {
+                    continue;
+                }
+            }
+            sb.append(line).append("\n");
+        }
+        return sb.toString().trim();
     }
 
     public synchronized void startDownload(Context context) {

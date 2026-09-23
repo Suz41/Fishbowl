@@ -761,6 +761,10 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         builder.setPositiveButton("SELECT PATH", (dialog, which) -> {
             String path = input.getText().toString().trim();
             if (!path.isEmpty()) {
+                if (path.contains("..") || path.contains("\0") || (!path.startsWith("/storage/") && !path.startsWith("/sdcard") && !path.startsWith("/mnt/"))) {
+                    Toast.makeText(this, "Invalid storage path. Must be an absolute path under /storage/ without '..'", Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 setActivePath(path, true);
                 StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(path);
                 if (ver.hasPermissionError || !ver.canRead) {
