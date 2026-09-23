@@ -26,6 +26,7 @@ Fishbowl runs the full **Jellyfin Media Server (v12.1.0)** natively on your Andr
 
 1. **Download & Install:**
    Grab the latest [Fishbowl-v1.4.6-release-universal.apk](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.6) and install it on your ARM64 Android device.
+   - **SHA-256 Checksum:** `D9F9AF398D988AFBF6483E8196F0226B8B90CF0C7557B566537BF20D05E8A930`
 2. **Launch & Start:**
    Open **Fishbowl**. The server auto-starts in the background. When the status badge turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
 3. **Connect & Stream:**
@@ -89,6 +90,14 @@ Fishbowl runs the full **Jellyfin Media Server (v12.1.0)** natively on your Andr
 - **Network Address Hub:** Instant local loopback, Wi-Fi LAN IP, and Tailscale VPN CGNAT (`100.x.x.x`) IP resolution with locked display and one-tap `COPY IP` buttons.
 - **Dedicated Diagnostics:** Real-time software and hardware transcoding test suite in Settings.
 - **Community Links:** Direct links to the Fishbowl GitHub repository and issue tracker in the About drawer.
+
+### Security Hardening & CodeQL Audit
+- **100% CodeQL Cleared:** Fully verified against GitHub CodeQL security analysis with 0 open alerts.
+- **ZipSlip Protection:** Tar and zip entry validation verifying canonical containment (`toPath().normalize().startsWith()`) and strict path validation against directory traversal attacks in extraction routines.
+- **Path Injection Immunity:** Enforced strict allowlisted Android storage mount validation (`/storage/`, `/sdcard/`, `/mnt/`, app data) and canonical boundary checking on user-entered custom media paths.
+- **ReDoS Prevention:** Linear, deterministic string parsing replacing ambiguous backtracking regex patterns in update checks and release notes filtering.
+- **Narrowing Cast Elimination:** Integer normalization preventing overflow anomalies across terminal rendering.
+- **Workflow Least Privilege:** Explicit `permissions: contents: read` scoping on all automated GitHub Actions CI pipelines.
 
 ---
 
