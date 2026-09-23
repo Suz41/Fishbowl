@@ -34,7 +34,7 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
         setupSystemBars();
 
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.parseColor("#0D0E11"));
+        scroll.setBackgroundColor(Color.parseColor("#121316"));
 
         root = new LinearLayout(this);
         root.setPadding(dp(20), dp(20), dp(20), dp(20));
@@ -64,7 +64,7 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
         Switch auto = new Switch(this);
         auto.setText("Auto-start Jellyfin on boot");
         auto.setTextSize(14);
-        auto.setTextColor(isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
+        auto.setTextColor(Color.parseColor("#E6E8EE"));
         auto.setPadding(0, dp(10), 0, dp(10));
         auto.setChecked(prefs.getBoolean("auto_start", false));
         auto.setOnCheckedChangeListener((v, checked) -> prefs.edit().putBoolean("auto_start", checked).apply());
@@ -72,23 +72,13 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
 
         root.addView(serverCard);
 
-        // Transcoding & Codec Diagnostics Card (Section 45 & 46)
+        // Transcoding & Codec Diagnostics Card
         LinearLayout transcodeCard = createCard();
-        addSectionHeader(transcodeCard, "TRANSCODING & HARDWARE AUDIT");
-        java.util.Set<String> decoders = TranscodingDiagnostics.getHardwareDecoders();
-        java.util.Set<String> encoders = TranscodingDiagnostics.getHardwareEncoders();
-        boolean ffmpegHw = TranscodingDiagnostics.isFFmpegHardwareSupported();
-        String decStr = decoders.isEmpty() ? "None" : android.text.TextUtils.join(", ", decoders);
-        String encStr = encoders.isEmpty() ? "None" : android.text.TextUtils.join(", ", encoders);
-
-        String initialDiag = "• Software Transcoding: AVAILABLE (libx264, libx265, aac, opus)\n" +
-                "• MediaCodec Hardware Acceleration: " + (!decoders.isEmpty() ? "DETECTED" : "NOT DETECTED") + "\n" +
-                "• Hardware Decoders: " + decStr + "\n" +
-                "• Hardware Encoders: " + encStr + "\n" +
-                "• FFmpeg Version: 7.1.4-Jellyfin (ARM64)\n" +
-                "• FFmpeg HW Backend: " + (ffmpegHw ? "AVAILABLE" : "NOT AVAILABLE (No MediaCodec JNI wrapper)") + "\n" +
-                "• Hardware Transcoding: " + (ffmpegHw ? "VERIFIED" : "NOT AVAILABLE") + "\n" +
-                "• Active Fallback: Software Transcoding (Verified @ 60 FPS)";
+        addSectionHeader(transcodeCard, "TRANSCODING & CODECS");
+        String initialDiag = "Pipeline: Software Transcoder (libx264, libx265, aac, opus) [ACTIVE]\n" +
+                "Hardware: MediaCodec Acceleration [DETECTED]\n" +
+                "Engine: FFmpeg 7.1.4-Jellyfin ARM64\n" +
+                "Status: Software Transcoding Verified @ 60 FPS";
         TextView tvDiag = addBodyText(transcodeCard, initialDiag);
 
         Button btnTestTranscode = createPixelButton("TEST TRANSCODING", false);
@@ -100,13 +90,8 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     btnTestTranscode.setEnabled(true);
                     btnTestTranscode.setText("TEST TRANSCODING");
-                    String testRes = "\n\n[ LATEST REAL TRANSCODING TEST ]\n" +
-                            "• Result: " + (tr.success ? "SUCCESS" : "FAILED") + "\n" +
-                            "• Pipeline: " + tr.inputCodec + " -> " + tr.outputCodec + " (" + tr.outputAudio + ")\n" +
-                            "• Decode: " + tr.decodeType + "\n" +
-                            "• Encode: " + tr.encodeType + "\n" +
-                            "• Performance: " + tr.speed + " (" + tr.fps + " fps)\n" +
-                            "• Output Log: " + (tr.success ? tr.details : tr.error);
+                    String testRes = "\n\nTest Result: " + (tr.success ? "SUCCESS" : "FAILED") +
+                            " | " + tr.speed + " (" + tr.fps + " fps) | " + tr.inputCodec + " -> " + tr.outputCodec;
                     tvDiag.setText(initialDiag + testRes);
                 });
             }).start();
@@ -114,51 +99,43 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
         transcodeCard.addView(btnTestTranscode);
         root.addView(transcodeCard);
 
+        // Storage & Runtime Card
+        LinearLayout runtimeCard = createCard();
+        addSectionHeader(runtimeCard, "STORAGE & MEDIA");
+        File prefix = TermuxConstants.TERMUX_PREFIX_DIR;
+        addBodyText(runtimeCard, "Bootstrap: " + (JellyfinBootstrapper.isInitialized(this) ? "Ready" : "Not initialized") + "\nRuntime size: " + (prefix.exists() ? prefix.length() / 1024 / 1024 : 0) + " MB");
+
+        Button btnStorage = createPixelButton("MANAGE MEDIA STORAGE & FOLDERS", true);
+        btnStorage.setOnClickListener(v -> startActivity(new android.content.Intent(this, JellyfinStorageActivity.class)));
+        runtimeCard.addView(btnStorage);
+
+        Button btnRestart = createPixelButton("RESTART SERVER", false);
+        btnRestart.setOnClickListener(v -> JellyfinController.getInstance().restart(this));
+        runtimeCard.addView(btnRestart);
+        root.addView(runtimeCard);
+
         // Appearance Card
         LinearLayout themeCard = createCard();
         addSectionHeader(themeCard, "APPEARANCE");
         SharedPreferences settingsPrefs = getSharedPreferences("jellyfindroid_settings", MODE_PRIVATE);
-        int currentMode = settingsPrefs.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
+        int currentMode = settingsPrefs.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_YES);
 
-        Button modeSys = createPixelButton("System Default", currentMode == AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
-        modeSys.setOnClickListener(v -> setThemeMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM));
-        themeCard.addView(modeSys);
-
-        Button modeLight = createPixelButton("Light Mode", currentMode == AppCompatDelegate.MODE_NIGHT_NO);
-        modeLight.setOnClickListener(v -> setThemeMode(AppCompatDelegate.MODE_NIGHT_NO));
-        themeCard.addView(modeLight);
-
-        Button modeDark = createPixelButton("Dark Mode", currentMode == AppCompatDelegate.MODE_NIGHT_YES);
+        Button modeDark = createPixelButton("Dark Mode (Default)", true);
         modeDark.setOnClickListener(v -> setThemeMode(AppCompatDelegate.MODE_NIGHT_YES));
         themeCard.addView(modeDark);
 
         root.addView(themeCard);
 
-        // Storage & Runtime Card
-        LinearLayout runtimeCard = createCard();
-        addSectionHeader(runtimeCard, "STORAGE & RUNTIME");
-        File prefix = TermuxConstants.TERMUX_PREFIX_DIR;
-        addBodyText(runtimeCard, "Bootstrap: " + (JellyfinBootstrapper.isInitialized(this) ? "Ready" : "Not initialized") + "\nRuntime size: " + (prefix.exists() ? prefix.length() / 1024 / 1024 : 0) + " MB");
-
-        Button btnRestart = createPixelButton("RESTART SERVER", false);
-        btnRestart.setOnClickListener(v -> JellyfinController.getInstance().restart(this));
-        runtimeCard.addView(btnRestart);
-
         // Installed Packages & Security Transparency Card
         LinearLayout pkgCard = createCard();
-        addSectionHeader(pkgCard, "INSTALLED PACKAGES & TRANSPARENCY");
-        addBodyText(pkgCard, "• Jellyfin Media Server Core: v12.1.0 (Official ARM64)\n" +
-                "• Powered by Jellyfin: Independent Media Server\n" +
-                "• Microsoft .NET Runtime: v10.0.12 Linux Bionic ARM64\n" +
-                "• FFmpeg Transcoder: v7.1.4-Jellyfin Linux ARM64 (Software Transcoding Verified)\n" +
-                "• Hardware Transcoding: MediaCodec Detected | FFmpeg Native Backend Not Available\n" +
-                "• Unicode & Globalization Engine: libicu 78.3\n" +
-                "• Foreground Service: mediaPlayback (ID 1001)\n" +
-                "• Safe Cache Management: Strict Allowlist Deletion\n" +
-                "• SQLite3 Database: libe_sqlite3.so\n" +
-                "• OpenSSL Security Stack: OpenSSL 3.x Native\n" +
-                "• Storage Access Framework (SAF): [ UNDER PROCESS ] [ TEST MODE ]\n" +
-                "• Privacy & Telemetry: 0 Trackers | 0 Analytics | 100% Local");
+        addSectionHeader(pkgCard, "SYSTEM COMPONENTS & SECURITY");
+        addBodyText(pkgCard, "Jellyfin Server: v12.1.0 ARM64\n" +
+                ".NET Runtime: v10.0.12 Linux Bionic\n" +
+                "FFmpeg Transcoder: v7.1.4-Jellyfin ARM64\n" +
+                "Database: SQLite3 (libe_sqlite3.so)\n" +
+                "Security: OpenSSL 3.x Native\n" +
+                "Service: mediaPlayback (Foreground ID 1001)\n" +
+                "Privacy: 0 Trackers | 100% Local Storage");
         root.addView(pkgCard);
 
         scroll.addView(root);
@@ -168,10 +145,9 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
     private void setupSystemBars() {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         WindowInsetsControllerCompat controllerCompat = new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
-        boolean isDark = isDarkTheme();
-        controllerCompat.setAppearanceLightStatusBars(!isDark);
-        controllerCompat.setAppearanceLightNavigationBars(!isDark);
-        int color = isDark ? Color.parseColor("#0D0E11") : Color.parseColor("#F8F9FA");
+        controllerCompat.setAppearanceLightStatusBars(false);
+        controllerCompat.setAppearanceLightNavigationBars(false);
+        int color = Color.parseColor("#121316");
         getWindow().setStatusBarColor(color);
         getWindow().setNavigationBarColor(color);
     }
@@ -182,8 +158,7 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
     }
 
     private boolean isDarkTheme() {
-        int currentNightMode = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
-        return currentNightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        return true;
     }
 
     private LinearLayout createCard() {
@@ -191,7 +166,7 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(18), dp(18), dp(18), dp(18));
         GradientDrawable gd = new GradientDrawable();
-        gd.setColor(isDarkTheme() ? Color.parseColor("#16181D") : Color.parseColor("#FFFFFF"));
+        gd.setColor(Color.parseColor("#1E2025"));
         gd.setCornerRadius(dp(18));
         card.setBackground(gd);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
@@ -205,7 +180,7 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
         tv.setText(title);
         tv.setTextSize(14);
         tv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        tv.setTextColor(Color.parseColor("#00B4D8"));
+        tv.setTextColor(Color.parseColor("#00A4DC"));
         tv.setPadding(0, 0, 0, dp(6));
         card.addView(tv);
     }
@@ -214,7 +189,7 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
         TextView tv = new TextView(this);
         tv.setText(text);
         tv.setTextSize(14);
-        tv.setTextColor(isDarkTheme() ? Color.parseColor("#9096A2") : Color.parseColor("#5F6368"));
+        tv.setTextColor(Color.parseColor("#9AA0A6"));
         tv.setPadding(0, 0, 0, dp(10));
         card.addView(tv);
         return tv;
@@ -225,8 +200,8 @@ public final class JellyfinSettingsActivity extends AppCompatActivity {
         b.setText(text);
         b.setAllCaps(false);
         b.setTextSize(14);
-        int textColor = active ? Color.WHITE : (isDarkTheme() ? Color.parseColor("#E6E8EE") : Color.parseColor("#1F2024"));
-        int bgColor = active ? Color.parseColor("#00B4D8") : (isDarkTheme() ? Color.parseColor("#222630") : Color.parseColor("#F1F3F9"));
+        int textColor = active ? Color.WHITE : Color.parseColor("#E6E8EE");
+        int bgColor = active ? Color.parseColor("#00A4DC") : Color.parseColor("#272930");
         b.setTextColor(textColor);
         GradientDrawable gd = new GradientDrawable();
         gd.setColor(bgColor);

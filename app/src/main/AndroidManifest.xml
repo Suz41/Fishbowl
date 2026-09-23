@@ -83,7 +83,7 @@
         </activity>
         <activity android:name="com.fishbowl.app.JellyfinLogsActivity" android:exported="false" android:label="Jellyfin logs" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
         <activity android:name="com.fishbowl.app.JellyfinSettingsActivity" android:exported="false" android:label="Settings" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
-        <activity android:name="com.fishbowl.app.JellyfinStorageActivity" android:exported="false" android:label="Media Storage" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
+        <activity android:name="com.fishbowl.app.JellyfinStorageActivity" android:exported="true" android:label="Media Storage" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
         <activity android:name="com.fishbowl.app.JellyfinWebActivity" android:exported="false" android:label="Jellyfin" android:configChanges="orientation|screenSize" />
 
         <activity-alias
