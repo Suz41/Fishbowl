@@ -172,7 +172,13 @@ final class TermuxInstaller {
                                         throw new RuntimeException("Malformed symlink line: " + line);
                                     String oldPath = parts[0];
                                     String symlinkRel = parts[1];
+                                    if (symlinkRel.contains("..")) {
+                                        throw new SecurityException("Zip slip detected in bootstrap symlink: " + symlinkRel);
+                                    }
                                     File symlinkTarget = new File(stagingDir, symlinkRel);
+                                    if (!symlinkTarget.toPath().normalize().startsWith(stagingDir.toPath().normalize())) {
+                                        throw new SecurityException("Zip slip detected in bootstrap symlink: " + symlinkRel);
+                                    }
                                     String canonicalSymlinkTarget = symlinkTarget.getCanonicalPath();
                                     if (!canonicalSymlinkTarget.startsWith(canonicalStagingDir + File.separator) && !canonicalSymlinkTarget.equals(canonicalStagingDir)) {
                                         throw new SecurityException("Zip slip detected in bootstrap symlink: " + symlinkRel);
@@ -188,7 +194,13 @@ final class TermuxInstaller {
                                 }
                             } else {
                                 String zipEntryName = zipEntry.getName();
+                                if (zipEntryName.contains("..")) {
+                                    throw new SecurityException("Zip slip detected in bootstrap entry: " + zipEntryName);
+                                }
                                 File targetFile = new File(stagingDir, zipEntryName);
+                                if (!targetFile.toPath().normalize().startsWith(stagingDir.toPath().normalize())) {
+                                    throw new SecurityException("Zip slip detected in bootstrap entry: " + zipEntryName);
+                                }
                                 String canonicalTargetPath = targetFile.getCanonicalPath();
                                 if (!canonicalTargetPath.startsWith(canonicalStagingDir + File.separator) && !canonicalTargetPath.equals(canonicalStagingDir)) {
                                     throw new SecurityException("Zip slip detected in bootstrap entry: " + zipEntryName);
