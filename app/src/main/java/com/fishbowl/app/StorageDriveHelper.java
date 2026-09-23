@@ -307,7 +307,30 @@ public final class StorageDriveHelper {
         if (path == null || path.trim().isEmpty()) {
             return new PathVerification(false, false, false, 0, 0, false);
         }
-        File f = new File(path.trim());
+        String cleanPath = path.trim();
+        if (cleanPath.contains("..") || cleanPath.contains("\0") || !cleanPath.startsWith("/")) {
+            return new PathVerification(false, false, false, 0, 0, false);
+        }
+        boolean isAllowedPrefix = cleanPath.startsWith("/storage/") ||
+                                  cleanPath.startsWith("/sdcard") ||
+                                  cleanPath.startsWith("/mnt/") ||
+                                  cleanPath.startsWith("/data/data/com.fishbowl.app") ||
+                                  cleanPath.startsWith("/data/user/0/com.fishbowl.app");
+        if (!isAllowedPrefix) {
+            return new PathVerification(false, false, false, 0, 0, false);
+        }
+
+        File f = new File(cleanPath);
+        try {
+            f = f.getCanonicalFile();
+        } catch (Exception e) {
+            return new PathVerification(false, false, false, 0, 0, false);
+        }
+        String canonicalPath = f.getPath();
+        if (canonicalPath.contains("..") || (!canonicalPath.startsWith("/storage/") && !canonicalPath.startsWith("/sdcard") && !canonicalPath.startsWith("/mnt/") && !canonicalPath.startsWith("/data/"))) {
+            return new PathVerification(false, false, false, 0, 0, false);
+        }
+
         if (!f.exists()) {
             return new PathVerification(false, false, false, 0, 0, false);
         }
