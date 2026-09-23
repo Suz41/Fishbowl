@@ -2,7 +2,7 @@
 
 An unofficial standalone server host and launcher for Jellyfin on Android (ARM64).
 
-[![Release](https://img.shields.io/badge/Release-v1.4.5-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.5)
+[![Release](https://img.shields.io/badge/Release-v1.4.6-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.6)
 [![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-12.1.0-purple.svg)](https://jellyfin.org)
 [![Runtime](https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
 [![Platform](https://img.shields.io/badge/Android-5.0%2B%20(ARM64)-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
@@ -25,7 +25,7 @@ Fishbowl runs the full **Jellyfin Media Server (v12.1.0)** natively on your Andr
 ## Quick Start (3 Steps)
 
 1. **Download & Install:**
-   Grab the latest [Fishbowl-v1.4.5-release-universal.apk](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.5) and install it on your ARM64 Android device.
+   Grab the latest [Fishbowl-v1.4.6-release-universal.apk](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.6) and install it on your ARM64 Android device.
 2. **Launch & Start:**
    Open **Fishbowl**. The server auto-starts in the background. When the status badge turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
 3. **Connect & Stream:**
@@ -71,7 +71,13 @@ Fishbowl runs the full **Jellyfin Media Server (v12.1.0)** natively on your Andr
 - **Port Conflict & Health Guard:** Active socket loopback probing (`isPortListening`) and strict verification of public Jellyfin system endpoints (`/system/info/public` and `/health`) to prevent false-positive reconciles, startup staging hangs, and Emby port 8096 collisions.
 - **Hardened Bootstrap Extraction:** Proactive write permission enforcement (`setWritable`) and destination unlinking eliminates Android `EACCES (Permission denied)` errors during clean installs.
 
-### User Interface
+### User Interface & Diagnostics
+- **Comprehensive Error Diagnoser:** Real-time root-cause analysis that identifies the exact cause of any runtime failure (port collision, SELinux block, EF Core migration hang, or corrupted extraction) with actionable recovery guidance.
+- **Button Rate Limiting & Pressed State Feedback:** Primary actions (`START SERVER`, `STOP SERVER`, `RESTART SERVER`) enforce active lockouts and immediate visual state transitions (`SERVER STARTING...`, `SERVER RUNNING`, `STOPPING...`) to prevent duplicate service invocations.
+- **Auto-Scrolling Log Terminal:** Real-time log terminal and Serilog viewers maintain persistent auto-scroll lock to the latest execution events.
+- **Live System Permissions & Privileges:** Real-time detection badges for All-Files Access, Battery Optimization Exemption, and Notifications with one-tap deep links.
+- **Collapsible Settings Drawers:** Clean accordion drawers (`▼` / `▲`) for Transcoding & Hardware Codecs and System Components & Security to minimize visual clutter.
+- **Clear Cache Alert Styling:** Distinct alert red trigger for cache cleanup.
 - **Interactive Setup & Extraction Overlay:** Dedicated onboarding overlay with real-time percentage progress (0% to 100%), five-stage checklist, and live log stream during initial runtime extraction or reinstallations.
 - **Zero-Crash Resilient Architecture:** Pre-cached tab navigation (Home, Logs, Settings) eliminates fragment recreation crashes and state loss.
 - **On-Disk Serilog Log Reader:** Dedicated `DISK LOG` / `CONSOLE` toggle and `COPY` button on both the home dashboard and full-screen Logs viewer to inspect internal Jellyfin logs directly from disk.
@@ -82,6 +88,7 @@ Fishbowl runs the full **Jellyfin Media Server (v12.1.0)** natively on your Andr
 - **Live Lifecycle Pipeline:** Step-by-step progress tracking (`STARTING_RUNTIME` -> `LAUNCHING_SERVER` -> `WAITING_FOR_SERVER` -> `READY`).
 - **Network Address Hub:** Instant local loopback, Wi-Fi LAN IP, and Tailscale VPN CGNAT (`100.x.x.x`) IP resolution with locked display and one-tap `COPY IP` buttons.
 - **Dedicated Diagnostics:** Real-time software and hardware transcoding test suite in Settings.
+- **Community Links:** Direct links to the Fishbowl GitHub repository and issue tracker in the About drawer.
 
 ---
 
@@ -105,25 +112,34 @@ Stream to any standard Jellyfin client across your local network:
 
 Jellyfin runs as a native Linux process (`dotnet jellyfin.dll`) and requires standard POSIX paths (`/storage/...`) to index and stream media.
 
+### Consolidated Media Storage & Folders (Option A)
+The storage manager (**Settings ➔ Manage Media Storage & Folders**) provides a consolidated interface for browsing, validating, and selecting media directories:
+- **Active Path Card:** Displays your currently selected folder with live verification status and media item counts. Includes an interactive `[ ENTER PATH ]` dialog to type or paste any internal, SD card, USB OTG, or symlink directory.
+- **Empty Library Prevention:** Pre-flight checks intercept `[ COPY PATH FOR JELLYFIN ]`:
+  - **Missing Directory:** Warns that the path does not exist on disk.
+  - **SELinux Block:** Alerts if Android SELinux restricts native read access and provides a 1-tap `[ SWITCH & COPY APP DATA ]` redirect.
+  - **Empty Folder:** Alerts if 0 media files are detected, advising you to add media files before scanning in Jellyfin to prevent empty libraries.
+
 ### Option 1: Internal Storage (Recommended)
-Grant **All-Files Access** when prompted. You can immediately point Jellyfin libraries to your standard internal folders:
+Grant **All-Files Access** when prompted. You can immediately point Jellyfin libraries to your standard internal folders using the quick chips:
 - `/storage/emulated/0/Movies`
 - `/storage/emulated/0/Music`
 - `/storage/emulated/0/Download`
 
 ### Option 2: USB OTG & MicroSD Drives (Guaranteed POSIX)
-Due to Android SELinux boundaries on Android 11 through 16, non-root Linux binaries cannot read the raw root of external drives. Fishbowl automatically detects your plugged-in USB drive and exposes the guaranteed app directory:
+Due to Android SELinux boundaries on Android 11 through 16, non-root Linux binaries cannot read the raw root of external drives. Fishbowl automatically creates and exposes the guaranteed app directory on external storage:
 - `/storage/<UUID>/Android/data/com.fishbowl.app/files`
 
-**How to use USB media:**
-1. Move your movies/music into the path above on your USB drive.
-2. In Fishbowl, go to **Settings ➔ Manage Media Storage**.
-3. Tap **COPY PATH** next to your USB drive.
-4. Paste the path into the Jellyfin Web UI when adding your media library.
+**How to use external media:**
+1. Move your movies and music into the guaranteed path above on your external drive.
+2. In Fishbowl, go to **Settings ➔ Manage Media Storage & Folders**.
+3. Tap the **[ App Data (Guaranteed) ]** chip on your external drive card.
+4. Tap **COPY PATH FOR JELLYFIN**.
+5. Paste the path into the Jellyfin Web UI when adding your media library.
 
-### Option 3: SAF Folder Bridge [TEST MODE]
-- Includes an experimental Storage Access Framework (SAF) folder picker.
-- **Virtual Cloud Providers (RSAF, Google Drive, Nextcloud):** Quarantined with an incompatibility warning because virtual network streams do not have Linux disk mount points and cannot be read by native server binaries.
+### Option 3: Document Tree Browser & Custom Path Input
+- **`[ BROWSE (SAF) ]`:** Native Android Storage Access Framework document tree picker that resolves selected tree URIs to their physical filesystem POSIX mount points.
+- **`[ ENTER PATH ]`:** Custom path dialog allows direct input of any directory with real-time path verification.
 
 ---
 
@@ -237,6 +253,11 @@ Generated APKs will be located in `app/build/outputs/apk/release/` and `app/buil
 
 #### Q: Why can't Jellyfin read my USB drive root folder directly?
 **A:** Android 11+ kernel SELinux policies block non-root Linux binaries from accessing arbitrary external root mounts. Android explicitly allows access to the app's package directory on the drive (`/storage/<UUID>/Android/data/com.fishbowl.app/files`). Move media there and use the one-tap **COPY PATH** button in Fishbowl Storage settings.
+
+#### Q: Why is my Jellyfin media library empty after adding a folder?
+**A:** There are two common causes:
+1. **SELinux Permissions on External Drives:** On Android 11 through 16, native processes cannot read arbitrary paths on external drives (e.g. `/storage/XXXX-XXXX/Movies`). To prevent empty libraries, move your media to the guaranteed POSIX app directory (`/storage/<UUID>/Android/data/com.fishbowl.app/files`) which is 100% readable by Jellyfin's Linux engine.
+2. **Empty Folders or Unsupported File Formats:** If the selected directory contains 0 detected media files, Jellyfin's scanner will find nothing. In Fishbowl, go to **Settings ➔ Manage Media Storage & Folders** to verify your path before copying. Fishbowl will warn you if 0 media files are found or if SELinux blocks read access.
 
 #### Q: How do I update Fishbowl without losing my libraries or watch history?
 **A:** Install updated APKs over your existing installation. All database files and configurations are stored in `--datadir` (`~/.local/share/jellyfin`) and survive APK upgrades.
