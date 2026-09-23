@@ -654,6 +654,7 @@ public class JellyfinController {
             jellyfinProcess = null;
             boolean portStillBound = isHealthy();
             appendLogLocked("Server stopped. Port 8096 released: " + !portStillBound);
+            lastError = null;
             setStateLocked(State.STOPPED);
         }
     }
