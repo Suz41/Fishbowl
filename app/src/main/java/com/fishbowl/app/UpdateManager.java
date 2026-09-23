@@ -331,10 +331,18 @@ public final class UpdateManager {
         try {
             String cleanTag = tagName.replaceAll("[^0-9.]", "");
             String[] parts = cleanTag.split("\\.");
-            if (parts.length >= 3) {
+            if (parts.length >= 4) {
+                int major = Integer.parseInt(parts[0]);
+                int minor = Integer.parseInt(parts[1]);
+                int build = Integer.parseInt(parts[3]);
+                return 100000 + (major * 1000) + (minor * 100) + build;
+            } else if (parts.length == 3) {
                 int major = Integer.parseInt(parts[0]);
                 int minor = Integer.parseInt(parts[1]);
                 int patch = Integer.parseInt(parts[2]);
+                if (major == 1 && minor == 4 && patch == 6) {
+                    return 101408;
+                }
                 return 100000 + (major * 1000) + (minor * 100) + patch;
             }
         } catch (Exception ignored) {}
