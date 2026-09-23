@@ -370,6 +370,9 @@ public class JellyfinBootstrapper {
                         name = name.startsWith("./") ? name.substring(2) : name.substring(1);
                     }
                     File targetFile = new File(prefixDir, name);
+                    if (name.contains("..") || !targetFile.toPath().normalize().startsWith(prefixDir.toPath().normalize())) {
+                        throw new SecurityException("Zip slip detected in archive entry: " + name);
+                    }
                     String canonicalTargetPath = targetFile.getCanonicalPath();
                     if (!canonicalTargetPath.startsWith(canonicalDestPath + File.separator) && !canonicalTargetPath.equals(canonicalDestPath)) {
                         throw new SecurityException("Zip slip detected in archive entry: " + name);
