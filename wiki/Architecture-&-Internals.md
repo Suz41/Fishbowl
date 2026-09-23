@@ -44,3 +44,15 @@ The native components (.NET 10 CLR host v10.0.12, FFmpeg binary, and SQLite depe
 
 ### 4. Memory-Safe Logging (`LogListener`)
 Logging stdout/stderr feeds from the active Jellyfin process can generate high data volume during library scanning. Fishbowl decouples log streams and batches them onto a `500ms` handler throttle. The log console is capped with a `30KB` bounding ring buffer (~500 lines) to prevent garbage collection spikes.
+
+### 5. Comprehensive Error Diagnoser (`ErrorDiagnoser`)
+Monitors server lifecycle and diagnostic logs across all startup phases. Automatically detects port collisions (port 8096 in use), SELinux storage permission denials, database lockup/migration stalls, and missing bootstrap archives, displaying real-time actionable guidance directly on the dashboard.
+
+### 6. Consolidated POSIX Storage Engine (`StorageDriveHelper`)
+Provides a unified POSIX-first media path management layer. Automatically provisions and validates guaranteed package directories on external USB/SD mounts (`/storage/<UUID>/Android/data/com.fishbowl.app/files`) to bypass Android 11-16 SELinux root blocks. Incorporates pre-flight sanity checks to prevent empty library creation in Jellyfin.
+
+### 7. CodeQL Security Architecture
+- **ZipSlip Protection:** Archive extractors in `JellyfinBootstrapper` and `TermuxInstaller` check `entry.getName().contains("..")` and verify `toPath().normalize().startsWith()` against canonical destinations before executing filesystem operations.
+- **Path Injection Sanitization:** Custom path inputs in `JellyfinStorageActivity` and `StorageDriveHelper` validate against allowlisted mount prefixes (`/storage/`, `/sdcard/`, `/mnt/`, app data) and canonical boundaries.
+- **Deterministic ReDoS-Safe Parsing:** Replaced backtracking regular expressions in `UpdateManager` with linear $O(N)$ string and character token parsing.
+- **Primitive Cast Safety:** Promoted character column pointers in `TerminalRow` to 32-bit integers to eliminate narrowing compound assignment vulnerabilities.
