@@ -36,6 +36,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -78,6 +79,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
                         String resolved = StorageDriveHelper.resolveTreeUriToPath(this, treeUri);
                         if (resolved != null && !resolved.trim().isEmpty()) {
+                            resolved = StorageDriveHelper.normalizeStoragePath(resolved);
                             setActivePath(resolved, true);
                             Toast.makeText(this, "SAF Path (Beta Testing): " + resolved, Toast.LENGTH_SHORT).show();
                         } else {
@@ -100,7 +102,12 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         prefs = getSharedPreferences("jellyfindroid_storage", MODE_PRIVATE);
         String savedLast = prefs.getString("last_selected_path", null);
         if (savedLast != null && !savedLast.trim().isEmpty()) {
-            activeSelectedPath = savedLast;
+            activeSelectedPath = StorageDriveHelper.normalizeStoragePath(savedLast);
+            if (!activeSelectedPath.equals(savedLast)) {
+                prefs.edit().putString("last_selected_path", activeSelectedPath).apply();
+            }
+        } else {
+            activeSelectedPath = "/storage/emulated/0/Movies";
         }
 
         setContentView(buildView());
@@ -537,13 +544,8 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             actionsRow2.setOrientation(LinearLayout.HORIZONTAL);
             actionsRow2.setPadding(0, dp(8), 0, 0);
 
-            Button btnRoot = createSmallActionButton("USE DRIVE ROOT (ON HOLD)");
-            btnRoot.setEnabled(false);
-            btnRoot.setTextColor(Color.parseColor("#616161"));
-            GradientDrawable rootBg = new GradientDrawable();
-            rootBg.setColor(Color.parseColor("#262930"));
-            rootBg.setCornerRadius(dp(8));
-            btnRoot.setBackground(rootBg);
+            Button btnRoot = createSmallActionButton("USE DRIVE ROOT (" + drive.rootPath + ")");
+            btnRoot.setOnClickListener(v -> setActivePath(drive.rootPath, true));
             actionsRow2.addView(btnRoot, new LinearLayout.LayoutParams(-1, dp(36)));
 
             driveCard.addView(actionsRow2);
@@ -555,8 +557,8 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         if (savedListContainer == null) return;
         savedListContainer.removeAllViews();
 
-        Set<String> savedSet = prefs.getStringSet("saved_folders", new HashSet<>());
-        if (savedSet.isEmpty()) {
+        Set<String> rawSavedSet = prefs.getStringSet("saved_folders", new HashSet<>());
+        if (rawSavedSet.isEmpty()) {
             TextView emptyText = new TextView(this);
             emptyText.setText("No custom folders saved yet. Use Browse Folder or tap a folder chip above.");
             emptyText.setTextSize(12);
@@ -566,7 +568,18 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             return;
         }
 
-        List<String> list = new ArrayList<>(savedSet);
+        Set<String> normalizedSet = new LinkedHashSet<>();
+        boolean migrationNeeded = false;
+        for (String s : rawSavedSet) {
+            String norm = StorageDriveHelper.normalizeStoragePath(s);
+            normalizedSet.add(norm);
+            if (!norm.equals(s)) migrationNeeded = true;
+        }
+        if (migrationNeeded) {
+            prefs.edit().putStringSet("saved_folders", normalizedSet).apply();
+        }
+
+        List<String> list = new ArrayList<>(normalizedSet);
         java.util.Collections.sort(list);
 
         for (String path : list) {
@@ -626,11 +639,15 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
     private void setActivePath(String path, boolean saveHistory) {
         if (path == null || path.trim().isEmpty()) return;
-        activeSelectedPath = path.trim();
+        activeSelectedPath = StorageDriveHelper.normalizeStoragePath(path.trim());
         prefs.edit().putString("last_selected_path", activeSelectedPath).apply();
 
         if (saveHistory) {
-            Set<String> set = new LinkedHashSet<>(prefs.getStringSet("saved_folders", new HashSet<>()));
+            Set<String> rawSet = prefs.getStringSet("saved_folders", new HashSet<>());
+            Set<String> set = new LinkedHashSet<>();
+            for (String s : rawSet) {
+                set.add(StorageDriveHelper.normalizeStoragePath(s));
+            }
             set.add(activeSelectedPath);
             prefs.edit().putStringSet("saved_folders", set).apply();
         }
@@ -642,20 +659,28 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     }
 
     private void removeSavedFolder(String path) {
-        Set<String> set = new HashSet<>(prefs.getStringSet("saved_folders", new HashSet<>()));
-        set.remove(path);
+        String normPath = StorageDriveHelper.normalizeStoragePath(path);
+        Set<String> rawSet = prefs.getStringSet("saved_folders", new HashSet<>());
+        Set<String> set = new LinkedHashSet<>();
+        for (String s : rawSet) {
+            String norm = StorageDriveHelper.normalizeStoragePath(s);
+            if (!norm.equalsIgnoreCase(normPath)) {
+                set.add(norm);
+            }
+        }
         prefs.edit().putStringSet("saved_folders", set).apply();
         renderSavedFolders();
     }
 
     private void copyPathToClipboard(String path) {
-        StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(path);
+        final String normalizedPath = StorageDriveHelper.normalizeStoragePath(path);
+        StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(normalizedPath);
 
         if (!ver.exists) {
             new androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Folder Not Found")
-                    .setMessage("The directory:\n" + path + "\ndoes not exist on disk. If you add this path to Jellyfin, library indexing will fail.\n\nDo you still want to copy this path?")
-                    .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(path))
+                    .setMessage("The directory:\n" + normalizedPath + "\ndoes not exist on disk. If you add this path to Jellyfin, library indexing will fail.\n\nDo you still want to copy this path?")
+                    .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath))
                     .setNegativeButton("CANCEL", null)
                     .show();
             return;
@@ -665,7 +690,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             List<StorageDriveHelper.DriveInfo> drives = StorageDriveHelper.getMountedDrives(this);
             String suggestedAppPath = null;
             for (StorageDriveHelper.DriveInfo drive : drives) {
-                if (!drive.isPrimary && path.startsWith(drive.rootPath)) {
+                if (!drive.isPrimary && normalizedPath.startsWith(drive.rootPath)) {
                     suggestedAppPath = drive.rootPath + "/Android/data/" + getPackageName() + "/files";
                     break;
                 }
@@ -674,7 +699,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             final String finalAppPath = suggestedAppPath;
             androidx.appcompat.app.AlertDialog.Builder b = new androidx.appcompat.app.AlertDialog.Builder(this);
             b.setTitle("SELinux Permission Warning");
-            String msg = "Android security (SELinux) blocks native processes like Jellyfin from reading files at this path:\n\n" + path + "\n\nIf you add this path to Jellyfin, your library will be EMPTY.";
+            String msg = "Android security (SELinux) blocks native processes like Jellyfin from reading files at this path:\n\n" + normalizedPath + "\n\nIf you add this path to Jellyfin, your library will be EMPTY.";
             if (finalAppPath != null) {
                 msg += "\n\nRecommended: Use the guaranteed App Data folder on external storage:\n" + finalAppPath;
                 b.setNeutralButton("SWITCH & COPY APP DATA", (d, w) -> {
@@ -683,7 +708,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 });
             }
             b.setMessage(msg);
-            b.setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(path));
+            b.setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath));
             b.setNegativeButton("CANCEL", null);
             b.show();
             return;
@@ -692,14 +717,14 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         if (ver.mediaFileCount == 0) {
             new androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Empty Folder Warning")
-                    .setMessage("No video or audio files (.mp4, .mkv, .mp3, etc.) were detected in:\n\n" + path + "\n\nIf you add this folder to Jellyfin now, the library will be EMPTY.\n\nPlease place your media files inside this folder before scanning in Jellyfin.\n\nDo you want to copy the path anyway?")
-                    .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(path))
+                    .setMessage("No video or audio files (.mp4, .mkv, .mp3, etc.) were detected in:\n\n" + normalizedPath + "\n\nIf you add this folder to Jellyfin now, the library will be EMPTY.\n\nPlease place your media files inside this folder before scanning in Jellyfin.\n\nDo you want to copy the path anyway?")
+                    .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath))
                     .setNegativeButton("CANCEL", null)
                     .show();
             return;
         }
 
-        doCopy(path);
+        doCopy(normalizedPath);
     }
 
     private void doCopy(String path) {
@@ -739,7 +764,8 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
         final EditText input = new EditText(this);
         input.setSingleLine(true);
-        input.setText(initialPath != null ? initialPath : "/storage/emulated/0/");
+        String prefilled = initialPath != null ? StorageDriveHelper.normalizeStoragePath(initialPath) : "/storage/emulated/0/";
+        input.setText(prefilled);
         input.setSelection(input.getText().length());
         input.setTextColor(COLOR_TEXT_PRIMARY);
         input.setHintTextColor(COLOR_TEXT_MUTED);
@@ -759,15 +785,28 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         builder.setView(layout);
 
         builder.setPositiveButton("SELECT PATH", (dialog, which) -> {
-            String path = input.getText().toString().trim();
-            if (!path.isEmpty()) {
-                if (path.contains("..") || path.contains("\0") || (!path.startsWith("/storage/") && !path.startsWith("/sdcard") && !path.startsWith("/mnt/"))) {
+            String entered = input.getText().toString().trim();
+            if (!entered.isEmpty()) {
+                String path = StorageDriveHelper.normalizeStoragePath(entered);
+                boolean isAllowedPrefix = path.startsWith("/storage/") ||
+                        path.startsWith("/sdcard") ||
+                        path.startsWith("/data/data/com.fishbowl.app") ||
+                        path.startsWith("/data/user/0/com.fishbowl.app");
+                if (path.contains("..") || path.contains("\0") || !isAllowedPrefix) {
                     Toast.makeText(this, "Invalid storage path. Must be an absolute path under /storage/ without '..'", Toast.LENGTH_SHORT).show();
                     return;
                 }
+                File dir = new File(path);
+                if (!dir.exists()) {
+                    try {
+                        dir.mkdirs();
+                    } catch (Throwable ignored) {}
+                }
                 setActivePath(path, true);
                 StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(path);
-                if (ver.hasPermissionError || !ver.canRead) {
+                if (!ver.exists) {
+                    Toast.makeText(this, "Notice: Directory does not exist on disk.", Toast.LENGTH_SHORT).show();
+                } else if (ver.hasPermissionError || !ver.canRead) {
                     Toast.makeText(this, "Notice: Android SELinux may block Jellyfin from reading this path.", Toast.LENGTH_LONG).show();
                 } else if (ver.mediaFileCount == 0) {
                     Toast.makeText(this, "Path selected: 0 media files detected in this folder.", Toast.LENGTH_SHORT).show();
