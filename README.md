@@ -46,6 +46,21 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 
 ---
 
+## Table of Contents
+
+- [Quick Start (3 Steps)](#quick-start-3-steps)
+- [Key Features](#key-features)
+- [Bundled Packages & System Components](#bundled-packages--system-components)
+- [Client Compatibility](#client-compatibility)
+- [Storage & Media Setup](#storage--media-setup)
+- [Background Operation & Battery Guidance](#background-operation--battery-guidance)
+- [Permissions & Privacy](#permissions--privacy)
+- [Building From Source](#building-from-source)
+- [Troubleshooting](#troubleshooting)
+- [Disclosures & License](#disclosures--license)
+
+---
+
 ## Key Features
 
 ### Server & Platform Engine
@@ -62,6 +77,35 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 - **Dual Log Console:** Real-time log terminal with auto-scroll and direct on-disk Serilog log viewer for troubleshooting.
 - **Permissions Dashboard:** Live status badges (All-Files Access, Battery Optimization Exemption, Notifications) with 1-tap deep links to system settings.
 - **Collapsible Settings Drawers:** Clean accordion drawers for Transcoding & Hardware Codecs and System Components to keep the interface uncluttered.
+
+---
+
+## Bundled Packages & System Components
+
+Fishbowl integrates tested native binaries and runtimes compiled for the Android ARM64 Bionic C environment (`libc.so`), eliminating the need for Linux containers, virtual machines, or chroot environments:
+
+| Package / Component | Version / Identifier | Purpose & Role | Upstream License |
+| :--- | :--- | :--- | :--- |
+| **Jellyfin Media Server Core** | `12.1.0` (ARM64) | Core media server runtime (`jellyfin.dll`), library indexing, playback reporting, and REST API | [GPLv3](https://github.com/jellyfin/jellyfin) |
+| **Microsoft .NET Runtime Engine** | `10.0.12` (ARM64) | High-performance managed JIT execution host located in `lib/dotnet/` | [MIT](https://github.com/dotnet/runtime) |
+| **Jellyfin FFmpeg Transcoder** | `7.1.4-Jellyfin` | Native ARM64 binary located in `opt/jellyfin/bin/ffmpeg` for media remuxing, thumbnail generation, and audio transcoding | [GPLv3 / LGPLv3](https://github.com/jellyfin/jellyfin-ffmpeg) |
+| **SQLite3 Database Driver** | `3.46.1` (`libe_sqlite3.so`) | Embedded relational database engine storing user library catalogs, metadata, and watch progress | [Public Domain](https://sqlite.org) |
+| **Fontconfig & FreeType Engines** | `libfontconfig.so` / `libfreetype.so` | Native C libraries used by FFmpeg for video subtitle burn-in and font shaping | [FTL / GPLv2](https://freetype.org) |
+| **OpenSSL Security & TLS Stack** | OpenSSL `3.x` (`libcrypto.so` / `libssl.so`) | Cryptographic engine managing local HTTPS sockets and secure outbound metadata requests | [Apache 2.0](https://www.openssl.org) |
+| **Unicode & Globalization Engine** | ICU Runtime | Database internationalization and culture-aware metadata sorting and searching | [Unicode-DFS-2016](https://icu.unicode.org) |
+| **Termux Foundation & Shell** | Core Bootstrap & Terminal | Android Bionic process management, isolated POSIX execution, and console terminal viewer | [GPLv3 / Apache 2.0](https://github.com/termux/termux-app) |
+
+### Application Package & Directory Layout
+
+All server state is strictly contained inside Fishbowl's private application package namespace (`com.fishbowl.app`):
+
+| Directory | Filesystem Path | Contents & Persistence |
+| :--- | :--- | :--- |
+| **System Prefix** | `/data/data/com.fishbowl.app/files/usr` | Native binaries, .NET runtime host, shared `.so` libraries, and tools |
+| **Data (`--datadir`)** | `/data/data/com.fishbowl.app/files/home/.local/share/jellyfin` | Main SQLite database (`jellyfin.db`), user accounts, and watch history (preserved across app updates) |
+| **Config (`--configdir`)** | `/data/data/com.fishbowl.app/files/home/.config/jellyfin` | Server XML configuration files (`system.xml`, `network.xml`) |
+| **Cache (`--cachedir`)** | `/data/data/com.fishbowl.app/files/home/.cache/jellyfin` | Image thumbnail caches, fanart, and temporary transcode chunks |
+| **Logs (`--logdir`)** | `/data/data/com.fishbowl.app/files/home/.local/share/jellyfin/log` | On-disk Serilog log files accessible via the in-app Disk Log viewer |
 
 ---
 
