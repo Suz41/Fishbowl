@@ -21,6 +21,48 @@ public final class StorageDriveHelper {
 
     private StorageDriveHelper() {}
 
+    public static String normalizeStoragePath(String path) {
+        if (path == null) return null;
+        String clean = path.trim();
+        if (clean.isEmpty()) return clean;
+
+        // Strip trailing slash unless root "/"
+        while (clean.length() > 1 && clean.endsWith("/")) {
+            clean = clean.substring(0, clean.length() - 1);
+        }
+
+        // 1. Convert internal kernel vold mount /mnt/media_rw/<UUID> to public POSIX /storage/<UUID>
+        if (clean.startsWith("/mnt/media_rw/")) {
+            clean = "/storage/" + clean.substring("/mnt/media_rw/".length());
+        }
+        // 2. Convert /mnt/pass_through/<uid>/<UUID> or /mnt/pass_through/<uid>/emulated/0
+        else if (clean.startsWith("/mnt/pass_through/")) {
+            String rest = clean.substring("/mnt/pass_through/".length());
+            int nextSlash = rest.indexOf('/');
+            if (nextSlash != -1) {
+                String sub = rest.substring(nextSlash + 1);
+                clean = "/storage/" + sub;
+            }
+        }
+        // 3. Convert /mnt/user/<uid>/<UUID> or /mnt/user/<uid>/emulated/0
+        else if (clean.startsWith("/mnt/user/")) {
+            String rest = clean.substring("/mnt/user/".length());
+            int nextSlash = rest.indexOf('/');
+            if (nextSlash != -1) {
+                String sub = rest.substring(nextSlash + 1);
+                clean = "/storage/" + sub;
+            }
+        }
+        // 4. Convert legacy /storage/emulated/legacy or /sdcard to /storage/emulated/0
+        else if (clean.equals("/storage/emulated/legacy") || clean.startsWith("/storage/emulated/legacy/")) {
+            clean = "/storage/emulated/0" + clean.substring("/storage/emulated/legacy".length());
+        } else if (clean.equals("/sdcard") || clean.startsWith("/sdcard/")) {
+            clean = "/storage/emulated/0" + clean.substring("/sdcard".length());
+        }
+
+        return clean;
+    }
+
     public static final class DriveInfo {
         public final String uuid;
         public final String name;
@@ -80,7 +122,14 @@ public final class StorageDriveHelper {
                 }
 
                 String path = null;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                String uuid = vol.getUuid();
+
+                // Standard POSIX mapping: Always prioritize /storage/<UUID> over internal /mnt/media_rw mounts
+                if (vol.isPrimary()) {
+                    path = "/storage/emulated/0";
+                } else if (uuid != null && !uuid.trim().isEmpty()) {
+                    path = "/storage/" + uuid.trim();
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     try {
                         File dir = vol.getDirectory();
                         if (dir != null) {
@@ -92,15 +141,15 @@ public final class StorageDriveHelper {
                 if (path == null) {
                     if (vol.isPrimary()) {
                         path = Environment.getExternalStorageDirectory().getAbsolutePath();
-                    } else {
-                        String uuid = vol.getUuid();
-                        if (uuid != null && !uuid.isEmpty()) {
-                            path = "/storage/" + uuid;
-                        }
+                    } else if (uuid != null && !uuid.isEmpty()) {
+                        path = "/storage/" + uuid;
                     }
                 }
 
                 if (path == null) continue;
+
+                // Always normalize to ensure internal /mnt/media_rw/ or mount namespaces never leak through
+                path = normalizeStoragePath(path);
 
                 String desc = vol.getDescription(context);
                 if (desc == null || desc.trim().isEmpty()) {
@@ -113,6 +162,18 @@ public final class StorageDriveHelper {
                     total = stat.getTotalBytes();
                     free = stat.getAvailableBytes();
                 } catch (Throwable ignored) {}
+
+                // If stat on drive root failed (SELinux boundary on Android 11+), try the guaranteed app directory
+                if (total <= 0 && !vol.isPrimary()) {
+                    try {
+                        File appDir = new File(path, "Android/data/" + context.getPackageName() + "/files");
+                        if (appDir.exists()) {
+                            StatFs stat = new StatFs(appDir.getAbsolutePath());
+                            total = stat.getTotalBytes();
+                            free = stat.getAvailableBytes();
+                        }
+                    } catch (Throwable ignored) {}
+                }
 
                 List<String> folders = scanTopLevelMediaFolders(path, vol.isPrimary());
 
@@ -136,7 +197,7 @@ public final class StorageDriveHelper {
             if (extDirs != null) {
                 for (File ext : extDirs) {
                     if (ext == null) continue;
-                    String full = ext.getAbsolutePath();
+                    String full = normalizeStoragePath(ext.getAbsolutePath());
                     if (!full.startsWith("/storage/emulated/0")) {
                         int idx = full.indexOf("/Android/data");
                         if (idx > 0) {
@@ -155,6 +216,13 @@ public final class StorageDriveHelper {
                                     total = stat.getTotalBytes();
                                     free = stat.getAvailableBytes();
                                 } catch (Throwable ignored) {}
+                                if (total <= 0) {
+                                    try {
+                                        StatFs stat = new StatFs(full);
+                                        total = stat.getTotalBytes();
+                                        free = stat.getAvailableBytes();
+                                    } catch (Throwable ignored) {}
+                                }
 
                                 String driveLabel = "USB Drive";
                                 String[] segs = rootPath.split("/");
@@ -164,7 +232,7 @@ public final class StorageDriveHelper {
 
                                 List<String> folders = scanTopLevelMediaFolders(rootPath, false);
                                 drives.add(new DriveInfo(
-                                        null,
+                                        segs.length > 0 ? segs[segs.length - 1] : null,
                                         driveLabel,
                                         rootPath,
                                         false,
@@ -234,10 +302,11 @@ public final class StorageDriveHelper {
                 }
             }
         } else if (!isPrimary) {
-            // For external drives: ensure common folders and guaranteed app media directory are available
-            String[] common = {"Movies", "Music", "Videos", "Download", "DCIM"};
+            // For external drives: check common media folder candidates and only add if they actually exist on disk
+            String[] common = {"Movies", "Music", "Videos", "Download", "DCIM", "Movie"};
             for (String c : common) {
-                if (!list.contains(c)) {
+                File sub = new File(root, c);
+                if (sub.exists() && !list.contains(c)) {
                     list.add(c);
                 }
             }
@@ -281,21 +350,23 @@ public final class StorageDriveHelper {
                         }
 
                         if ("primary".equalsIgnoreCase(type)) {
-                            return relPath.isEmpty() ? "/storage/emulated/0" : "/storage/emulated/0/" + relPath;
+                            return normalizeStoragePath(relPath.isEmpty() ? "/storage/emulated/0" : "/storage/emulated/0/" + relPath);
                         }
 
                         // Match against mounted drives
                         List<DriveInfo> drives = getMountedDrives(context);
                         for (DriveInfo drive : drives) {
                             if (drive.uuid != null && drive.uuid.equalsIgnoreCase(type)) {
-                                return relPath.isEmpty() ? drive.rootPath : drive.rootPath + "/" + relPath;
+                                String combined = relPath.isEmpty() ? drive.rootPath : drive.rootPath + "/" + relPath;
+                                return normalizeStoragePath(combined);
                             }
                             if (drive.rootPath != null && drive.rootPath.toLowerCase(Locale.ROOT).contains(type.toLowerCase(Locale.ROOT))) {
-                                return relPath.isEmpty() ? drive.rootPath : drive.rootPath + "/" + relPath;
+                                String combined = relPath.isEmpty() ? drive.rootPath : drive.rootPath + "/" + relPath;
+                                return normalizeStoragePath(combined);
                             }
                         }
 
-                        return relPath.isEmpty() ? "/storage/" + type : "/storage/" + type + "/" + relPath;
+                        return normalizeStoragePath(relPath.isEmpty() ? "/storage/" + type : "/storage/" + type + "/" + relPath);
                     }
                 }
             } catch (Throwable ignored) {}
@@ -307,13 +378,12 @@ public final class StorageDriveHelper {
         if (path == null || path.trim().isEmpty()) {
             return new PathVerification(false, false, false, 0, 0, false);
         }
-        String cleanPath = path.trim();
+        String cleanPath = normalizeStoragePath(path);
         if (cleanPath.contains("..") || cleanPath.contains("\0") || !cleanPath.startsWith("/")) {
             return new PathVerification(false, false, false, 0, 0, false);
         }
         boolean isAllowedPrefix = cleanPath.startsWith("/storage/") ||
                                   cleanPath.startsWith("/sdcard") ||
-                                  cleanPath.startsWith("/mnt/") ||
                                   cleanPath.startsWith("/data/data/com.fishbowl.app") ||
                                   cleanPath.startsWith("/data/user/0/com.fishbowl.app");
         if (!isAllowedPrefix) {
@@ -321,16 +391,6 @@ public final class StorageDriveHelper {
         }
 
         File f = new File(cleanPath);
-        try {
-            f = f.getCanonicalFile();
-        } catch (Exception e) {
-            return new PathVerification(false, false, false, 0, 0, false);
-        }
-        String canonicalPath = f.getPath();
-        if (canonicalPath.contains("..") || (!canonicalPath.startsWith("/storage/") && !canonicalPath.startsWith("/sdcard") && !canonicalPath.startsWith("/mnt/") && !canonicalPath.startsWith("/data/"))) {
-            return new PathVerification(false, false, false, 0, 0, false);
-        }
-
         if (!f.exists()) {
             return new PathVerification(false, false, false, 0, 0, false);
         }
