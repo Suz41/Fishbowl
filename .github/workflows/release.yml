@@ -4,20 +4,29 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag to release (e.g. v1.4.7-beta.3)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
 
 jobs:
   release:
+    name: Build & Publish Release
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout Code
-      uses: actions/checkout@v7
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v6
+      uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -29,15 +38,16 @@ jobs:
     - name: Download Termux Bootstraps
       run: ./gradlew downloadBootstraps
 
-    - name: Build Release APK
-      run: ./gradlew assembleRelease
+    - name: Build Release and Debug APKs
+      run: ./gradlew assembleRelease assembleDebug
 
-    - name: Upload Release Assets
-      id: create_release
+    - name: Create GitHub Release & Upload Assets
       uses: softprops/action-gh-release@v2
       with:
+        tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
         draft: false
-        prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-test') }}
+        prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-test') || contains(github.event.inputs.tag_name, '-beta') }}
+        generate_release_notes: true
         files: |
-          app/build/outputs/apk/release/Fishbowl-*-release-universal.apk
-
+          app/build/outputs/apk/release/*.apk
+          app/build/outputs/apk/debug/*.apk

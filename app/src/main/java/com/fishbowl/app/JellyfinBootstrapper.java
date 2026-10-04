@@ -227,6 +227,7 @@ public class JellyfinBootstrapper {
                 out.write(xmlContent.getBytes());
             }
             Log.i(TAG, "Written network.xml enabling remote access and virtual interface binding.");
+            JellyfinEncodingConfig.ensureDefaultEncodingXml(null);
         } catch (Exception e) {
             Log.e(TAG, "Failed to write network.xml: " + e.getMessage(), e);
         }

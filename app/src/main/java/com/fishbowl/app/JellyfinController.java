@@ -1,6 +1,8 @@
 package com.fishbowl.app;
 
 import android.content.Context;
+import android.content.SharedPreferences;
+import android.os.StatFs;
 import android.util.Log;
 
 import com.termux.BuildConfig;
@@ -14,7 +16,10 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URL;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -103,7 +108,9 @@ public class JellyfinController {
 
     private final CopyOnWriteArraySet<Listener> listeners = new CopyOnWriteArraySet<>();
     private final CopyOnWriteArraySet<LogListener> logListeners = new CopyOnWriteArraySet<>();
-    private final StringBuilder logs = new StringBuilder();
+    private final List<String> liveLines = new ArrayList<>();
+    private static final int MAX_PRESERVED_ERRORS = 500;
+    private final List<String> preservedErrorLogs = new ArrayList<>();
     private final SimpleDateFormat sdf =
             new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
 
@@ -119,6 +126,31 @@ public class JellyfinController {
     private final AtomicInteger healthPollAttempt = new AtomicInteger(0);
     private long serverStartTimeMs = 0;
 
+    public static class KillEvent {
+        public final long timestamp;
+        public final String reason;
+        public final int exitCode;
+        public final long uptimeSeconds;
+        public final long freeStorageMb;
+        public final long freeRamMb;
+
+        public KillEvent(long timestamp, String reason, int exitCode, long uptimeSeconds, long freeStorageMb, long freeRamMb) {
+            this.timestamp = timestamp;
+            this.reason = reason;
+            this.exitCode = exitCode;
+            this.uptimeSeconds = uptimeSeconds;
+            this.freeStorageMb = freeStorageMb;
+            this.freeRamMb = freeRamMb;
+        }
+
+        public String toFormattedString() {
+            SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            return df.format(new Date(timestamp)) + " | " + reason +
+                    (exitCode != 0 ? " (Exit " + exitCode + ")" : "") +
+                    " | Uptime: " + uptimeSeconds + "s | Free Disk: " + freeStorageMb + " MB | Free RAM: " + freeRamMb + " MB";
+        }
+    }
+
     public static class ServerHealth {
         public final boolean isHealthy;
         public final String status;
@@ -128,8 +160,10 @@ public class JellyfinController {
         public final int ramUsagePercent;
         public final long storageFreeMb;
         public final long storageTotalMb;
+        public final boolean isTranscodingActive;
+        public final int activeTranscodeCount;
 
-        public ServerHealth(boolean isHealthy, String status, long uptimeSeconds, long totalRamMb, long usedRamMb, int ramUsagePercent, long storageFreeMb, long storageTotalMb) {
+        public ServerHealth(boolean isHealthy, String status, long uptimeSeconds, long totalRamMb, long usedRamMb, int ramUsagePercent, long storageFreeMb, long storageTotalMb, boolean isTranscodingActive, int activeTranscodeCount) {
             this.isHealthy = isHealthy;
             this.status = status;
             this.uptimeSeconds = uptimeSeconds;
@@ -138,13 +172,54 @@ public class JellyfinController {
             this.ramUsagePercent = ramUsagePercent;
             this.storageFreeMb = storageFreeMb;
             this.storageTotalMb = storageTotalMb;
+            this.isTranscodingActive = isTranscodingActive;
+            this.activeTranscodeCount = activeTranscodeCount;
         }
     }
 
-    /** Real-time server health and system resource sampler. */
+    public static class TranscodeStatus {
+        public final boolean isActive;
+        public final int activeFileCount;
+        public final long cacheBytes;
+
+        public TranscodeStatus(boolean isActive, int activeFileCount, long cacheBytes) {
+            this.isActive = isActive;
+            this.activeFileCount = activeFileCount;
+            this.cacheBytes = cacheBytes;
+        }
+    }
+
+    public TranscodeStatus getTranscodeStatus() {
+        boolean active = false;
+        int activeCount = 0;
+        long totalBytes = 0;
+        try {
+            File transcodeDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".cache/jellyfin/transcodes");
+            if (transcodeDir.exists() && transcodeDir.isDirectory()) {
+                File[] files = transcodeDir.listFiles();
+                if (files != null) {
+                    long now = System.currentTimeMillis();
+                    for (File f : files) {
+                        totalBytes += f.length();
+                        if (now - f.lastModified() < 5000) {
+                            active = true;
+                            activeCount++;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return new TranscodeStatus(active, activeCount, totalBytes);
+    }
+
+    public boolean isTranscodingActive() {
+        return getTranscodeStatus().isActive;
+    }
+
+    /** Real-time server health and system resource sampler (ultra-lightweight, zero CPU pressure). */
     public ServerHealth getServerHealth() {
         boolean healthy = isHealthy();
-        String status = healthy ? "Healthy" : (currentState == State.RUNNING ? "Degraded" : currentState.name());
+        String status = healthy ? "Healthy" : (currentState == State.RUNNING ? "Responding" : currentState.name());
         long uptime = 0;
         if (serverStartTimeMs > 0 && (currentState == State.RUNNING || healthy)) {
             uptime = Math.max(0, (System.currentTimeMillis() - serverStartTimeMs) / 1000);
@@ -176,7 +251,8 @@ public class JellyfinController {
             storageTotalMb = stat.getTotalBytes() / (1024 * 1024);
         } catch (Throwable ignored) {}
 
-        return new ServerHealth(healthy, status, uptime, totalMb, usedMb, percent, storageFreeMb, storageTotalMb);
+        TranscodeStatus ts = getTranscodeStatus();
+        return new ServerHealth(healthy, status, uptime, totalMb, usedMb, percent, storageFreeMb, storageTotalMb, ts.isActive, ts.activeFileCount);
     }
 
     private static long parseMemKb(String line) {
@@ -197,16 +273,117 @@ public class JellyfinController {
     public synchronized String  getLastError()     { return lastError; }
     public synchronized String  getBootstrapProgressMessage() { return bootstrapProgressMessage; }
     public synchronized int     getBootstrapProgressPercent() { return bootstrapProgressPercent; }
-    public synchronized String  getLogs()          { return logs.toString(); }
-    public synchronized int     getRestartCount()  { return autoRestartCount.get(); }
+    public synchronized String getLogs() {
+        StringBuilder sb = new StringBuilder();
+        for (String line : liveLines) {
+            sb.append(line).append('\n');
+        }
+        return sb.toString();
+    }
+
+    public synchronized String getPreservedErrorLogs() {
+        if (preservedErrorLogs.isEmpty()) {
+            return "--- No server errors recorded ---";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String line : preservedErrorLogs) {
+            sb.append(line).append('\n');
+        }
+        return sb.toString();
+    }
+
+    public synchronized int getPreservedErrorCount() {
+        return preservedErrorLogs.size();
+    }
+
+    public synchronized int getRestartCount()  { return autoRestartCount.get(); }
     public synchronized long    getServerStartTimeMs() { return serverStartTimeMs; }
+
+    public static long getAvailableInternalStorageMb() {
+        try {
+            StatFs stat = new StatFs(TermuxConstants.TERMUX_FILES_DIR.getAbsolutePath());
+            return stat.getAvailableBytes() / (1024 * 1024);
+        } catch (Throwable t) {
+            return 1024;
+        }
+    }
+
+    public static void recordKillEvent(Context ctx, String reason, int exitCode, long uptimeSeconds) {
+        if (ctx == null) return;
+        try {
+            long freeStorage = getAvailableInternalStorageMb();
+            long freeRam = 0;
+            try (BufferedReader br = new BufferedReader(new java.io.FileReader("/proc/meminfo"))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    if (line.startsWith("MemAvailable:")) {
+                        freeRam = parseMemKb(line) / 1024;
+                        break;
+                    }
+                }
+            } catch (Throwable ignored) {}
+
+            SharedPreferences sp = ctx.getSharedPreferences("jellyfin_kill_history", Context.MODE_PRIVATE);
+            String existing = sp.getString("events", "");
+            long now = System.currentTimeMillis();
+            String entry = now + "::" + reason + "::" + exitCode + "::" + uptimeSeconds + "::" + freeStorage + "::" + freeRam;
+            String updated;
+            if (existing.isEmpty()) {
+                updated = entry;
+            } else {
+                String[] items = existing.split(";;;");
+                StringBuilder sb = new StringBuilder(entry);
+                int limit = Math.min(items.length, 9); // keep last 10
+                for (int i = 0; i < limit; i++) {
+                    sb.append(";;;").append(items[i]);
+                }
+                updated = sb.toString();
+            }
+            sp.edit().putString("events", updated).apply();
+            Log.w(TAG, "Recorded kill event: " + entry);
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to record kill event", t);
+        }
+    }
+
+    public static List<KillEvent> getKillHistory(Context ctx) {
+        List<KillEvent> list = new ArrayList<>();
+        if (ctx == null) return list;
+        try {
+            SharedPreferences sp = ctx.getSharedPreferences("jellyfin_kill_history", Context.MODE_PRIVATE);
+            String raw = sp.getString("events", "");
+            if (raw.isEmpty()) return list;
+            String[] items = raw.split(";;;");
+            for (String item : items) {
+                String[] parts = item.split("::");
+                if (parts.length >= 6) {
+                    list.add(new KillEvent(
+                            Long.parseLong(parts[0]),
+                            parts[1],
+                            Integer.parseInt(parts[2]),
+                            Long.parseLong(parts[3]),
+                            Long.parseLong(parts[4]),
+                            Long.parseLong(parts[5])
+                    ));
+                }
+            }
+        } catch (Throwable ignored) {}
+        return list;
+    }
+
+    public static void clearKillHistory(Context ctx) {
+        if (ctx == null) return;
+        ctx.getSharedPreferences("jellyfin_kill_history", Context.MODE_PRIVATE)
+                .edit().clear().apply();
+    }
 
     /**
      * §9: CLEAR DISPLAY only clears the UI log buffer.
      * Actual Jellyfin logs on disk are preserved.
      */
     public synchronized void clearDisplayedLogs() {
-        logs.setLength(0);
+        liveLines.clear();
+        preservedErrorLogs.clear();
         notifyListeners();
         notifyLogListeners();
     }
@@ -422,6 +599,17 @@ public class JellyfinController {
             appendLogLocked("Launching Jellyfin server process");
         }
         try {
+            long freeStorageMb = getAvailableInternalStorageMb();
+            if (freeStorageMb < 50) {
+                synchronized (this) {
+                    lastError = "STORAGE IS FULL (" + freeStorageMb + " MB free). Jellyfin requires at least 150 MB free space to launch. Clear cache or free device space to proceed.";
+                    appendLogLocked("CRITICAL: " + lastError);
+                    setStateLocked(State.FAILED);
+                }
+                recordKillEvent(ctx, "Storage Full Launch Abort (<50MB free)", 1, 0);
+                return;
+            }
+
             File prefixDir   = TermuxConstants.TERMUX_PREFIX_DIR;
             File dotnetBin   = new File(prefixDir, "lib/dotnet/dotnet");
             File jellyfinDll = new File(prefixDir, "lib/jellyfin/jellyfin.dll");
@@ -559,17 +747,42 @@ public class JellyfinController {
                     jellyfinProcess = null;
                     cancelHealthCheckLocked();
 
+                    long uptime = (serverStartTimeMs > 0) ? (System.currentTimeMillis() - serverStartTimeMs) / 1000 : 0;
+
                     if (stopRequested) {
                         appendLogLocked("Jellyfin stopped normally (exit " + exitCode + ")");
                         setStateLocked(State.STOPPED);
-                    } else if (currentState == State.STARTING) {
-                        lastError = "JELLYFIN FAILED TO START (exit " + exitCode + ")";
-                        appendLogLocked("ERROR: " + lastError);
-                        setStateLocked(State.FAILED);
                     } else {
-                        lastError = "JELLYFIN CRASHED (exit " + exitCode + ")";
-                        appendLogLocked("ERROR: " + lastError);
-                        setStateLocked(State.CRASHED);
+                        long freeMb = getAvailableInternalStorageMb();
+                        boolean diskFull = freeMb < 50;
+                        String diskLog = getDiskLogs().toLowerCase(Locale.ROOT);
+                        if (diskLog.contains("database or disk is full") || diskLog.contains("sqlite_full")
+                                || diskLog.contains("no space left") || diskLog.contains("not enough space")
+                                || diskLog.contains("enospc")) {
+                            diskFull = true;
+                        }
+
+                        if (diskFull) {
+                            lastError = "STORAGE IS FULL — Device internal storage is full (" + freeMb + " MB free). SQLite database or disk is full.";
+                            appendLogLocked("CRITICAL: " + lastError);
+                            setStateLocked(State.FAILED);
+                            recordKillEvent(ctx, "Storage Full (SQLite ENOSPC)", exitCode, uptime);
+                        } else if (exitCode == 137 || exitCode == 143) {
+                            lastError = "PROCESS KILLED BY OS (exit " + exitCode + " - SIGKILL/LMK)";
+                            appendLogLocked("ERROR: " + lastError);
+                            setStateLocked(State.CRASHED);
+                            recordKillEvent(ctx, "Killed by Android OS (Low Memory Killer)", exitCode, uptime);
+                        } else if (currentState == State.STARTING) {
+                            lastError = "JELLYFIN FAILED TO START (exit " + exitCode + ")";
+                            appendLogLocked("ERROR: " + lastError);
+                            setStateLocked(State.FAILED);
+                            recordKillEvent(ctx, "Startup Sequence Failure", exitCode, uptime);
+                        } else {
+                            lastError = "JELLYFIN CRASHED (exit " + exitCode + ")";
+                            appendLogLocked("ERROR: " + lastError);
+                            setStateLocked(State.CRASHED);
+                            recordKillEvent(ctx, "Process Crash", exitCode, uptime);
+                        }
                     }
                 }
 
@@ -674,6 +887,14 @@ public class JellyfinController {
     // ── Crash recovery ─────────────────────────────────────────────────────────
 
     private void handleCrashRecovery(Context ctx) {
+        if (getAvailableInternalStorageMb() < 50 || (lastError != null && lastError.contains("STORAGE IS FULL"))) {
+            synchronized (this) {
+                appendLogLocked("Halting auto-restart loop: Storage is full (" + getAvailableInternalStorageMb() + " MB free). Please clear cache or free device space.");
+                setStateLocked(State.FAILED);
+            }
+            return;
+        }
+
         int attempt = autoRestartCount.incrementAndGet();
         if (attempt > MAX_AUTO_RESTARTS) {
             synchronized (this) {
@@ -837,10 +1058,24 @@ public class JellyfinController {
     private void appendLogLocked(String message) {
         Log.i(TAG, message);
         String ts = sdf.format(new Date());
-        logs.append(ts).append("  ").append(message).append('\n');
-        if (logs.length() > MAX_LOG_CHARS) {
-            logs.delete(0, logs.length() - MAX_LOG_CHARS);
+        String entry = ts + "  " + message;
+
+        // Preserve errors so they are never lost even when 200 live lines scroll past
+        String lower = message.toLowerCase(Locale.ROOT);
+        if (lower.contains("[err]") || lower.contains("[error]") || lower.contains("[ftl]")
+                || lower.contains("[fatal]") || lower.contains("exception") || lower.contains("error:")
+                || lower.contains("sqlite_full") || lower.contains("database or disk is full")
+                || lower.contains("no space left") || lower.contains("not enough space")
+                || lower.contains("fail")) {
+            preservedErrorLogs.add(entry);
+            if (preservedErrorLogs.size() > MAX_PRESERVED_ERRORS) {
+                preservedErrorLogs.remove(0);
+            }
         }
+
+        // Live log buffer (infinite accumulation, fully synchronized)
+        liveLines.add(entry);
+
         notifyLogListeners();
     }
 
