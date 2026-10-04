@@ -3,7 +3,7 @@
 An unofficial standalone server host and launcher for Jellyfin on Android (ARM64).
 
 [![Release](https://img.shields.io/badge/Release-v1.4.6-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.6)
-[![Pre--Release](https://img.shields.io/badge/Test%20Build-v1.4.7--beta.1-orange.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.7-beta.1)
+[![Pre--Release](https://img.shields.io/badge/Test%20Build-v1.4.7--beta.3-orange.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.7-beta.3)
 [![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-12.1.0-purple.svg)](https://jellyfin.org)
 [![Runtime](https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
 [![Platform](https://img.shields.io/badge/Android-ARM64-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
@@ -11,13 +11,13 @@ An unofficial standalone server host and launcher for Jellyfin on Android (ARM64
 
 > [!IMPORTANT]
 > **Disclaimer, Community Notice & Security Transparency:**
-> - **Unofficial Project & Upstream Protection:** Fishbowl is an independent, unofficial community project and is **not affiliated with, maintained by, or endorsed by the official Jellyfin project or its core developers**. This project was created utilizing an independent vibe-coding workflow with agentic AI assistants. **Please do NOT contact, trouble, or submit bug reports to official Jellyfin developers, forums, or issue trackers for Fishbowl issues.** All questions and bug reports must be submitted exclusively on this repository's [GitHub Issues](https://github.com/Suz41/Fishbowl/issues).
-> - **Voluntary Use & Security Transparency:** Nobody is forced or pressured to download or install this application. We recognize that because this is a vibe-coded project, security-conscious users may have questions or reservations. The entire codebase is 100% open-source and transparent, with zero proprietary tracking SDKs, zero telemetry, and zero third-party analytics. You are freely welcome and encouraged to inspect, decompile, audit the code, monitor network traffic, or test the APK in an isolated environment.
-> - **Reproducible Source Builds:** You do not have to trust pre-compiled release binaries. All build configurations are open and reproducible; you can build the application directly from clean source with `./gradlew assembleRelease`.
-> - **Mobile Hardware & Thermals:** Smartphones and TV boxes are not rackmount servers. Continuous high-bitrate video transcoding generates significant heat and drains battery. For sustained 24/7 reliability, prioritize Direct Play/Stream and ensure proper physical device cooling.
+> - **Unofficial Project & Upstream Protection:** Fishbowl is an independent, unofficial community project and is **not affiliated with, maintained by, or endorsed by the official Jellyfin project**.
+> - **Voluntary Use & Security Transparency:** Nobody is forced or pressured to download or install this application. Because this is a community-driven project, we encourage security-conscious use and independent review.
+> - **Reproducible Source Builds:** You do not have to trust pre-compiled release binaries. All build configurations are open and reproducible; you can build the application directly from clean source.
+> - **Mobile Hardware & Thermals:** Smartphones and TV boxes are not rackmount servers. Continuous high-bitrate video transcoding generates significant heat and drains battery. For sustained 24/7 use, keep the device cooled and on AC power.
 > - **Provided "As-Is":** Distributed freely under the GNU General Public License v3.0 (GPLv3) for personal experimentation and home-lab use without commercial warranties or service-level agreements.
 
-Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a native interface for starting the server, viewing status, managing media storage folders, and accessing diagnostic logs without requiring root access, Docker, or external PC hardware.
+Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a native interface for starting the server, viewing status, managing media storage folders, and accessing diagnostic logs while keeping the underlying server local to the device.
 
 ---
 
@@ -26,7 +26,7 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 1. **Download & Install:**
    - **Recommended Stable Release:** Download [**Fishbowl v1.4.6**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.6) (`Fishbowl-v1.4.6-release-universal.apk`).
      - **SHA-256:** `D9F9AF398D988AFBF6483E8196F0226B8B90CF0C7557B566537BF20D05E8A930`
-   - **Optional Testing Pre-Release:** For users specifically testing USB OTG drives, SD cards, or Storage Access Framework (SAF) folder selection, test builds are available under [**Fishbowl v1.4.7-beta.1**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.7-beta.1).
+   - **Latest Testing Pre-Release:** Install the newest beta build for early validation under [**Fishbowl v1.4.7-beta.3**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.7-beta.3) (`Fishbowl-v1.4.7-beta.3-release-arm64-v8a.apk`).
 2. **Launch & Start:**
    - Open Fishbowl on your device. The server will start automatically. When the status indicator turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
 3. **Connect & Stream:**
@@ -82,18 +82,18 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 
 ## Bundled Packages & System Components
 
-Fishbowl integrates tested native binaries and runtimes compiled for the Android ARM64 Bionic C environment (`libc.so`), eliminating the need for Linux containers, virtual machines, or chroot environments:
+Fishbowl integrates tested native binaries and runtimes compiled for the Android ARM64 Bionic C environment (`libc.so`), eliminating the need for Linux containers, virtual machines, or chroot environments.
 
 | Package / Component | Version / Identifier | Purpose & Role | Upstream License |
 | :--- | :--- | :--- | :--- |
 | **Jellyfin Media Server Core** | `12.1.0` (ARM64) | Core media server runtime (`jellyfin.dll`), library indexing, playback reporting, and REST API | [GPLv3](https://github.com/jellyfin/jellyfin) |
 | **Microsoft .NET Runtime Engine** | `10.0.12` (ARM64) | High-performance managed JIT execution host located in `lib/dotnet/` | [MIT](https://github.com/dotnet/runtime) |
-| **Jellyfin FFmpeg Transcoder** | `7.1.4-Jellyfin` | Native ARM64 binary located in `opt/jellyfin/bin/ffmpeg` for media remuxing, thumbnail generation, and audio transcoding | [GPLv3 / LGPLv3](https://github.com/jellyfin/jellyfin-ffmpeg) |
+| **Jellyfin FFmpeg Transcoder** | `7.1.4-Jellyfin` | Native ARM64 binary located in `opt/jellyfin/bin/ffmpeg` for media remuxing, thumbnail generation, and audio transcoding | [GPLv3 / LGPLv3](https://www.ffmpeg.org/legal.html) |
 | **SQLite3 Database Driver** | `3.46.1` (`libe_sqlite3.so`) | Embedded relational database engine storing user library catalogs, metadata, and watch progress | [Public Domain](https://sqlite.org) |
 | **Fontconfig & FreeType Engines** | `libfontconfig.so` / `libfreetype.so` | Native C libraries used by FFmpeg for video subtitle burn-in and font shaping | [FTL / GPLv2](https://freetype.org) |
 | **OpenSSL Security & TLS Stack** | OpenSSL `3.x` (`libcrypto.so` / `libssl.so`) | Cryptographic engine managing local HTTPS sockets and secure outbound metadata requests | [Apache 2.0](https://www.openssl.org) |
 | **Unicode & Globalization Engine** | ICU Runtime | Database internationalization and culture-aware metadata sorting and searching | [Unicode-DFS-2016](https://icu.unicode.org) |
-| **Termux Foundation & Shell** | Core Bootstrap & Terminal | Android Bionic process management, isolated POSIX execution, and console terminal viewer | [GPLv3 / Apache 2.0](https://github.com/termux/termux-app) |
+| **Termux Foundation & Shell** | Core Bootstrap & Terminal | Android Bionic process management, isolated POSIX execution, and console terminal viewer | [GPLv3 / Apache 2.0](https://github.com/termux) |
 
 ### Application Package & Directory Layout
 
@@ -136,10 +136,10 @@ Grant the All-Files Storage Access permission when prompted, then select your me
 Android 11+ OEM security restricts untrusted application UIDs from traversing raw kernel mount points (`/mnt/media_rw/`). Fishbowl resolves this through two accessible methods:
 1. **Public POSIX Storage Mounts:** Fishbowl maps removable drives to standard POSIX `/storage/<UUID>/` paths and verifies directories on the active FUSE layer.
 2. **Guaranteed App Data Directory:** When direct traversal on external drives is restricted by OEM SELinux policies, use the guaranteed app data directory created on the external volume:
-   ```text
-   /storage/<UUID>/Android/data/com.fishbowl.app/files
-   ```
-   Fishbowl provides a 1-tap quick chip for this path. Media placed inside this folder is guaranteed readable by the server.
+    ```text
+    /storage/<UUID>/Android/data/com.fishbowl.app/files
+    ```
+    Fishbowl provides a 1-tap quick chip for this path. Media placed inside this folder is guaranteed readable by the server.
 
 ### Empty Library Sanity Checks
 Tapping **[ COPY PATH FOR JELLYFIN ]** verifies folder contents before copying to clipboard:
@@ -221,7 +221,7 @@ Set Fishbowl's battery setting to **Unrestricted**. Some OEM skins (MIUI, Origin
 - If Android SELinux blocks read access on an external drive, move your media files into the guaranteed app directory (`/storage/<UUID>/Android/data/com.fishbowl.app/files`) and select that path.
 
 ### How to update without losing library databases or user accounts
-Install new release APKs directly over your existing installation. Fishbowl preserves your database, configuration files, and user libraries across upgrades. Avoid using "Clear Data" in Android system settings, as this resets the server state.
+Install new release APKs directly over your existing installation. Fishbowl preserves your database, configuration files, and user libraries across upgrades. Avoid using "Clear Data" in Android settings unless you intentionally want to reset the app.
 
 ---
 
@@ -237,4 +237,4 @@ This project is licensed under the [GNU General Public License v3.0](LICENSE.md)
 - **FFmpeg:** Licensed under GNU General Public License v3.0 / LGPL v3.0.
 - **SQLite:** Public Domain.
 
-This application is provided freely without warranties or service-level guarantees. Always back up important library configurations and use this project for personal experimentation and home-lab use.
+This application is provided freely without warranties or service-level guarantees. Always back up important library configurations and use this project for personal experimentation and home-lab use only.
