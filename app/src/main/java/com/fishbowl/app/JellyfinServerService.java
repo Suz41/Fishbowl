@@ -37,6 +37,7 @@ public class JellyfinServerService extends Service implements JellyfinController
 
     private JellyfinController controller;
     private PowerManager.WakeLock wakeLock;
+    private android.net.wifi.WifiManager.MulticastLock multicastLock;
     private boolean hasStarted = false;
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -47,13 +48,13 @@ public class JellyfinServerService extends Service implements JellyfinController
         createNotificationChannel();
         controller = JellyfinController.getInstance();
         controller.addListener(this);
-        promoteToForeground(buildNotification("Jellyfin Server", "Starting server..."));
+        promoteToForeground(buildNotification("Jellyfin Server", "Starting server...", false));
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         // Always promote to foreground immediately to satisfy Android 12+ 5-second startForeground rule
-        promoteToForeground(buildNotification("Jellyfin Server", "Starting server..."));
+        promoteToForeground(buildNotification("Jellyfin Server", "Starting server...", false));
 
         if (intent != null) {
             String action = intent.getAction();
@@ -62,7 +63,7 @@ public class JellyfinServerService extends Service implements JellyfinController
                 controller.start(getApplicationContext());
             } else if (ACTION_STOP.equals(action)) {
                 Log.i(TAG, "Service received STOP");
-                releaseWakeLock();
+                releaseLocks();
                 controller.stop();
                 stopSelf();
             }
@@ -74,8 +75,14 @@ public class JellyfinServerService extends Service implements JellyfinController
     @Override
     public void onDestroy() {
         controller.removeListener(this);
-        releaseWakeLock();
+        releaseLocks();
         super.onDestroy();
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        Log.i(TAG, "Fishbowl task removed from recents - preserving foreground streaming service");
+        super.onTaskRemoved(rootIntent);
     }
 
     @Nullable
@@ -89,22 +96,24 @@ public class JellyfinServerService extends Service implements JellyfinController
         new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
             String title = "Jellyfin Server";
             String text;
+            boolean isRunning = false;
 
             switch (state) {
                 case RUNNING:
                     hasStarted = true;
-                    acquireWakeLock();
+                    isRunning = true;
+                    acquireLocks();
                     String lan = getLanAddress();
                     text = "Server is running" + (lan != null ? " (" + lan + ")" : " (http://127.0.0.1:8096)");
                     break;
                 case STARTING:
                 case INITIALIZING:
                     hasStarted = true;
-                    acquireWakeLock();
+                    acquireLocks();
                     text = "Starting server...";
                     break;
                 case STOPPING:
-                    releaseWakeLock();
+                    releaseLocks();
                     text = "Stopping server...";
                     break;
                 case STOPPED:
@@ -115,7 +124,7 @@ public class JellyfinServerService extends Service implements JellyfinController
                         Log.i(TAG, "Ignoring initial/transitional state " + state.name() + " before active start");
                         return;
                     }
-                    releaseWakeLock();
+                    releaseLocks();
                     stopSelf();
                     return;
                 default:
@@ -123,7 +132,7 @@ public class JellyfinServerService extends Service implements JellyfinController
                     break;
             }
 
-            Notification notification = buildNotification(title, text);
+            Notification notification = buildNotification(title, text, isRunning);
             promoteToForeground(notification);
         });
     }
@@ -141,32 +150,60 @@ public class JellyfinServerService extends Service implements JellyfinController
         }
     }
 
-    // ── WakeLock Management ───────────────────────────────────────────────────
+    // ── WakeLock & MulticastLock Management ────────────────────────────────────
 
-    private synchronized void acquireWakeLock() {
+    private synchronized void acquireLocks() {
         if (wakeLock == null) {
             PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
             if (pm != null) {
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JellyfinDroid:ServerWakeLock");
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Fishbowl:ServerWakeLock");
                 wakeLock.setReferenceCounted(false);
             }
         }
         if (wakeLock != null && !wakeLock.isHeld()) {
             wakeLock.acquire(24 * 60 * 60 * 1000L); // 24 hours
-            Log.i(TAG, "CPU WakeLock acquired for Fishbowl server & automation execution");
+            Log.i(TAG, "CPU WakeLock acquired for Fishbowl server & streaming");
+        }
+
+        if (multicastLock == null) {
+            try {
+                android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+                if (wm != null) {
+                    multicastLock = wm.createMulticastLock("Fishbowl:SmartTvMulticastLock");
+                    multicastLock.setReferenceCounted(false);
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Could not initialize Wi-Fi MulticastLock: " + e.getMessage());
+            }
+        }
+        if (multicastLock != null && !multicastLock.isHeld()) {
+            try {
+                multicastLock.acquire();
+                Log.i(TAG, "Wi-Fi MulticastLock acquired - Smart TVs can now auto-discover Jellyfin via SSDP/mDNS/DLNA");
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to acquire MulticastLock: " + e.getMessage());
+            }
         }
     }
 
-    private synchronized void releaseWakeLock() {
+    private synchronized void releaseLocks() {
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
             Log.i(TAG, "CPU WakeLock released");
+        }
+        if (multicastLock != null && multicastLock.isHeld()) {
+            try {
+                multicastLock.release();
+                Log.i(TAG, "Wi-Fi MulticastLock released");
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to release MulticastLock: " + e.getMessage());
+            }
         }
     }
 
     // ── Notification helpers ───────────────────────────────────────────────────
 
-    private Notification buildNotification(String title, String text) {
+    private Notification buildNotification(String title, String text, boolean isRunning) {
         Intent openIntent = new Intent(this, JellyfinDroidActivity.class);
         openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent openPi = PendingIntent.getActivity(
@@ -179,15 +216,25 @@ public class JellyfinServerService extends Service implements JellyfinController
                 this, 1, stopIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setSmallIcon(R.drawable.ic_notification_jellyfin)
                 .setContentIntent(openPi)
                 .setOngoing(true)
-                .addAction(R.drawable.ic_dns, "STOP SERVER", stopPi)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .build();
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT);
+
+        if (isRunning) {
+            Intent webIntent = new Intent(this, JellyfinWebActivity.class);
+            webIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            PendingIntent webPi = PendingIntent.getActivity(
+                    this, 2, webIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            builder.addAction(R.drawable.ic_notification_jellyfin, "OPEN WEB UI", webPi);
+        }
+
+        builder.addAction(R.drawable.ic_dns, "STOP SERVER", stopPi);
+        return builder.build();
     }
 
     private void createNotificationChannel() {

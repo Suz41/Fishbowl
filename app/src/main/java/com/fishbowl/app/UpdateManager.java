@@ -31,6 +31,7 @@ import java.security.MessageDigest;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,10 +41,14 @@ public final class UpdateManager {
     private static final String REPO_OWNER = "Suz41";
     private static final String REPO_NAME = "Fishbowl";
     private static final String LATEST_RELEASE_URL = "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/releases/latest";
+    private static final String ALL_RELEASES_URL = "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/releases?per_page=10";
     private static final String PREFS_NAME = "fishbowl_updates";
     private static final String KEY_LAST_CHECK = "last_check_timestamp";
     private static final String KEY_LATEST_VER_CODE = "latest_version_code";
     private static final String KEY_LATEST_VER_NAME = "latest_version_name";
+    private static final String KEY_UPDATE_CHANNEL = "update_channel";
+    public static final String CHANNEL_STABLE = "stable";
+    public static final String CHANNEL_BETA = "beta";
     private static final long CACHE_DURATION_MS = 24 * 60 * 60 * 1000L; // 24 hours
 
     public enum State {
@@ -121,6 +126,10 @@ public final class UpdateManager {
         return totalApkSize;
     }
 
+    public synchronized String getApkUrl() {
+        return apkUrl;
+    }
+
     public void addListener(UpdateListener l) {
         listeners.add(l);
     }
@@ -172,6 +181,22 @@ public final class UpdateManager {
         }
     }
 
+    public String getUpdateChannel() {
+        return prefs.getString(KEY_UPDATE_CHANNEL, CHANNEL_BETA);
+    }
+
+    public String getUpdateChannel(Context context) {
+        String defaultChannel = (context != null && getCurrentVersionName(context).toLowerCase(Locale.ROOT).contains("beta"))
+                ? CHANNEL_BETA : CHANNEL_STABLE;
+        return prefs.getString(KEY_UPDATE_CHANNEL, defaultChannel);
+    }
+
+    public void setUpdateChannel(String channel) {
+        if (channel != null) {
+            prefs.edit().putString(KEY_UPDATE_CHANNEL, channel).apply();
+        }
+    }
+
     public void checkForUpdates(Context context, boolean forceCheck) {
         long lastCheck = prefs.getLong(KEY_LAST_CHECK, 0);
         long now = System.currentTimeMillis();
@@ -190,7 +215,10 @@ public final class UpdateManager {
         executor.execute(() -> {
             HttpURLConnection conn = null;
             try {
-                URL url = new URL(LATEST_RELEASE_URL);
+                String channel = getUpdateChannel(context);
+                String fetchUrl = CHANNEL_BETA.equalsIgnoreCase(channel) ? ALL_RELEASES_URL : LATEST_RELEASE_URL;
+
+                URL url = new URL(fetchUrl);
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setConnectTimeout(10000);
                 conn.setReadTimeout(10000);
@@ -208,45 +236,44 @@ public final class UpdateManager {
                     }
                     in.close();
 
-                    JSONObject releaseJson = new JSONObject(sb.toString());
-                    String tagName = releaseJson.optString("tag_name", "");
-                    String body = releaseJson.optString("body", "");
-                    JSONArray assets = releaseJson.optJSONArray("assets");
+                    String rawJson = sb.toString().trim();
+                    JSONObject bestRelease = null;
+                    int highestVerCode = -1;
 
-                    int parsedVersionCode = -1;
-                    if (body != null) {
-                        for (String bLine : body.split("\n")) {
-                            String trimmed = bLine.trim();
-                            if (trimmed.startsWith("versionCode")) {
-                                String rest = trimmed.substring("versionCode".length()).trim();
-                                if (rest.startsWith(":") || rest.startsWith("=")) {
-                                    rest = rest.substring(1).trim();
-                                }
-                                try {
-                                    parsedVersionCode = Integer.parseInt(rest);
-                                    break;
-                                } catch (NumberFormatException ignored) {}
+                    if (rawJson.startsWith("[")) {
+                        JSONArray releases = new JSONArray(rawJson);
+                        for (int i = 0; i < releases.length(); i++) {
+                            JSONObject rel = releases.getJSONObject(i);
+                            boolean isPrerelease = rel.optBoolean("prerelease", false);
+                            if (CHANNEL_STABLE.equalsIgnoreCase(channel) && isPrerelease) {
+                                continue;
+                            }
+                            int code = extractVersionCode(rel);
+                            if (code > highestVerCode) {
+                                highestVerCode = code;
+                                bestRelease = rel;
                             }
                         }
+                    } else if (rawJson.startsWith("{")) {
+                        bestRelease = new JSONObject(rawJson);
+                        highestVerCode = extractVersionCode(bestRelease);
                     }
 
-                    if (parsedVersionCode <= 0) {
-                        Log.w(TAG, "versionCode not specified in release body, parsing from tag_name");
-                        parsedVersionCode = parseVersionCodeFromTag(tagName);
-                    }
-
-                    if (parsedVersionCode <= 0) {
+                    if (bestRelease == null || highestVerCode <= 0) {
                         notifyStateChanged(State.RELEASE_UNAVAILABLE);
                         return;
                     }
+
+                    String tagName = bestRelease.optString("tag_name", "");
+                    String body = bestRelease.optString("body", "");
+                    JSONArray assets = bestRelease.optJSONArray("assets");
 
                     String downloadUrl = "";
                     String checksumUrl = "";
                     if (assets != null) {
                         String bestApkName = "";
-                        String bestShaName = "";
 
-                        // Pass 1: Look for arm64-v8a specific APK first (native performance)
+                        // Pass 1: Look for arm64-v8a specific APK first
                         for (int i = 0; i < assets.length(); i++) {
                             JSONObject asset = assets.getJSONObject(i);
                             String name = asset.optString("name", "");
@@ -302,7 +329,7 @@ public final class UpdateManager {
                     }
 
                     synchronized (this) {
-                        latestVersionCode = parsedVersionCode;
+                        latestVersionCode = highestVerCode;
                         latestVersionName = tagName.startsWith("v") ? tagName.substring(1) : tagName;
                         latestReleaseNotes = cleanReleaseNotes(body);
                         apkUrl = downloadUrl;
@@ -337,22 +364,56 @@ public final class UpdateManager {
         });
     }
 
+    private int extractVersionCode(JSONObject releaseJson) {
+        if (releaseJson == null) return -1;
+        String body = releaseJson.optString("body", "");
+        if (!body.isEmpty()) {
+            for (String bLine : body.split("\n")) {
+                String trimmed = bLine.trim();
+                if (trimmed.startsWith("versionCode")) {
+                    String rest = trimmed.substring("versionCode".length()).trim();
+                    if (rest.startsWith(":") || rest.startsWith("=")) {
+                        rest = rest.substring(1).trim();
+                    }
+                    try {
+                        return Integer.parseInt(rest);
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+        String tagName = releaseJson.optString("tag_name", "");
+        return parseVersionCodeFromTag(tagName);
+    }
+
     private int parseVersionCodeFromTag(String tagName) {
+        if (tagName == null) return -1;
+        String lower = tagName.toLowerCase(Locale.ROOT);
+        if (lower.contains("1.4.7-beta.2")) return 101410;
+        if (lower.contains("1.4.7-beta.1")) return 101409;
+        if (lower.contains("1.4.6")) return 101408;
+        if (lower.contains("1.4.5")) return 101407;
+        if (lower.contains("1.4.3")) return 101405;
+        if (lower.contains("1.4.2")) return 101404;
+        if (lower.contains("1.4.1")) return 101403;
+        if (lower.contains("1.4.0")) return 101402;
+
         try {
+            Pattern betaPattern = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)-beta\\.?(\\d+)?");
+            Matcher bm = betaPattern.matcher(lower);
+            if (bm.find()) {
+                int maj = Integer.parseInt(bm.group(1));
+                int min = Integer.parseInt(bm.group(2));
+                int pat = Integer.parseInt(bm.group(3));
+                int beta = bm.group(4) != null ? Integer.parseInt(bm.group(4)) : 1;
+                return 100000 + (maj * 1000) + (min * 100) + (pat * 2) + beta;
+            }
+
             String cleanTag = tagName.replaceAll("[^0-9.]", "");
             String[] parts = cleanTag.split("\\.");
-            if (parts.length >= 4) {
-                int major = Integer.parseInt(parts[0]);
-                int minor = Integer.parseInt(parts[1]);
-                int build = Integer.parseInt(parts[3]);
-                return 100000 + (major * 1000) + (minor * 100) + build;
-            } else if (parts.length == 3) {
+            if (parts.length >= 3) {
                 int major = Integer.parseInt(parts[0]);
                 int minor = Integer.parseInt(parts[1]);
                 int patch = Integer.parseInt(parts[2]);
-                if (major == 1 && minor == 4 && patch == 6) {
-                    return 101408;
-                }
                 return 100000 + (major * 1000) + (minor * 100) + patch;
             }
         } catch (Exception ignored) {}
