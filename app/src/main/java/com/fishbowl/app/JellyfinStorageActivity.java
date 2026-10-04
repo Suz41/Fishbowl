@@ -73,7 +73,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                         try {
                             getContentResolver().takePersistableUriPermission(
                                     treeUri,
-                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                             );
                         } catch (Throwable ignored) {}
 
@@ -81,7 +81,8 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                         if (resolved != null && !resolved.trim().isEmpty()) {
                             resolved = StorageDriveHelper.normalizeStoragePath(resolved);
                             setActivePath(resolved, true);
-                            Toast.makeText(this, "SAF Path (Beta Testing): " + resolved, Toast.LENGTH_SHORT).show();
+                            refreshUI();
+                            Toast.makeText(this, "SAF Granted: " + resolved, Toast.LENGTH_SHORT).show();
                         } else {
                             new androidx.appcompat.app.AlertDialog.Builder(this)
                                     .setTitle("Virtual Cloud Storage (On Hold)")
@@ -402,12 +403,18 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         }
 
         if (activePathStatus != null) {
-            StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(activeSelectedPath);
-            if (!ver.exists) {
-                activePathStatus.setText("FOLDER NOT FOUND (Directory does not exist on disk)");
+            StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, activeSelectedPath);
+            if (ver.isSafVerified) {
+                activePathStatus.setText("VERIFIED VIA STORAGE ACCESS FRAMEWORK (SAF) (" + ver.mediaFileCount + " media files detected, " + ver.itemCount + " items)");
+                activePathStatus.setTextColor(COLOR_SUCCESS);
+            } else if (ver.isAppSpecific) {
+                activePathStatus.setText("VERIFIED APP DATA STORAGE (" + ver.mediaFileCount + " media files, " + ver.itemCount + " items) - 100% Native Jellyfin Access");
+                activePathStatus.setTextColor(COLOR_SUCCESS);
+            } else if (!ver.exists) {
+                activePathStatus.setText("FOLDER NOT DETECTED (Directory not found on disk. Grant access via BROWSE SAF or use App Data folder)");
                 activePathStatus.setTextColor(COLOR_WARNING);
             } else if (ver.hasPermissionError || !ver.canRead) {
-                activePathStatus.setText("SELINUX PERMISSION BLOCKED (Jellyfin cannot read this path. Use App Data folder or grant permissions)");
+                activePathStatus.setText("SELINUX PERMISSION BLOCKED (Jellyfin cannot read this path directly. Use App Data folder or grant SAF permissions)");
                 activePathStatus.setTextColor(Color.parseColor("#E06C75"));
             } else if (ver.mediaFileCount == 0 && ver.itemCount == 0) {
                 activePathStatus.setText("EMPTY FOLDER DETECTED (0 media files found - Jellyfin library will be empty)");
@@ -546,7 +553,26 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
             Button btnRoot = createSmallActionButton("USE DRIVE ROOT (" + drive.rootPath + ")");
             btnRoot.setOnClickListener(v -> setActivePath(drive.rootPath, true));
-            actionsRow2.addView(btnRoot, new LinearLayout.LayoutParams(-1, dp(36)));
+
+            if (!drive.isPrimary) {
+                actionsRow2.addView(btnRoot, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
+
+                View sp2 = new View(this);
+                actionsRow2.addView(sp2, new LinearLayout.LayoutParams(dp(8), 1));
+
+                Button btnProvision = createSmallActionButton("⭐ SET UP LIKE INTERNAL");
+                btnProvision.setOnClickListener(v -> {
+                    List<String> created = StorageDriveHelper.provisionAppDataMediaFolders(this, drive.rootPath);
+                    String primaryTarget = drive.rootPath + "/Android/data/" + getPackageName() + "/files/Movies";
+                    setActivePath(primaryTarget, true);
+                    copyPathToClipboard(primaryTarget);
+                    Toast.makeText(this, "External Storage Ready! Media folders provisioned same as internal. Path copied.", Toast.LENGTH_LONG).show();
+                    refreshUI();
+                });
+                actionsRow2.addView(btnProvision, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
+            } else {
+                actionsRow2.addView(btnRoot, new LinearLayout.LayoutParams(-1, dp(36)));
+            }
 
             driveCard.addView(actionsRow2);
             drivesContainer.addView(driveCard);
@@ -602,11 +628,17 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             pathTv.setTextColor(COLOR_TEXT_PRIMARY);
             infoCol.addView(pathTv);
 
-            StorageDriveHelper.PathVerification vCheck = StorageDriveHelper.verifyPath(path);
+            StorageDriveHelper.PathVerification vCheck = StorageDriveHelper.verifyPath(this, path);
             TextView statusTv = new TextView(this);
             statusTv.setTextSize(10);
-            if (!vCheck.exists) {
-                statusTv.setText("Not found on disk");
+            if (vCheck.isSafVerified) {
+                statusTv.setText(vCheck.mediaFileCount + " media files (Verified via SAF)");
+                statusTv.setTextColor(COLOR_SUCCESS);
+            } else if (vCheck.isAppSpecific) {
+                statusTv.setText(vCheck.mediaFileCount + " media files (App Data - Native Access)");
+                statusTv.setTextColor(COLOR_SUCCESS);
+            } else if (!vCheck.exists) {
+                statusTv.setText("Not detected on disk (Grant SAF or verify path)");
                 statusTv.setTextColor(COLOR_WARNING);
             } else if (vCheck.hasPermissionError || !vCheck.canRead) {
                 statusTv.setText("Permission blocked by SELinux");
@@ -674,7 +706,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
     private void copyPathToClipboard(String path) {
         final String normalizedPath = StorageDriveHelper.normalizeStoragePath(path);
-        StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(normalizedPath);
+        StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, normalizedPath);
 
         if (!ver.exists) {
             new androidx.appcompat.app.AlertDialog.Builder(this)
@@ -803,7 +835,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                     } catch (Throwable ignored) {}
                 }
                 setActivePath(path, true);
-                StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(path);
+                StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, path);
                 if (!ver.exists) {
                     Toast.makeText(this, "Notice: Directory does not exist on disk.", Toast.LENGTH_SHORT).show();
                 } else if (ver.hasPermissionError || !ver.canRead) {

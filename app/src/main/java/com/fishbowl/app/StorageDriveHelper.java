@@ -1,6 +1,7 @@
 package com.fishbowl.app;
 
 import android.content.Context;
+import android.content.UriPermission;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -10,6 +11,7 @@ import android.os.storage.StorageVolume;
 import android.provider.DocumentsContract;
 
 import androidx.core.content.ContextCompat;
+import androidx.documentfile.provider.DocumentFile;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -96,14 +98,27 @@ public final class StorageDriveHelper {
         public final int itemCount;
         public final int mediaFileCount;
         public final boolean hasPermissionError;
+        public final boolean isSafVerified;
+        public final boolean isAppSpecific;
+        public final String note;
 
-        public PathVerification(boolean exists, boolean canRead, boolean isDirectory, int itemCount, int mediaFileCount, boolean hasPermissionError) {
+        public PathVerification(boolean exists, boolean canRead, boolean isDirectory, int itemCount,
+                                int mediaFileCount, boolean hasPermissionError, boolean isSafVerified,
+                                boolean isAppSpecific, String note) {
             this.exists = exists;
             this.canRead = canRead;
             this.isDirectory = isDirectory;
             this.itemCount = itemCount;
             this.mediaFileCount = mediaFileCount;
             this.hasPermissionError = hasPermissionError;
+            this.isSafVerified = isSafVerified;
+            this.isAppSpecific = isAppSpecific;
+            this.note = note != null ? note : "";
+        }
+
+        public PathVerification(boolean exists, boolean canRead, boolean isDirectory, int itemCount,
+                                int mediaFileCount, boolean hasPermissionError) {
+            this(exists, canRead, isDirectory, itemCount, mediaFileCount, hasPermissionError, false, false, "");
         }
     }
 
@@ -157,25 +172,22 @@ public final class StorageDriveHelper {
                 }
 
                 long total = 0, free = 0;
-                try {
-                    StatFs stat = new StatFs(path);
-                    total = stat.getTotalBytes();
-                    free = stat.getAvailableBytes();
-                } catch (Throwable ignored) {}
-
-                // If stat on drive root failed (SELinux boundary on Android 11+), try the guaranteed app directory
-                if (total <= 0 && !vol.isPrimary()) {
+                StatFs stat = getDriveStatFs(context, path);
+                if (stat != null) {
                     try {
-                        File appDir = new File(path, "Android/data/" + context.getPackageName() + "/files");
-                        if (appDir.exists()) {
-                            StatFs stat = new StatFs(appDir.getAbsolutePath());
-                            total = stat.getTotalBytes();
-                            free = stat.getAvailableBytes();
-                        }
+                        total = stat.getTotalBytes();
+                        free = stat.getAvailableBytes();
                     } catch (Throwable ignored) {}
                 }
 
-                List<String> folders = scanTopLevelMediaFolders(path, vol.isPrimary());
+                // If this is an external drive, auto-provision media folders so it works seamlessly like internal storage
+                if (!vol.isPrimary()) {
+                    try {
+                        provisionAppDataMediaFolders(context, path);
+                    } catch (Throwable ignored) {}
+                }
+
+                List<String> folders = scanTopLevelMediaFolders(context, path, vol.getUuid(), vol.isPrimary());
 
                 drives.add(new DriveInfo(
                         vol.getUuid(),
@@ -226,13 +238,14 @@ public final class StorageDriveHelper {
 
                                 String driveLabel = "USB Drive";
                                 String[] segs = rootPath.split("/");
-                                if (segs.length > 0) {
-                                    driveLabel = "USB Drive (" + segs[segs.length - 1] + ")";
+                                String uuid = segs.length > 0 ? segs[segs.length - 1] : null;
+                                if (uuid != null) {
+                                    driveLabel = "USB Drive (" + uuid + ")";
                                 }
 
-                                List<String> folders = scanTopLevelMediaFolders(rootPath, false);
+                                List<String> folders = scanTopLevelMediaFolders(context, rootPath, uuid, false);
                                 drives.add(new DriveInfo(
-                                        segs.length > 0 ? segs[segs.length - 1] : null,
+                                        uuid,
                                         driveLabel,
                                         rootPath,
                                         false,
@@ -258,7 +271,7 @@ public final class StorageDriveHelper {
                 total = stat.getTotalBytes();
                 free = stat.getAvailableBytes();
             } catch (Throwable ignored) {}
-            List<String> folders = scanTopLevelMediaFolders(primaryPath, true);
+            List<String> folders = scanTopLevelMediaFolders(context, primaryPath, null, true);
             drives.add(new DriveInfo(
                     null,
                     "Internal Storage",
@@ -275,9 +288,89 @@ public final class StorageDriveHelper {
         return drives;
     }
 
-    private static List<String> scanTopLevelMediaFolders(String rootPath, boolean isPrimary) {
+    public static StatFs getDriveStatFs(Context context, String drivePath) {
+        if (drivePath == null || drivePath.isEmpty()) return null;
+        try {
+            StatFs stat = new StatFs(drivePath);
+            if (stat.getTotalBytes() > 0) return stat;
+        } catch (Throwable ignored) {}
+
+        if (context != null) {
+            try {
+                File[] extDirs = ContextCompat.getExternalFilesDirs(context, null);
+                if (extDirs != null) {
+                    for (File ext : extDirs) {
+                        if (ext != null) {
+                            String p = normalizeStoragePath(ext.getAbsolutePath());
+                            if (p.startsWith(drivePath)) {
+                                StatFs stat = new StatFs(p);
+                                if (stat.getTotalBytes() > 0) return stat;
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    public static DriveInfo getPrimaryExternalDrive(Context context) {
+        if (context == null) return null;
+        List<DriveInfo> drives = getMountedDrives(context);
+        for (DriveInfo d : drives) {
+            if (!d.isPrimary && d.totalBytes > 0) {
+                return d;
+            }
+        }
+        for (DriveInfo d : drives) {
+            if (!d.isPrimary) {
+                return d;
+            }
+        }
+        return null;
+    }
+
+    public static List<String> setupExternalDriveSameAsInternal(Context context, String driveRootPath) {
+        return provisionAppDataMediaFolders(context, driveRootPath);
+    }
+
+    public static List<String> provisionAppDataMediaFolders(Context context, String driveRootPath) {
+        List<String> created = new ArrayList<>();
+        if (driveRootPath == null || driveRootPath.trim().isEmpty()) return created;
+        String cleanRoot = normalizeStoragePath(driveRootPath);
+
+        if (context != null) {
+            try {
+                // Triggers Android framework to create the app package dir on external storage
+                ContextCompat.getExternalFilesDirs(context, null);
+            } catch (Throwable ignored) {}
+        }
+
+        File baseAppDir = new File(cleanRoot, "Android/data/com.fishbowl.app/files");
+        if (!baseAppDir.exists()) {
+            baseAppDir.mkdirs();
+        }
+
+        String[] subDirs = {"Movies", "Music", "Shows", "Downloads"};
+        for (String sub : subDirs) {
+            File dir = new File(baseAppDir, sub);
+            if (!dir.exists()) {
+                try {
+                    dir.mkdirs();
+                } catch (Throwable ignored) {}
+            }
+            if (dir.exists()) {
+                created.add(normalizeStoragePath(dir.getAbsolutePath()));
+            }
+        }
+        return created;
+    }
+
+    private static List<String> scanTopLevelMediaFolders(Context context, String rootPath, String uuid, boolean isPrimary) {
         List<String> list = new ArrayList<>();
         File root = new File(rootPath);
+
+        // 1. Direct POSIX listing (works on Internal Storage)
         if (root.exists() && root.canRead()) {
             File[] files = root.listFiles();
             if (files != null) {
@@ -292,7 +385,7 @@ public final class StorageDriveHelper {
             }
         }
 
-        // If list is empty and this is primary storage, seed with standard media folders if they exist
+        // 2. If list is empty and this is primary storage, seed standard folders if they exist
         if (list.isEmpty() && isPrimary) {
             String[] common = {"Movies", "Music", "TV Shows", "Download", "DCIM", "Pictures", "Documents"};
             for (String c : common) {
@@ -302,20 +395,64 @@ public final class StorageDriveHelper {
                 }
             }
         } else if (!isPrimary) {
-            // For external drives: check common media folder candidates and only add if they actually exist on disk
-            String[] common = {"Movies", "Music", "Videos", "Download", "DCIM", "Movie"};
-            for (String c : common) {
-                File sub = new File(root, c);
-                if (sub.exists() && !list.contains(c)) {
-                    list.add(c);
-                }
+            // 3. For external drives: check persisted SAF URI permissions to discover real folders
+            if (context != null) {
+                try {
+                    List<UriPermission> perms = context.getContentResolver().getPersistedUriPermissions();
+                    for (UriPermission perm : perms) {
+                        if (!perm.isReadPermission()) continue;
+                        Uri uri = perm.getUri();
+                        if ("com.android.externalstorage.documents".equals(uri.getAuthority())) {
+                            String docId = DocumentsContract.getTreeDocumentId(uri);
+                            if (docId != null) {
+                                String[] parts = docId.split(":");
+                                String docUuid = parts[0];
+                                if (uuid != null && uuid.equalsIgnoreCase(docUuid)) {
+                                    DocumentFile treeDoc = DocumentFile.fromTreeUri(context, uri);
+                                    if (treeDoc != null && treeDoc.exists() && treeDoc.isDirectory()) {
+                                        if (parts.length > 1 && !parts[1].isEmpty()) {
+                                            String folderName = parts[1];
+                                            if (!list.contains(folderName)) {
+                                                list.add(folderName);
+                                            }
+                                        } else {
+                                            // Granted at drive root: list all top-level folders
+                                            DocumentFile[] children = treeDoc.listFiles();
+                                            for (DocumentFile c : children) {
+                                                if (c.isDirectory() && !c.getName().startsWith(".") && !"Android".equalsIgnoreCase(c.getName())) {
+                                                    if (!list.contains(c.getName())) {
+                                                        list.add(c.getName());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {}
             }
-            // Ensure guaranteed Android app data folder exists and is listed for external storage
+
+            // 4. Also scan the guaranteed Android app data folder on external storage
             File appFiles = new File(root, "Android/data/com.fishbowl.app/files");
             if (!appFiles.exists()) {
                 try {
                     appFiles.mkdirs();
                 } catch (Throwable ignored) {}
+            }
+            if (appFiles.exists() && appFiles.canRead()) {
+                File[] subs = appFiles.listFiles();
+                if (subs != null) {
+                    for (File s : subs) {
+                        if (s.isDirectory() && !s.getName().startsWith(".")) {
+                            String rel = "Android/data/com.fishbowl.app/files/" + s.getName();
+                            if (!list.contains(rel)) {
+                                list.add(rel);
+                            }
+                        }
+                    }
+                }
             }
             if (!list.contains("Android/data/com.fishbowl.app/files")) {
                 list.add("Android/data/com.fishbowl.app/files");
@@ -375,47 +512,154 @@ public final class StorageDriveHelper {
     }
 
     public static PathVerification verifyPath(String path) {
+        return verifyPath(null, path);
+    }
+
+    public static PathVerification verifyPath(Context context, String path) {
         if (path == null || path.trim().isEmpty()) {
-            return new PathVerification(false, false, false, 0, 0, false);
+            return new PathVerification(false, false, false, 0, 0, false, false, false, "Path is empty");
         }
         String cleanPath = normalizeStoragePath(path);
         if (cleanPath.contains("..") || cleanPath.contains("\0") || !cleanPath.startsWith("/")) {
-            return new PathVerification(false, false, false, 0, 0, false);
+            return new PathVerification(false, false, false, 0, 0, false, false, false, "Invalid path format");
         }
         boolean isAllowedPrefix = cleanPath.startsWith("/storage/") ||
                                   cleanPath.startsWith("/sdcard") ||
                                   cleanPath.startsWith("/data/data/com.fishbowl.app") ||
                                   cleanPath.startsWith("/data/user/0/com.fishbowl.app");
         if (!isAllowedPrefix) {
-            return new PathVerification(false, false, false, 0, 0, false);
+            return new PathVerification(false, false, false, 0, 0, false, false, false, "Path prefix not allowed");
         }
 
+        boolean isAppSpecific = cleanPath.contains("/Android/data/com.fishbowl.app/");
+
+        // 1. Direct POSIX check
         File f = new File(cleanPath);
-        if (!f.exists()) {
-            return new PathVerification(false, false, false, 0, 0, false);
-        }
-        boolean isDir = f.isDirectory();
-        boolean canRead = f.canRead();
-        int itemCount = 0;
-        int mediaCount = 0;
-        boolean permissionError = false;
+        boolean posixExists = false;
+        try {
+            posixExists = f.exists();
+        } catch (Throwable ignored) {}
 
-        if (isDir) {
-            File[] subs = f.listFiles();
-            if (subs == null) {
-                // Folder exists on disk but process cannot list files (Android SELinux or permission block)
-                permissionError = true;
-                canRead = false;
+        if (posixExists) {
+            boolean isDir = f.isDirectory();
+            boolean canRead = f.canRead();
+            int itemCount = 0;
+            int mediaCount = 0;
+            boolean permissionError = false;
+
+            if (isDir) {
+                File[] subs = f.listFiles();
+                if (subs == null) {
+                    permissionError = true;
+                    canRead = false;
+                } else {
+                    itemCount = subs.length;
+                    mediaCount = countMediaFiles(subs, 0);
+                }
             } else {
-                itemCount = subs.length;
-                mediaCount = countMediaFiles(subs, 0);
+                if (isMediaFile(f.getName())) {
+                    mediaCount = 1;
+                }
             }
-        } else {
-            if (isMediaFile(f.getName())) {
-                mediaCount = 1;
+
+            if (canRead && !permissionError) {
+                String note = isAppSpecific ? "App-specific directory (Native POSIX Jellyfin ready)" : "Verified via direct filesystem";
+                return new PathVerification(true, canRead, isDir, itemCount, mediaCount, false, false, isAppSpecific, note);
             }
         }
-        return new PathVerification(true, canRead, isDir, itemCount, mediaCount, permissionError);
+
+        // 2. SAF verification fallback for external USB OTG paths
+        if (context != null && cleanPath.startsWith("/storage/")) {
+            String afterStorage = cleanPath.substring("/storage/".length());
+            String uuid;
+            String relPath;
+            int slash = afterStorage.indexOf('/');
+            if (slash != -1) {
+                uuid = afterStorage.substring(0, slash);
+                relPath = afterStorage.substring(slash + 1);
+            } else {
+                uuid = afterStorage;
+                relPath = "";
+            }
+
+            if (!"emulated".equalsIgnoreCase(uuid) && !uuid.isEmpty()) {
+                try {
+                    List<UriPermission> perms = context.getContentResolver().getPersistedUriPermissions();
+                    for (UriPermission perm : perms) {
+                        if (!perm.isReadPermission()) continue;
+                        Uri uri = perm.getUri();
+                        if ("com.android.externalstorage.documents".equals(uri.getAuthority())) {
+                            String docId = DocumentsContract.getTreeDocumentId(uri);
+                            if (docId != null) {
+                                String[] parts = docId.split(":");
+                                String docUuid = parts[0];
+                                String docRel = parts.length > 1 ? parts[1] : "";
+                                while (docRel.startsWith("/")) docRel = docRel.substring(1);
+
+                                if (docUuid.equalsIgnoreCase(uuid)) {
+                                    DocumentFile treeDoc = DocumentFile.fromTreeUri(context, uri);
+                                    if (treeDoc != null && treeDoc.exists()) {
+                                        DocumentFile target = null;
+                                        if (relPath.isEmpty() || relPath.equalsIgnoreCase(docRel)) {
+                                            target = treeDoc;
+                                        } else if (docRel.isEmpty()) {
+                                            target = findDocumentFileByPath(treeDoc, relPath);
+                                        }
+
+                                        if (target != null && target.exists()) {
+                                            boolean isDir = target.isDirectory();
+                                            int itemCount = 0;
+                                            int mediaCount = 0;
+                                            if (isDir) {
+                                                DocumentFile[] children = target.listFiles();
+                                                itemCount = children.length;
+                                                mediaCount = countDocumentMediaFiles(children, 0);
+                                            } else {
+                                                if (isMediaFile(target.getName())) mediaCount = 1;
+                                            }
+                                            return new PathVerification(true, true, isDir, itemCount, mediaCount, false, true, false,
+                                                    "Verified via Storage Access Framework (SAF)");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
+        }
+
+        return new PathVerification(false, false, false, 0, 0, false, false, false, "Directory not detected on disk");
+    }
+
+    private static DocumentFile findDocumentFileByPath(DocumentFile root, String relPath) {
+        if (root == null || relPath == null || relPath.isEmpty()) return root;
+        String[] segments = relPath.split("/");
+        DocumentFile current = root;
+        for (String seg : segments) {
+            if (seg.isEmpty()) continue;
+            DocumentFile next = current.findFile(seg);
+            if (next == null || !next.exists()) return null;
+            current = next;
+        }
+        return current;
+    }
+
+    private static int countDocumentMediaFiles(DocumentFile[] files, int depth) {
+        if (files == null || depth > 2) return 0;
+        int count = 0;
+        for (DocumentFile f : files) {
+            if (f.isDirectory() && !f.getName().startsWith(".")) {
+                DocumentFile[] children = f.listFiles();
+                if (children != null) {
+                    count += countDocumentMediaFiles(children, depth + 1);
+                }
+            } else if (f.isFile() && isMediaFile(f.getName())) {
+                count++;
+            }
+            if (count >= 500) break;
+        }
+        return count;
     }
 
     private static int countMediaFiles(File[] files, int depth) {

@@ -91,6 +91,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     // Dynamic UI References for Dashboard
     private TextView statusBadge;
     private TextView healthStatusBadge;
+    private TextView healthDetailText;
     private TextView healthUptimeText;
     private TextView healthRamText;
     private TextView healthStorageText;
@@ -101,6 +102,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private Button btnCopyLanIp;
     private Button btnCopyTailscaleIp;
 
+    private View homeActionDock;
     private Button btnOpenJellyfin;
     private Button btnStartServer;
     private Button btnStopServer;
@@ -120,7 +122,11 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private TextView errorCardFixText;
     private TextView errorCardRawText;
     private View errorCardRawContainer;
+    private Button btnErrorClearCache;
+    private Button btnErrorOpenStorage;
     private boolean errorCardDismissed = false;
+    private boolean hasShownErrorPopupForIncident = false;
+    private String lastPoppedIncident = "";
 
     // Permissions Card References
     private TextView permStorageBadge;
@@ -134,6 +140,16 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private View startupProgressCard;
     private TextView txtStage1, txtStage2, txtStage3, txtStage4, txtStage5;
 
+    // Transcoding & Hardware Dashboard References
+    private TextView transcodeEngineBadge;
+    private TextView transcodeActiveBadge;
+    private TextView transcodeDetailsText;
+    private TextView transcodeCodecSummaryText;
+
+    // External Storage Space Dashboard References
+    private TextView healthExternalStorageText;
+    private View healthExternalStorageRow;
+
     // Slim Header Loading Bar & Status Banner
     private ProgressBar headerProgressBar;
     private TextView headerStatusBanner;
@@ -144,9 +160,25 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private TextView storageInfoText;
     private TextView updateStatusText;
     private Button updateActionBtn;
+    private Button updateForceDownloadBtn;
     private TextView runtimeStatusText;
     private Button btnSettingsReinstall;
     private Button btnSettingsRetry;
+
+    // Logs Tab Enhancements
+    private String logFilter = "ALL";
+    private boolean autoScrollEnabled = true;
+    private Button btnFilterAll;
+    private Button btnFilterError;
+    private Button btnFilterWarn;
+    private Button btnFilterInfo;
+    private Button btnToggleAutoScroll;
+    private TextView logsStatusSubtitle;
+
+    // Updates Channel UI References
+    private TextView updateChannelBadge;
+    private Button btnChannelStable;
+    private Button btnChannelBeta;
 
     // Cached Tab Views to prevent recreation and crashes on tab click
     private View cachedHomeView;
@@ -168,18 +200,71 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private static final long LOG_REFRESH_THROTTLE_MS = 500;
 
     // Server Health Poller
+    private final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final android.os.Handler healthHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable healthPollRunnable = new Runnable() {
         @Override
         public void run() {
             refreshServerHealthUI();
-            healthHandler.postDelayed(this, 3000);
+            healthHandler.postDelayed(this, 1500);
         }
     };
 
     // Network Callback & Receiver
     private ConnectivityManager.NetworkCallback networkCallback;
     private BroadcastReceiver connectivityReceiver;
+
+    // USB-OTG Receiver for Live Hot-Plug Detection
+    private BroadcastReceiver usbReceiver;
+
+    private void registerUsbReceiver() {
+        if (usbReceiver != null) return;
+        usbReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                mainHandler.postDelayed(() -> {
+                    refreshServerHealthUI();
+                }, 1000);
+            }
+        };
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_MEDIA_MOUNTED);
+        filter.addAction(Intent.ACTION_MEDIA_UNMOUNTED);
+        filter.addAction(Intent.ACTION_MEDIA_EJECT);
+        filter.addAction(Intent.ACTION_MEDIA_REMOVED);
+        filter.addDataScheme("file");
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(usbReceiver, filter, Context.RECEIVER_EXPORTED);
+            } else {
+                registerReceiver(usbReceiver, filter);
+            }
+        } catch (Throwable t) {
+            try {
+                registerReceiver(usbReceiver, filter);
+            } catch (Throwable ignored) {}
+        }
+
+        try {
+            IntentFilter usbFilter = new IntentFilter();
+            usbFilter.addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED);
+            usbFilter.addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_DETACHED);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(usbReceiver, usbFilter, Context.RECEIVER_EXPORTED);
+            } else {
+                registerReceiver(usbReceiver, usbFilter);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private void unregisterUsbReceiver() {
+        if (usbReceiver != null) {
+            try {
+                unregisterReceiver(usbReceiver);
+            } catch (Throwable ignored) {}
+            usbReceiver = null;
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -202,6 +287,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         setContentView(buildMainPixelShell());
         setupSystemBarsAndInsets();
         setupNetworkMonitor();
+        registerUsbReceiver();
 
         // Auto-start server on app launch
         if (controller.getState() == JellyfinController.State.STOPPED || controller.getState() == JellyfinController.State.UNINITIALIZED) {
@@ -247,6 +333,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
     @Override
     protected void onDestroy() {
+        unregisterUsbReceiver();
         teardownNetworkMonitor();
         controller.removeLogListener(this);
         logUpdateHandler.removeCallbacksAndMessages(null);
@@ -416,76 +503,61 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         LinearLayout nav = new LinearLayout(this);
         nav.setOrientation(LinearLayout.HORIZONTAL);
         nav.setBackgroundColor(getSurfaceColor());
+        nav.setPadding(dp(8), dp(4), dp(8), dp(4));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             nav.setElevation(dp(8));
         }
 
-        // Clean 3-Tab Bottom Navigation
-        addNavTab(nav, 0, "Home", R.drawable.ic_home);
-        addNavTab(nav, 1, "Logs", R.drawable.ic_terminal);
-        addNavTab(nav, 2, "Settings", R.drawable.ic_settings);
+        // Icon-Only 3-Tab Bottom Navigation (No text labels)
+        addNavTab(nav, 0, R.drawable.ic_home);
+        addNavTab(nav, 1, R.drawable.ic_terminal);
+        addNavTab(nav, 2, R.drawable.ic_settings);
 
         return nav;
     }
 
-    private void addNavTab(LinearLayout parent, int tabIndex, String label, int iconRes) {
-        LinearLayout tab = new LinearLayout(this);
-        tab.setOrientation(LinearLayout.VERTICAL);
-        tab.setGravity(Gravity.CENTER);
-        tab.setPadding(0, dp(6), 0, dp(6));
+    private void addNavTab(LinearLayout parent, int tabIndex, int iconRes) {
+        FrameLayout tab = new FrameLayout(this);
+        tab.setPadding(0, dp(4), 0, dp(4));
         tab.setOnClickListener(v -> {
             activeTab = tabIndex;
             updateBottomNavSelection();
             renderActiveTab();
         });
 
-        FrameLayout iconWrapper = new FrameLayout(this);
-        LinearLayout.LayoutParams wrapperParams = new LinearLayout.LayoutParams(dp(56), dp(28));
-        wrapperParams.gravity = Gravity.CENTER_HORIZONTAL;
-        wrapperParams.bottomMargin = dp(2);
-
         View pill = new View(this);
         pill.setTag("pill");
         pill.setVisibility(View.INVISIBLE);
-        pill.setBackground(createRoundedDrawable(colorWithAlpha(getAccentColor(), 45), dp(14)));
-        iconWrapper.addView(pill, new FrameLayout.LayoutParams(-1, -1));
+        pill.setBackground(createRoundedDrawable(colorWithAlpha(getAccentColor(), 50), dp(18)));
+        FrameLayout.LayoutParams pillParams = new FrameLayout.LayoutParams(dp(64), dp(36));
+        pillParams.gravity = Gravity.CENTER;
+        tab.addView(pill, pillParams);
 
         ImageView icon = new ImageView(this);
+        icon.setTag("icon");
         icon.setImageResource(iconRes);
-        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(dp(22), dp(22));
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(dp(24), dp(24));
         iconParams.gravity = Gravity.CENTER;
-        iconWrapper.addView(icon, iconParams);
+        tab.addView(icon, iconParams);
 
-        tab.addView(iconWrapper, wrapperParams);
-
-        TextView txt = new TextView(this);
-        txt.setText(label);
-        txt.setTextSize(12);
-        txt.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams txtParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tab.addView(txt, txtParams);
-
-        LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, dp(48), 1.0f);
         parent.addView(tab, tabParams);
     }
 
     private void updateBottomNavSelection() {
         if (bottomNavLayout == null) return;
         for (int i = 0; i < bottomNavLayout.getChildCount(); i++) {
-            LinearLayout tab = (LinearLayout) bottomNavLayout.getChildAt(i);
-            FrameLayout wrapper = (FrameLayout) tab.getChildAt(0);
-            View pill = wrapper.findViewWithTag("pill");
-            ImageView icon = (ImageView) wrapper.getChildAt(1);
-            TextView txt = (TextView) tab.getChildAt(1);
+            FrameLayout tab = (FrameLayout) bottomNavLayout.getChildAt(i);
+            View pill = tab.findViewWithTag("pill");
+            ImageView icon = tab.findViewWithTag("icon");
 
             boolean selected = (i == activeTab);
             if (pill != null) pill.setVisibility(selected ? View.VISIBLE : View.INVISIBLE);
 
             int color = selected ? getAccentColor() : getSecondaryTextColor();
-            icon.setColorFilter(color);
-            txt.setTextColor(color);
-            txt.setTypeface(selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            if (icon != null) {
+                icon.setColorFilter(color);
+            }
         }
     }
 
@@ -502,13 +574,14 @@ public final class JellyfinDroidActivity extends AppCompatActivity
             refreshLanAddress();
         } else if (activeTab == 1) {
             refreshLogsDisplay();
-            if (logsScrollView != null) {
+            if (autoScrollEnabled && logsScrollView != null) {
                 logsScrollView.post(() -> logsScrollView.fullScroll(View.FOCUS_DOWN));
             }
         } else if (activeTab == 2) {
             updateStorageInfoText();
             refreshRuntimeStatusUI();
             refreshPermissionsUI();
+            refreshUpdateUI();
         }
 
         if (activeTab == 1 || (setupOverlayView != null && setupOverlayView.getVisibility() == View.VISIBLE)) {
@@ -811,36 +884,144 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     // ── Tab 0: Home (Dashboard & Server Controls) ──────────────────────────────
 
     private View buildHomeTab() {
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(getBgColor());
+
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(getBgColor());
+        // Bottom padding to ensure content can scroll completely clear of the docked action bar
+        scroll.setPadding(dp(16), dp(14), dp(16), dp(125));
+        scroll.setClipToPadding(false);
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16), dp(14), dp(16), dp(14));
 
-        // 1. Server Status Hero Card
+        // 1. Unified Server Status Hero Card (Health, Uptime, RAM, Storage, Direct Stream)
         layout.addView(buildServerStatusHeroCard());
 
         // 2. Server Error Diagnoser Card (Shown dynamically when error or crash occurs)
         errorDiagnosticCard = buildErrorDiagnosticCard();
         layout.addView(errorDiagnosticCard);
 
-        // 3. Server Health & Metrics Card
-        layout.addView(buildServerHealthCard());
-
-        // 4. Network Connections Card (Color-Coded IP & Dedicated Copy Buttons)
-        layout.addView(buildNetworkConnectionsCard());
-
-        // 5. Real Stage-by-Stage Server Startup Progress Card
+        // 3. Real Stage-by-Stage Server Startup Progress Card (Shown dynamically during startup)
         startupProgressCard = buildRealStartupProgressCard();
         layout.addView(startupProgressCard);
 
-        // 6. Server Control Actions
-        layout.addView(buildDashboardActions());
+        // 4. Client Streaming Addresses Card (Color-Coded IP & Dedicated Copy Buttons)
+        layout.addView(buildNetworkConnectionsCard());
+
+        // 5. Storage & Playback Status Card
+        layout.addView(buildServerHealthCard());
 
         scroll.addView(layout);
-        return scroll;
+        root.addView(scroll, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        // 6. Docked Server Controls at Bottom (Handy Thumb Zone)
+        homeActionDock = buildHomeActionDock();
+        FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dockParams.gravity = Gravity.BOTTOM;
+        root.addView(homeActionDock, dockParams);
+
+        return root;
+    }
+
+    private View buildHomeActionDock() {
+        LinearLayout dock = new LinearLayout(this);
+        dock.setOrientation(LinearLayout.VERTICAL);
+        dock.setBackgroundColor(getSurfaceColor());
+        dock.setPadding(dp(16), dp(8), dp(16), dp(10));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            dock.setElevation(dp(12));
+        }
+
+        // Top separator border
+        View topBorder = new View(this);
+        topBorder.setBackgroundColor(colorWithAlpha(getSecondaryTextColor(), 30));
+        dock.addView(topBorder, new LinearLayout.LayoutParams(-1, dp(1)));
+
+        // Primary Action: OPEN JELLYFIN WEB UI (when running) or START SERVER (when stopped)
+        btnOpenJellyfin = createPixelButton("OPEN JELLYFIN WEB UI", getAccentColor(), Color.WHITE);
+        btnOpenJellyfin.setOnClickListener(v -> startActivity(new Intent(this, JellyfinWebActivity.class)));
+        dock.addView(btnOpenJellyfin);
+
+        btnStartServer = createPixelButton("START SERVER", Color.parseColor("#2E7D32"), Color.WHITE);
+        btnStartServer.setOnClickListener(v -> {
+            long now = SystemClock.elapsedRealtime();
+            if (now - lastButtonActionTimestamp < BUTTON_DEBOUNCE_MS) return;
+            lastButtonActionTimestamp = now;
+            errorCardDismissed = false;
+
+            applyButtonStyle(btnStartServer, "STARTING...", Color.parseColor("#F57F17"), Color.WHITE, false);
+            if (btnStopServer != null) btnStopServer.setEnabled(false);
+            if (btnRestartServer != null) btnRestartServer.setEnabled(false);
+            triggerServerAction(JellyfinServerService.ACTION_START);
+        });
+        dock.addView(btnStartServer);
+
+        // Secondary Controls Row: [RESTART] and [STOP] side-by-side
+        LinearLayout subControls = new LinearLayout(this);
+        subControls.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams pSub = new LinearLayout.LayoutParams(-1, -2);
+        pSub.topMargin = dp(6);
+        subControls.setLayoutParams(pSub);
+
+        btnRestartServer = createPixelButton("RESTART", getSurfaceElevatedColor(), getPrimaryTextColor());
+        btnRestartServer.setOnClickListener(v -> {
+            long now = SystemClock.elapsedRealtime();
+            if (now - lastButtonActionTimestamp < BUTTON_DEBOUNCE_MS) return;
+            lastButtonActionTimestamp = now;
+            errorCardDismissed = false;
+
+            applyButtonStyle(btnRestartServer, "RESTARTING...", Color.parseColor("#F57F17"), Color.WHITE, false);
+            if (btnStartServer != null) btnStartServer.setEnabled(false);
+            if (btnStopServer != null) btnStopServer.setEnabled(false);
+            controller.restart(this);
+        });
+        subControls.addView(btnRestartServer, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        View btnSpacer = new View(this);
+        subControls.addView(btnSpacer, new LinearLayout.LayoutParams(dp(8), 1));
+
+        btnStopServer = createPixelButton("STOP", getSurfaceElevatedColor(), Color.parseColor("#EF5350"));
+        btnStopServer.setOnClickListener(v -> {
+            long now = SystemClock.elapsedRealtime();
+            if (now - lastButtonActionTimestamp < BUTTON_DEBOUNCE_MS) return;
+            lastButtonActionTimestamp = now;
+
+            applyButtonStyle(btnStopServer, "STOPPING...", Color.parseColor("#BF360C"), Color.WHITE, false);
+            if (btnStartServer != null) btnStartServer.setEnabled(false);
+            if (btnRestartServer != null) btnRestartServer.setEnabled(false);
+            controller.stop();
+            triggerServerAction(JellyfinServerService.ACTION_STOP);
+        });
+        subControls.addView(btnStopServer, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        dock.addView(subControls);
+
+        // Emergency action buttons (hidden by default)
+        btnResetCrash = createPixelButton("RESET CRASH LOOP", Color.parseColor("#B71C1C"), Color.WHITE);
+        btnResetCrash.setOnClickListener(v -> {
+            long now = SystemClock.elapsedRealtime();
+            if (now - lastButtonActionTimestamp < BUTTON_DEBOUNCE_MS) return;
+            lastButtonActionTimestamp = now;
+            controller.resetCrashLoop(this);
+        });
+        btnResetCrash.setVisibility(View.GONE);
+        LinearLayout.LayoutParams pCrash = new LinearLayout.LayoutParams(-1, dp(38));
+        pCrash.topMargin = dp(6);
+        dock.addView(btnResetCrash, pCrash);
+
+        btnReinstallRuntime = createPixelButton("REINSTALL RUNTIME", Color.parseColor("#455A64"), Color.WHITE);
+        btnReinstallRuntime.setOnClickListener(v -> showReinstallConfirmation());
+        btnReinstallRuntime.setVisibility(View.GONE);
+        LinearLayout.LayoutParams pReinstall = new LinearLayout.LayoutParams(-1, dp(38));
+        pReinstall.topMargin = dp(6);
+        dock.addView(btnReinstallRuntime, pReinstall);
+
+        return dock;
     }
 
     private View buildServerHealthCard() {
@@ -853,94 +1034,49 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         card.setLayoutParams(params);
 
         TextView header = new TextView(this);
-        header.setText("SERVER HEALTH & RESOURCES");
+        header.setText("STORAGE & PLAYBACK STATUS");
         header.setTextSize(11);
         header.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         header.setTextColor(getSecondaryTextColor());
         header.setPadding(0, 0, 0, dp(12));
         card.addView(header);
 
-        // Row 1: Health Status
+        // Row 1: Client Playback & Direct Stream Status
         LinearLayout rowStatus = new LinearLayout(this);
         rowStatus.setOrientation(LinearLayout.HORIZONTAL);
         rowStatus.setGravity(Gravity.CENTER_VERTICAL);
         TextView lblStatus = new TextView(this);
-        lblStatus.setText("HEALTH CHECK (/health)");
+        lblStatus.setText("CLIENT PLAYBACK");
         lblStatus.setTextSize(11);
         lblStatus.setTextColor(getSecondaryTextColor());
         rowStatus.addView(lblStatus, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
-        healthStatusBadge = new TextView(this);
-        healthStatusBadge.setText("Checking...");
-        healthStatusBadge.setTextSize(12);
-        healthStatusBadge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        healthStatusBadge.setTextColor(Color.parseColor("#FFD54F"));
-        healthStatusBadge.setPadding(dp(8), dp(2), dp(8), dp(2));
-        healthStatusBadge.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(8)));
-        rowStatus.addView(healthStatusBadge);
+        transcodeActiveBadge = new TextView(this);
+        transcodeActiveBadge.setText("IDLE / DIRECT PLAY");
+        transcodeActiveBadge.setTextSize(11);
+        transcodeActiveBadge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        transcodeActiveBadge.setTextColor(Color.parseColor("#81C784"));
+        transcodeActiveBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
+        transcodeActiveBadge.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(6)));
+        rowStatus.addView(transcodeActiveBadge);
         card.addView(rowStatus);
+
+        transcodeDetailsText = new TextView(this);
+        transcodeDetailsText.setText("Direct stream ready (0% phone CPU load for client devices)");
+        transcodeDetailsText.setTextSize(11);
+        transcodeDetailsText.setTextColor(getSecondaryTextColor());
+        transcodeDetailsText.setPadding(0, dp(4), 0, dp(6));
+        card.addView(transcodeDetailsText);
 
         // Divider
         View d1 = new View(this);
         d1.setBackgroundColor(colorWithAlpha(getSecondaryTextColor(), 25));
         LinearLayout.LayoutParams pD1 = new LinearLayout.LayoutParams(-1, dp(1));
-        pD1.topMargin = dp(8);
+        pD1.topMargin = dp(6);
         pD1.bottomMargin = dp(8);
         card.addView(d1, pD1);
 
-        // Row 2: Uptime
-        LinearLayout rowUptime = new LinearLayout(this);
-        rowUptime.setOrientation(LinearLayout.HORIZONTAL);
-        rowUptime.setGravity(Gravity.CENTER_VERTICAL);
-        TextView lblUptime = new TextView(this);
-        lblUptime.setText("UPTIME");
-        lblUptime.setTextSize(11);
-        lblUptime.setTextColor(getSecondaryTextColor());
-        rowUptime.addView(lblUptime, new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-        healthUptimeText = new TextView(this);
-        healthUptimeText.setText("0s");
-        healthUptimeText.setTextSize(12);
-        healthUptimeText.setTypeface(Typeface.MONOSPACE);
-        healthUptimeText.setTextColor(getPrimaryTextColor());
-        rowUptime.addView(healthUptimeText);
-        card.addView(rowUptime);
-
-        // Divider
-        View d2 = new View(this);
-        d2.setBackgroundColor(colorWithAlpha(getSecondaryTextColor(), 25));
-        LinearLayout.LayoutParams pD2 = new LinearLayout.LayoutParams(-1, dp(1));
-        pD2.topMargin = dp(8);
-        pD2.bottomMargin = dp(8);
-        card.addView(d2, pD2);
-
-        // Row 3: Memory Usage
-        LinearLayout rowRam = new LinearLayout(this);
-        rowRam.setOrientation(LinearLayout.HORIZONTAL);
-        rowRam.setGravity(Gravity.CENTER_VERTICAL);
-        TextView lblRam = new TextView(this);
-        lblRam.setText("DEVICE RAM USAGE");
-        lblRam.setTextSize(11);
-        lblRam.setTextColor(getSecondaryTextColor());
-        rowRam.addView(lblRam, new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-        healthRamText = new TextView(this);
-        healthRamText.setText("Sampling...");
-        healthRamText.setTextSize(12);
-        healthRamText.setTypeface(Typeface.MONOSPACE);
-        healthRamText.setTextColor(getPrimaryTextColor());
-        rowRam.addView(healthRamText);
-        card.addView(rowRam);
-
-        // Divider
-        View d3 = new View(this);
-        d3.setBackgroundColor(colorWithAlpha(getSecondaryTextColor(), 25));
-        LinearLayout.LayoutParams pD3 = new LinearLayout.LayoutParams(-1, dp(1));
-        pD3.topMargin = dp(8);
-        pD3.bottomMargin = dp(8);
-        card.addView(d3, pD3);
-
-        // Row 4: Storage Space
+        // Row 2: Internal Storage
         LinearLayout rowStorage = new LinearLayout(this);
         rowStorage.setOrientation(LinearLayout.HORIZONTAL);
         rowStorage.setGravity(Gravity.CENTER_VERTICAL);
@@ -958,16 +1094,64 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         rowStorage.addView(healthStorageText);
         card.addView(rowStorage);
 
+        // Divider
+        View d2 = new View(this);
+        d2.setBackgroundColor(colorWithAlpha(getSecondaryTextColor(), 25));
+        LinearLayout.LayoutParams pD2 = new LinearLayout.LayoutParams(-1, dp(1));
+        pD2.topMargin = dp(8);
+        pD2.bottomMargin = dp(8);
+        card.addView(d2, pD2);
+
+        // Row 3: External Storage (USB OTG)
+        healthExternalStorageRow = new LinearLayout(this);
+        ((LinearLayout) healthExternalStorageRow).setOrientation(LinearLayout.HORIZONTAL);
+        ((LinearLayout) healthExternalStorageRow).setGravity(Gravity.CENTER_VERTICAL);
+        TextView lblExt = new TextView(this);
+        lblExt.setText("EXTERNAL USB STORAGE");
+        lblExt.setTextSize(11);
+        lblExt.setTextColor(getSecondaryTextColor());
+        ((LinearLayout) healthExternalStorageRow).addView(lblExt, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        healthExternalStorageText = new TextView(this);
+        healthExternalStorageText.setText("Checking...");
+        healthExternalStorageText.setTextSize(12);
+        healthExternalStorageText.setTypeface(Typeface.MONOSPACE);
+        healthExternalStorageText.setTextColor(getPrimaryTextColor());
+        ((LinearLayout) healthExternalStorageRow).addView(healthExternalStorageText);
+        card.addView(healthExternalStorageRow);
+
+        // Manage Media Storage Button
+        Button btnManageStorage = createPixelButton("MANAGE MEDIA STORAGE", getSurfaceElevatedColor(), getAccentColor());
+        btnManageStorage.setOnClickListener(v -> startActivity(new Intent(this, JellyfinStorageActivity.class)));
+        LinearLayout.LayoutParams pBtn = new LinearLayout.LayoutParams(-1, dp(38));
+        pBtn.topMargin = dp(12);
+        card.addView(btnManageStorage, pBtn);
+
         return card;
     }
 
+    private void refreshTranscodeCardUI() {
+        if (transcodeEngineBadge == null) return;
+        JellyfinEncodingConfig.EncodingOptions opts = JellyfinEncodingConfig.loadEncodingConfig(this);
+        boolean isHw = JellyfinEncodingConfig.HW_ACCEL_MEDIACODEC.equalsIgnoreCase(opts.hardwareAccelerationType);
+        transcodeEngineBadge.setText(isHw ? "Android MediaCodec (Hardware SoC)" : "ARM NEON SIMD (Multi-threaded Software)");
+        transcodeEngineBadge.setTextColor(isHw ? Color.parseColor("#FFB74D") : Color.parseColor("#00B4D8"));
+    }
+
     private void refreshServerHealthUI() {
-        if (healthStatusBadge == null && healthUptimeText == null && healthRamText == null && healthStorageText == null) return;
+        if (healthStatusBadge == null && healthUptimeText == null && healthStorageText == null) return;
         new Thread(() -> {
             JellyfinController.ServerHealth health = controller.getServerHealth();
+            StorageDriveHelper.DriveInfo extDrive = StorageDriveHelper.getPrimaryExternalDrive(this);
+            JellyfinEncodingConfig.EncodingOptions encOpts = JellyfinEncodingConfig.loadEncodingConfig(this);
+            long freeMb = controller != null ? controller.getAvailableInternalStorageMb() : 500;
+
             runOnUiThread(() -> {
                 if (healthStatusBadge != null) {
-                    if (health.isHealthy) {
+                    if (freeMb < 50) {
+                        healthStatusBadge.setText("STORAGE FULL");
+                        healthStatusBadge.setTextColor(Color.parseColor("#EF5350"));
+                    } else if (health.isHealthy) {
                         healthStatusBadge.setText("Healthy (HTTP 200)");
                         healthStatusBadge.setTextColor(Color.parseColor("#81C784"));
                     } else if (controller.getState() == JellyfinController.State.RUNNING) {
@@ -976,6 +1160,21 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                     } else {
                         healthStatusBadge.setText("Offline");
                         healthStatusBadge.setTextColor(Color.parseColor("#E57373"));
+                    }
+                }
+                if (healthDetailText != null) {
+                    if (freeMb < 50) {
+                        healthDetailText.setText("Critical: Device storage exhausted (<50 MB free)");
+                        healthDetailText.setTextColor(Color.parseColor("#EF5350"));
+                    } else if (health.isHealthy) {
+                        healthDetailText.setText("All server subsystems active & listening on port 8096");
+                        healthDetailText.setTextColor(Color.parseColor("#81C784"));
+                    } else if (controller.getState() == JellyfinController.State.RUNNING) {
+                        healthDetailText.setText("Server process running, polling HTTP endpoint...");
+                        healthDetailText.setTextColor(Color.parseColor("#FFD54F"));
+                    } else {
+                        healthDetailText.setText("Server process is stopped");
+                        healthDetailText.setTextColor(getSecondaryTextColor());
                     }
                 }
                 if (healthUptimeText != null) {
@@ -988,13 +1187,6 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                             : String.format(Locale.ROOT, "%ds", sec);
                     healthUptimeText.setText(uptimeStr);
                 }
-                if (healthRamText != null) {
-                    if (health.totalRamMb > 0) {
-                        healthRamText.setText(health.usedRamMb + " MB / " + health.totalRamMb + " MB (" + health.ramUsagePercent + "%)");
-                    } else {
-                        healthRamText.setText("N/A");
-                    }
-                }
                 if (healthStorageText != null) {
                     if (health.storageTotalMb > 0) {
                         double freeGb = health.storageFreeMb / 1024.0;
@@ -1004,25 +1196,62 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                         healthStorageText.setText("N/A");
                     }
                 }
+                if (healthExternalStorageText != null) {
+                    if (extDrive != null && extDrive.totalBytes > 0) {
+                        String cap = StorageDriveHelper.formatCapacity(extDrive.freeBytes, extDrive.totalBytes);
+                        healthExternalStorageText.setText(extDrive.name + " • " + cap);
+                        healthExternalStorageText.setTextColor(Color.parseColor("#81C784"));
+                    } else if (extDrive != null) {
+                        healthExternalStorageText.setText(extDrive.name + " (Mounted)");
+                        healthExternalStorageText.setTextColor(Color.parseColor("#81C784"));
+                    } else {
+                        healthExternalStorageText.setText("No external drive connected");
+                        healthExternalStorageText.setTextColor(getSecondaryTextColor());
+                    }
+                }
+                if (transcodeActiveBadge != null) {
+                    if (health.isTranscodingActive) {
+                        transcodeActiveBadge.setText("TRANSCODING ACTIVE (" + health.activeTranscodeCount + " files)");
+                        transcodeActiveBadge.setTextColor(Color.parseColor("#00B4D8"));
+                        transcodeActiveBadge.setBackground(createRoundedDrawable(Color.parseColor("#1B2A32"), dp(6)));
+                        if (transcodeDetailsText != null) {
+                            transcodeDetailsText.setText("Active on-the-fly media transcoding to client");
+                            transcodeDetailsText.setTextColor(Color.parseColor("#00B4D8"));
+                        }
+                    } else {
+                        transcodeActiveBadge.setText("IDLE / DIRECT PLAY");
+                        transcodeActiveBadge.setTextColor(Color.parseColor("#81C784"));
+                        transcodeActiveBadge.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(6)));
+                    }
+                }
+                if (transcodeEngineBadge != null) {
+                    boolean isHw = JellyfinEncodingConfig.HW_ACCEL_MEDIACODEC.equalsIgnoreCase(encOpts.hardwareAccelerationType);
+                    transcodeEngineBadge.setText(isHw ? "Android MediaCodec (Hardware SoC)" : "ARM NEON SIMD (Software)");
+                    transcodeEngineBadge.setTextColor(isHw ? Color.parseColor("#FFB74D") : Color.parseColor("#00B4D8"));
+                }
             });
         }).start();
     }
 
     private View buildServerStatusHeroCard() {
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(18), dp(16), dp(18), dp(16));
         card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             card.setElevation(dp(2));
         }
 
+        // Top Status Header Row
+        LinearLayout topRow = new LinearLayout(this);
+        topRow.setOrientation(LinearLayout.HORIZONTAL);
+        topRow.setGravity(Gravity.CENTER_VERTICAL);
+
         LinearLayout left = new LinearLayout(this);
         left.setOrientation(LinearLayout.VERTICAL);
 
         TextView label = new TextView(this);
-        label.setText("JELLYFIN SERVER STATUS");
+        label.setText("JELLYFIN SERVER");
         label.setTextSize(11);
         label.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         label.setTextColor(getSecondaryTextColor());
@@ -1030,38 +1259,95 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         statusBadge = new TextView(this);
         statusBadge.setText("INITIALIZING");
-        statusBadge.setTextSize(15);
+        statusBadge.setTextSize(16);
         statusBadge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        statusBadge.setPadding(0, dp(4), 0, 0);
+        statusBadge.setPadding(0, dp(2), 0, 0);
         left.addView(statusBadge);
 
-        card.addView(left, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        topRow.addView(left, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         LinearLayout badges = new LinearLayout(this);
         badges.setOrientation(LinearLayout.HORIZONTAL);
         badges.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView jfBadge = new TextView(this);
-        jfBadge.setText("Jellyfin 12.1.0");
+        jfBadge.setText("12.1.0 ARM64");
         jfBadge.setTextSize(11);
         jfBadge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         jfBadge.setTextColor(getAccentColor());
         jfBadge.setPadding(dp(8), dp(4), dp(8), dp(4));
-        jfBadge.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(10)));
+        jfBadge.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(8)));
         LinearLayout.LayoutParams jfParams = new LinearLayout.LayoutParams(-2, -2);
         jfParams.rightMargin = dp(6);
         badges.addView(jfBadge, jfParams);
 
-        TextView versionBadge = new TextView(this);
-        versionBadge.setText("v" + com.termux.BuildConfig.VERSION_NAME);
-        versionBadge.setTextSize(11);
-        versionBadge.setTypeface(Typeface.MONOSPACE);
-        versionBadge.setTextColor(getSecondaryTextColor());
-        versionBadge.setPadding(dp(8), dp(4), dp(8), dp(4));
-        versionBadge.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(10)));
-        badges.addView(versionBadge);
+        healthStatusBadge = new TextView(this);
+        healthStatusBadge.setText("Offline");
+        healthStatusBadge.setTextSize(11);
+        healthStatusBadge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        healthStatusBadge.setTextColor(Color.parseColor("#E57373"));
+        healthStatusBadge.setPadding(dp(8), dp(4), dp(8), dp(4));
+        healthStatusBadge.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(8)));
+        badges.addView(healthStatusBadge);
 
-        card.addView(badges);
+        topRow.addView(badges);
+        card.addView(topRow);
+
+        // Subtle Divider
+        View div = new View(this);
+        div.setBackgroundColor(colorWithAlpha(getSecondaryTextColor(), 25));
+        LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(-1, dp(1));
+        divParams.topMargin = dp(12);
+        divParams.bottomMargin = dp(10);
+        card.addView(div, divParams);
+
+        // Server Health details row (Clean, focused ONLY on Server Health & Uptime)
+        LinearLayout healthRow = new LinearLayout(this);
+        healthRow.setOrientation(LinearLayout.HORIZONTAL);
+        healthRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout healthInfo = new LinearLayout(this);
+        healthInfo.setOrientation(LinearLayout.VERTICAL);
+
+        TextView hLbl = new TextView(this);
+        hLbl.setText("SERVER HEALTH");
+        hLbl.setTextSize(10);
+        hLbl.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        hLbl.setTextColor(getSecondaryTextColor());
+        healthInfo.addView(hLbl);
+
+        healthDetailText = new TextView(this);
+        healthDetailText.setText("Checking system health...");
+        healthDetailText.setTextSize(12);
+        healthDetailText.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        healthDetailText.setTextColor(getPrimaryTextColor());
+        healthDetailText.setPadding(0, dp(2), 0, 0);
+        healthInfo.addView(healthDetailText);
+
+        healthRow.addView(healthInfo, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        // Uptime Pill on the right
+        LinearLayout uptimePill = new LinearLayout(this);
+        uptimePill.setOrientation(LinearLayout.VERTICAL);
+        uptimePill.setPadding(dp(12), dp(6), dp(12), dp(6));
+        uptimePill.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(8)));
+
+        TextView upLbl = new TextView(this);
+        upLbl.setText("UPTIME");
+        upLbl.setTextSize(9);
+        upLbl.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        upLbl.setTextColor(getSecondaryTextColor());
+        uptimePill.addView(upLbl);
+
+        healthUptimeText = new TextView(this);
+        healthUptimeText.setText("0s");
+        healthUptimeText.setTextSize(11);
+        healthUptimeText.setTypeface(Typeface.MONOSPACE);
+        healthUptimeText.setTextColor(getAccentColor());
+        uptimePill.addView(healthUptimeText);
+
+        healthRow.addView(uptimePill);
+        card.addView(healthRow);
 
         return card;
     }
@@ -1076,15 +1362,15 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         card.setLayoutParams(params);
 
         TextView header = new TextView(this);
-        header.setText("SERVER ADDRESSES");
-        header.setTextSize(12);
+        header.setText("CLIENT STREAMING ADDRESSES");
+        header.setTextSize(11);
         header.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         header.setTextColor(getSecondaryTextColor());
-        header.setPadding(0, 0, 0, dp(12));
+        header.setPadding(0, 0, 0, dp(10));
         card.addView(header);
 
-        // Local Address Box
-        card.addView(buildAddressRow("LOCAL ADDRESS", "http://127.0.0.1:8096", Color.parseColor("#00A4DC"), true));
+        // LAN Address Box (Primary for TV & Client devices)
+        card.addView(buildLanAddressRow());
 
         // Divider line
         View divider = new View(this);
@@ -1094,8 +1380,8 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         divParams.bottomMargin = dp(10);
         card.addView(divider, divParams);
 
-        // LAN Address Box
-        card.addView(buildLanAddressRow());
+        // Local Address Box
+        card.addView(buildAddressRow("LOCAL DEVICE ADDRESS", "http://127.0.0.1:8096", Color.parseColor("#00A4DC"), true));
 
         // Divider line 2
         View divider2 = new View(this);
@@ -1278,77 +1564,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         return tv;
     }
 
-    private View buildDashboardActions() {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(14);
-        layout.setLayoutParams(params);
 
-        // Prominent OPEN JELLYFIN Button
-        btnOpenJellyfin = createPixelButton("OPEN JELLYFIN", getAccentColor(), Color.WHITE);
-        btnOpenJellyfin.setOnClickListener(v -> startActivity(new Intent(this, JellyfinWebActivity.class)));
-        layout.addView(btnOpenJellyfin);
-
-        btnStartServer = createPixelButton("START SERVER", Color.parseColor("#2E7D32"), Color.WHITE);
-        btnStartServer.setOnClickListener(v -> {
-            long now = SystemClock.elapsedRealtime();
-            if (now - lastButtonActionTimestamp < BUTTON_DEBOUNCE_MS) return;
-            lastButtonActionTimestamp = now;
-            errorCardDismissed = false;
-
-            applyButtonStyle(btnStartServer, "STARTING...", Color.parseColor("#F57F17"), Color.WHITE, false);
-            if (btnStopServer != null) btnStopServer.setEnabled(false);
-            if (btnRestartServer != null) btnRestartServer.setEnabled(false);
-            triggerServerAction(JellyfinServerService.ACTION_START);
-        });
-        layout.addView(btnStartServer);
-
-        btnStopServer = createPixelButton("STOP SERVER", Color.parseColor("#D32F2F"), Color.WHITE);
-        btnStopServer.setOnClickListener(v -> {
-            long now = SystemClock.elapsedRealtime();
-            if (now - lastButtonActionTimestamp < BUTTON_DEBOUNCE_MS) return;
-            lastButtonActionTimestamp = now;
-
-            applyButtonStyle(btnStopServer, "STOPPING...", Color.parseColor("#BF360C"), Color.WHITE, false);
-            if (btnStartServer != null) btnStartServer.setEnabled(false);
-            if (btnRestartServer != null) btnRestartServer.setEnabled(false);
-            controller.stop();
-            triggerServerAction(JellyfinServerService.ACTION_STOP);
-        });
-        layout.addView(btnStopServer);
-
-        btnRestartServer = createPixelButton("RESTART SERVER", getSurfaceColor(), getPrimaryTextColor());
-        btnRestartServer.setOnClickListener(v -> {
-            long now = SystemClock.elapsedRealtime();
-            if (now - lastButtonActionTimestamp < BUTTON_DEBOUNCE_MS) return;
-            lastButtonActionTimestamp = now;
-            errorCardDismissed = false;
-
-            applyButtonStyle(btnRestartServer, "RESTARTING...", Color.parseColor("#F57F17"), Color.WHITE, false);
-            if (btnStartServer != null) btnStartServer.setEnabled(false);
-            if (btnStopServer != null) btnStopServer.setEnabled(false);
-            controller.restart(this);
-        });
-        layout.addView(btnRestartServer);
-
-        btnResetCrash = createPixelButton("RESET CRASH LOOP", Color.parseColor("#B71C1C"), Color.WHITE);
-        btnResetCrash.setOnClickListener(v -> {
-            long now = SystemClock.elapsedRealtime();
-            if (now - lastButtonActionTimestamp < BUTTON_DEBOUNCE_MS) return;
-            lastButtonActionTimestamp = now;
-            controller.resetCrashLoop(this);
-        });
-        btnResetCrash.setVisibility(View.GONE);
-        layout.addView(btnResetCrash);
-
-        btnReinstallRuntime = createPixelButton("REINSTALL RUNTIME", Color.parseColor("#455A64"), Color.WHITE);
-        btnReinstallRuntime.setOnClickListener(v -> showReinstallConfirmation());
-        btnReinstallRuntime.setVisibility(View.GONE);
-        layout.addView(btnReinstallRuntime);
-
-        return layout;
-    }
 
     private void triggerServerAction(String action) {
         Intent svc = new Intent(this, JellyfinServerService.class);
@@ -1372,50 +1588,65 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         layout.setPadding(dp(16), dp(14), dp(16), dp(14));
         layout.setBackgroundColor(getBgColor());
 
+        // Single Streamlined Minimal Actions Toolbar: [ALL LOGS] [ERRORS ONLY] | [COPY] [CLEAR]
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
         actions.setPadding(0, 0, 0, dp(10));
 
-        Button btnRefresh = createPixelButton("REFRESH", getSurfaceColor(), getPrimaryTextColor());
-        btnRefresh.setOnClickListener(v -> refreshLogsDisplay());
-        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        p1.rightMargin = dp(4);
-        actions.addView(btnRefresh, p1);
-
-        Button btnToggleLog = createPixelButton("DISK LOG", getSurfaceColor(), getPrimaryTextColor());
-        btnToggleLog.setOnClickListener(v -> {
-            showingDiskLog = !showingDiskLog;
-            btnToggleLog.setText(showingDiskLog ? "CONSOLE" : "DISK LOG");
+        btnFilterAll = createFilterChipButton("ALL LOGS", "ALL".equals(logFilter));
+        btnFilterAll.setOnClickListener(v -> {
+            logFilter = "ALL";
+            updateLogFilterButtons();
             refreshLogsDisplay();
         });
-        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        p2.rightMargin = dp(4);
-        actions.addView(btnToggleLog, p2);
+        actions.addView(btnFilterAll, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
 
-        Button btnCopy = createPixelButton("COPY", getSurfaceColor(), getPrimaryTextColor());
+        View s1 = new View(this);
+        actions.addView(s1, new LinearLayout.LayoutParams(dp(6), 1));
+
+        btnFilterError = createFilterChipButton("ERRORS ONLY", "ERROR".equals(logFilter));
+        btnFilterError.setOnClickListener(v -> {
+            logFilter = "ERROR";
+            updateLogFilterButtons();
+            refreshLogsDisplay();
+        });
+        actions.addView(btnFilterError, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
+
+        View s2 = new View(this);
+        actions.addView(s2, new LinearLayout.LayoutParams(dp(10), 1));
+
+        Button btnCopy = createPixelButton("COPY", getSurfaceElevatedColor(), getPrimaryTextColor());
         btnCopy.setOnClickListener(v -> {
             String content = (logsOutputText != null) ? logsOutputText.getText().toString() : "";
             if (!content.isEmpty()) {
-                android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                 if (cm != null) {
-                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Fishbowl Logs", content));
-                    android.widget.Toast.makeText(this, "Logs copied to clipboard", android.widget.Toast.LENGTH_SHORT).show();
+                    cm.setPrimaryClip(ClipData.newPlainText("Fishbowl Logs", content));
+                    Toast.makeText(this, "Logs copied to clipboard", Toast.LENGTH_SHORT).show();
                 }
             }
         });
-        LinearLayout.LayoutParams p3 = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        p3.rightMargin = dp(4);
-        actions.addView(btnCopy, p3);
+        actions.addView(btnCopy, new LinearLayout.LayoutParams(0, dp(36), 0.85f));
 
-        Button btnClear = createPixelButton("CLEAR", getSurfaceColor(), getPrimaryTextColor());
+        View s3 = new View(this);
+        actions.addView(s3, new LinearLayout.LayoutParams(dp(6), 1));
+
+        Button btnClear = createPixelButton("CLEAR", getSurfaceElevatedColor(), getPrimaryTextColor());
         btnClear.setOnClickListener(v -> {
             controller.clearDisplayedLogs();
             refreshLogsDisplay();
         });
-        LinearLayout.LayoutParams p4 = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        actions.addView(btnClear, p4);
+        actions.addView(btnClear, new LinearLayout.LayoutParams(0, dp(36), 0.85f));
 
         layout.addView(actions);
+
+        // Subtitle indicator
+        logsStatusSubtitle = new TextView(this);
+        logsStatusSubtitle.setTextSize(11);
+        logsStatusSubtitle.setTextColor(getSecondaryTextColor());
+        logsStatusSubtitle.setPadding(dp(4), 0, dp(4), dp(8));
+        layout.addView(logsStatusSubtitle);
 
         logsScrollView = new ScrollView(this);
         logsScrollView.setBackground(createRoundedDrawable(Color.parseColor("#121316"), dp(12)));
@@ -1433,14 +1664,105 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         return layout;
     }
 
+    private Button createFilterChipButton(String text, boolean active) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setTextSize(11);
+        b.setAllCaps(false);
+        b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        b.setPadding(dp(6), 0, dp(6), 0);
+        int bg = active ? getAccentColor() : getSurfaceElevatedColor();
+        int txt = active ? Color.WHITE : getSecondaryTextColor();
+        b.setBackground(createRoundedDrawable(bg, dp(12)));
+        b.setTextColor(txt);
+        return b;
+    }
+
+    private void updateLogFilterButtons() {
+        int activeBg = getAccentColor();
+        int activeText = Color.WHITE;
+        int inactiveBg = getSurfaceElevatedColor();
+        int inactiveText = getSecondaryTextColor();
+
+        if (btnFilterAll != null) {
+            boolean sel = "ALL".equals(logFilter);
+            btnFilterAll.setBackground(createRoundedDrawable(sel ? activeBg : inactiveBg, dp(12)));
+            btnFilterAll.setTextColor(sel ? activeText : inactiveText);
+        }
+        if (btnFilterError != null) {
+            boolean sel = "ERROR".equals(logFilter);
+            btnFilterError.setBackground(createRoundedDrawable(sel ? Color.parseColor("#C62828") : inactiveBg, dp(12)));
+            btnFilterError.setTextColor(sel ? activeText : inactiveText);
+        }
+    }
+
     private void refreshLogsDisplay() {
-        if (logsOutputText != null && controller != null) {
-            if (showingDiskLog) {
-                String disk = controller.getDiskLogs();
-                logsOutputText.setText(disk.isEmpty() ? "--- No Jellyfin disk log found yet in $DATA_DIR/log ---" : disk);
-            } else {
-                logsOutputText.setText(controller.getLogs());
+        if (logsOutputText == null || controller == null) return;
+        String raw = showingDiskLog ? controller.getDiskLogs() : controller.getLogs();
+        if (raw == null || raw.isEmpty()) {
+            logsOutputText.setText(showingDiskLog ? "--- No Jellyfin disk log found yet in $DATA_DIR/log ---" : "--- No console logs recorded yet ---");
+            if (logsStatusSubtitle != null) {
+                logsStatusSubtitle.setText((showingDiskLog ? "Disk Log" : "Console Stream") + " • 0 lines");
             }
+            return;
+        }
+
+        if ("ALL".equals(logFilter)) {
+            logsOutputText.setText(raw);
+            if (logsStatusSubtitle != null) {
+                int lineCount = 0;
+                for (int i = 0; i < raw.length(); i++) {
+                    if (raw.charAt(i) == '\n') lineCount++;
+                }
+                if (!raw.isEmpty() && !raw.endsWith("\n")) lineCount++;
+                int errCount = controller.getPreservedErrorCount();
+                logsStatusSubtitle.setText((showingDiskLog ? "Disk Log" : "Live Console") + " • " + lineCount + " lines" + (errCount > 0 ? " • " + errCount + " errors" : ""));
+            }
+            return;
+        }
+
+        if ("ERROR".equals(logFilter)) {
+            String preserved = controller.getPreservedErrorLogs();
+            if (preserved != null && !preserved.isEmpty()) {
+                logsOutputText.setText(preserved);
+                if (logsStatusSubtitle != null) {
+                    logsStatusSubtitle.setText("Error History • " + controller.getPreservedErrorCount() + " recorded errors");
+                }
+                return;
+            }
+        }
+
+        String[] lines = raw.split("\n");
+        StringBuilder filtered = new StringBuilder();
+        int matched = 0;
+        for (String line : lines) {
+            String lower = line.toLowerCase(Locale.ROOT);
+            boolean keep = false;
+            if ("ERROR".equals(logFilter)) {
+                keep = lower.contains("[err]") || lower.contains("[error]") || lower.contains("[ftl]")
+                        || lower.contains("[fatal]") || lower.contains("level=error") || lower.contains("exception")
+                        || lower.contains("error:") || lower.contains("fail");
+            } else if ("WARN".equals(logFilter)) {
+                keep = lower.contains("[wrn]") || lower.contains("[warn]") || lower.contains("level=warn")
+                        || lower.contains("warning:") || lower.contains("[err]") || lower.contains("[error]")
+                        || lower.contains("exception");
+            } else if ("INFO".equals(logFilter)) {
+                keep = lower.contains("[inf]") || lower.contains("[info]") || lower.contains("level=info");
+            }
+            if (keep) {
+                filtered.append(line).append("\n");
+                matched++;
+            }
+        }
+
+        if (matched == 0) {
+            logsOutputText.setText("--- No logs found matching filter [" + logFilter + "] ---");
+        } else {
+            logsOutputText.setText(filtered.toString());
+        }
+
+        if (logsStatusSubtitle != null) {
+            logsStatusSubtitle.setText((showingDiskLog ? "Disk Log" : "Live Console") + " • Showing " + matched + " lines (" + logFilter + ")");
         }
     }
 
@@ -1459,8 +1781,9 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                 updateSetupLogSummary();
             }
             if (activeTab == 1 && logsOutputText != null) {
+                boolean atBottom = isScrollAtBottom(logsScrollView);
                 refreshLogsDisplay();
-                if (logsScrollView != null) {
+                if (atBottom && logsScrollView != null) {
                     logsScrollView.post(() -> logsScrollView.fullScroll(View.FOCUS_DOWN));
                 }
             }
@@ -1502,27 +1825,48 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(16), dp(14), dp(16), dp(14));
 
-        // Server Category Card
-        LinearLayout serverCard = new LinearLayout(this);
-        serverCard.setOrientation(LinearLayout.VERTICAL);
-        serverCard.setPadding(dp(18), dp(18), dp(18), dp(18));
-        serverCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
+        // Prominent GitHub Repository & Issue Reporting Quick Actions
+        LinearLayout topQuickRow = new LinearLayout(this);
+        topQuickRow.setOrientation(LinearLayout.HORIZONTAL);
+        topQuickRow.setPadding(0, 0, 0, dp(12));
 
-        TextView t0 = new TextView(this);
-        t0.setText("Server Configuration");
-        t0.setTextSize(17);
-        t0.setTypeface(Typeface.DEFAULT_BOLD);
-        t0.setTextColor(getPrimaryTextColor());
-        serverCard.addView(t0);
+        Button btnTopGithub = createPixelButton("⭐ GITHUB REPOSITORY", getSurfaceElevatedColor(), getPrimaryTextColor());
+        btnTopGithub.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Suz41/Fishbowl")));
+            } catch (Throwable t) {
+                Toast.makeText(this, "Could not open browser: https://github.com/Suz41/Fishbowl", Toast.LENGTH_LONG).show();
+            }
+        });
+        topQuickRow.addView(btnTopGithub, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
+
+        View topSpacer = new View(this);
+        topQuickRow.addView(topSpacer, new LinearLayout.LayoutParams(dp(8), 1));
+
+        Button btnTopReport = createPixelButton("🐛 REPORT CRASH / ISSUE", getSurfaceElevatedColor(), getAccentColor());
+        btnTopReport.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Suz41/Fishbowl/issues")));
+            } catch (Throwable t) {
+                Toast.makeText(this, "Could not open browser: https://github.com/Suz41/Fishbowl/issues", Toast.LENGTH_LONG).show();
+            }
+        });
+        topQuickRow.addView(btnTopReport, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
+
+        layout.addView(topQuickRow);
+
+        // 1. Server Configuration Card (Expanded by default)
+        LinearLayout serverContent = new LinearLayout(this);
+        serverContent.setOrientation(LinearLayout.VERTICAL);
 
         LinearLayout serverSpecs = new LinearLayout(this);
         serverSpecs.setOrientation(LinearLayout.VERTICAL);
-        serverSpecs.setPadding(0, dp(8), 0, dp(10));
+        serverSpecs.setPadding(0, 0, 0, dp(10));
         serverSpecs.addView(buildSpecRow("Fishbowl Version", com.termux.BuildConfig.VERSION_NAME));
         serverSpecs.addView(buildSpecRow("Embedded Jellyfin", "12.1.0 ARM64"));
         serverSpecs.addView(buildSpecRow("Local Web UI", "http://127.0.0.1:8096"));
         serverSpecs.addView(buildSpecRow("Network Port", "8096 (HTTP)"));
-        serverCard.addView(serverSpecs);
+        serverContent.addView(serverSpecs);
 
         Switch autoStartSwitch = new Switch(this);
         autoStartSwitch.setText("Auto-start Jellyfin on device boot");
@@ -1532,9 +1876,8 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         SharedPreferences prefs = getSharedPreferences("jellyfindroid", MODE_PRIVATE);
         autoStartSwitch.setChecked(prefs.getBoolean("auto_start", false));
         autoStartSwitch.setOnCheckedChangeListener((v, checked) -> prefs.edit().putBoolean("auto_start", checked).apply());
-        serverCard.addView(autoStartSwitch);
+        serverContent.addView(autoStartSwitch);
 
-        // Battery Optimization Setting
         Button btnBattery = createPixelButton("REQUEST BATTERY UNRESTRICTED", getSurfaceElevatedColor(), getPrimaryTextColor());
         btnBattery.setOnClickListener(v -> requestIgnoreBatteryOptimizationsIfNeeded());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -1545,33 +1888,24 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                 btnBattery.setTextColor(Color.parseColor("#81C784"));
             }
         }
-        serverCard.addView(btnBattery);
+        serverContent.addView(btnBattery);
 
-        layout.addView(serverCard);
+        layout.addView(buildCollapsibleCard("Server Configuration", "Port 8096 • Web UI • Auto-Start", serverContent, true));
 
-        // System Permissions & Privileges Card (Live ON / OFF Detection)
-        layout.addView(buildPermissionsCard());
+        // 2. System Permissions & Background Survival Card (Expanded by default)
+        String mfgName = (Build.MANUFACTURER != null && !Build.MANUFACTURER.isEmpty()) ? Build.MANUFACTURER.toUpperCase(Locale.ROOT) : "OEM";
+        layout.addView(buildCollapsibleCard("Permissions & Background Survival", "Storage • Battery Exemption • " + mfgName, buildPermissionsCard(), true));
 
-        // Storage & Directories Card (Essential)
-        LinearLayout storageCard = new LinearLayout(this);
-        storageCard.setOrientation(LinearLayout.VERTICAL);
-        storageCard.setPadding(dp(18), dp(18), dp(18), dp(18));
-        storageCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
-        LinearLayout.LayoutParams pStorage = new LinearLayout.LayoutParams(-1, -2);
-        pStorage.topMargin = dp(14);
-        storageCard.setLayoutParams(pStorage);
+        // 3. Server Kill & Crash History Tracker Card (Expanded by default)
+        layout.addView(buildCollapsibleCard("Server Kill & Crash History Tracker", "LMK kills • Exit codes • Storage exhaustion logs", buildKillTrackerCard(), true));
 
-        TextView tStorage = new TextView(this);
-        tStorage.setText("Storage & Directories");
-        tStorage.setTextSize(17);
-        tStorage.setTypeface(Typeface.DEFAULT_BOLD);
-        tStorage.setTextColor(getPrimaryTextColor());
-        storageCard.addView(tStorage);
+        // 3. Storage & Media Drives Card (Collapsed by default)
+        LinearLayout storageContent = new LinearLayout(this);
+        storageContent.setOrientation(LinearLayout.VERTICAL);
 
-        // Auto-detected Storage Drives
         LinearLayout drivesList = new LinearLayout(this);
         drivesList.setOrientation(LinearLayout.VERTICAL);
-        drivesList.setPadding(0, dp(10), 0, dp(6));
+        drivesList.setPadding(0, 0, 0, dp(6));
         try {
             List<StorageDriveHelper.DriveInfo> drives = StorageDriveHelper.getMountedDrives(this);
             for (StorageDriveHelper.DriveInfo d : drives) {
@@ -1588,7 +1922,7 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                 col.setOrientation(LinearLayout.VERTICAL);
 
                 TextView name = new TextView(this);
-                name.setText(d.name + (d.isPrimary ? " (Internal)" : " (USB / External - Beta Testing)"));
+                name.setText(d.name + (d.isPrimary ? " (Internal)" : " (USB / External)"));
                 name.setTextSize(13);
                 name.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
                 name.setTextColor(getPrimaryTextColor());
@@ -1603,14 +1937,14 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                 row.addView(col, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
                 if (!d.isPrimary) {
-                    TextView betaPill = new TextView(this);
-                    betaPill.setText("BETA");
-                    betaPill.setTextSize(10);
-                    betaPill.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-                    betaPill.setTextColor(Color.parseColor("#FFB74D"));
-                    betaPill.setBackground(createRoundedDrawable(Color.parseColor("#3A2E1A"), dp(6)));
-                    betaPill.setPadding(dp(8), dp(4), dp(8), dp(4));
-                    row.addView(betaPill);
+                    TextView otgPill = new TextView(this);
+                    otgPill.setText("USB-OTG");
+                    otgPill.setTextSize(10);
+                    otgPill.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+                    otgPill.setTextColor(Color.parseColor("#81C784"));
+                    otgPill.setBackground(createRoundedDrawable(Color.parseColor("#1B2A32"), dp(6)));
+                    otgPill.setPadding(dp(8), dp(4), dp(8), dp(4));
+                    row.addView(otgPill);
 
                     View pillSpacer = new View(this);
                     row.addView(pillSpacer, new LinearLayout.LayoutParams(dp(6), 1));
@@ -1628,19 +1962,19 @@ public final class JellyfinDroidActivity extends AppCompatActivity
                 drivesList.addView(row);
             }
         } catch (Throwable ignored) {}
-        storageCard.addView(drivesList);
+        storageContent.addView(drivesList);
 
         storageInfoText = new TextView(this);
         storageInfoText.setTextSize(12);
         storageInfoText.setTextColor(getSecondaryTextColor());
         storageInfoText.setPadding(0, dp(4), 0, dp(6));
         updateStorageInfoText();
-        storageCard.addView(storageInfoText);
+        storageContent.addView(storageInfoText);
 
         LinearLayout safRow = new LinearLayout(this);
         safRow.setOrientation(LinearLayout.HORIZONTAL);
         safRow.setGravity(Gravity.CENTER_VERTICAL);
-        safRow.setPadding(0, 0, 0, dp(10));
+        safRow.setPadding(0, dp(4), 0, dp(10));
 
         TextView safTitle = new TextView(this);
         safTitle.setText("SAF (Storage Access Framework)");
@@ -1657,37 +1991,92 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         safPill.setPadding(dp(8), dp(4), dp(8), dp(4));
         safRow.addView(safPill);
 
-        storageCard.addView(safRow);
+        storageContent.addView(safRow);
 
         Button manageStorageBtn = createPixelButton("MANAGE MEDIA STORAGE & FOLDERS", getAccentColor(), Color.WHITE);
         manageStorageBtn.setOnClickListener(v -> startActivity(new Intent(this, JellyfinStorageActivity.class)));
-        storageCard.addView(manageStorageBtn);
+        storageContent.addView(manageStorageBtn);
 
         Button clearCacheBtn = createPixelButton("CLEAR CACHE", Color.parseColor("#D32F2F"), Color.WHITE);
         clearCacheBtn.setOnClickListener(v -> showClearCacheConfirmation());
-        storageCard.addView(clearCacheBtn);
+        storageContent.addView(clearCacheBtn);
 
-        layout.addView(storageCard);
+        layout.addView(buildCollapsibleCard("Storage & Media Drives", "Internal Storage & USB-OTG Drives", storageContent, false));
 
-        // Transcoding & Hardware Audit Card (Non-Essential / Collapsible Drawer)
-        LinearLayout transcodeCard = new LinearLayout(this);
-        transcodeCard.setOrientation(LinearLayout.VERTICAL);
-        transcodeCard.setPadding(dp(18), dp(18), dp(18), dp(18));
-        transcodeCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
-        LinearLayout.LayoutParams pTranscode = new LinearLayout.LayoutParams(-1, -2);
-        pTranscode.topMargin = dp(14);
-        transcodeCard.setLayoutParams(pTranscode);
-
+        // 4. Transcoding & Client Streaming Card (Collapsed by default)
         LinearLayout transcodeContent = new LinearLayout(this);
         transcodeContent.setOrientation(LinearLayout.VERTICAL);
 
+        TextView tTranscodeDesc = new TextView(this);
+        tTranscodeDesc.setText("Configure streaming mode for client devices (TVs, PCs, iPads).");
+        tTranscodeDesc.setTextSize(12);
+        tTranscodeDesc.setTextColor(getSecondaryTextColor());
+        tTranscodeDesc.setPadding(0, 0, 0, dp(10));
+        transcodeContent.addView(tTranscodeDesc);
+
+        String currentMode = JellyfinEncodingConfig.getSavedMode(this);
+        boolean isAutoMode = JellyfinEncodingConfig.MODE_AUTO.equalsIgnoreCase(currentMode);
+        boolean isHwMode = JellyfinEncodingConfig.HW_ACCEL_MEDIACODEC.equalsIgnoreCase(currentMode);
+        boolean isSwMode = !isAutoMode && !isHwMode;
+
+        // 3-Way Mode Switch Row: [AUTO] [SOFTWARE NEON] [MEDIACODEC]
+        LinearLayout modeRow = new LinearLayout(this);
+        modeRow.setOrientation(LinearLayout.HORIZONTAL);
+        modeRow.setPadding(0, dp(2), 0, dp(10));
+
+        Button btnModeAuto = createPixelButton("AUTO (DIRECT)", isAutoMode ? getAccentColor() : getSurfaceElevatedColor(), isAutoMode ? Color.WHITE : getSecondaryTextColor());
+        btnModeAuto.setOnClickListener(v -> {
+            JellyfinEncodingConfig.updateTranscodingMode(this, JellyfinEncodingConfig.MODE_AUTO, -1);
+            Toast.makeText(this, "Set transcoding mode to Auto (Direct Play prioritized for 0% CPU)", Toast.LENGTH_SHORT).show();
+            recreate();
+        });
+        modeRow.addView(btnModeAuto, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        View mSpacer1 = new View(this);
+        modeRow.addView(mSpacer1, new LinearLayout.LayoutParams(dp(6), 1));
+
+        Button btnModeSw = createPixelButton("SOFTWARE", isSwMode ? getAccentColor() : getSurfaceElevatedColor(), isSwMode ? Color.WHITE : getSecondaryTextColor());
+        btnModeSw.setOnClickListener(v -> {
+            JellyfinEncodingConfig.updateTranscodingMode(this, JellyfinEncodingConfig.HW_ACCEL_NONE, -1);
+            Toast.makeText(this, "Set transcoding mode to Software NEON SIMD", Toast.LENGTH_SHORT).show();
+            recreate();
+        });
+        modeRow.addView(btnModeSw, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        View mSpacer2 = new View(this);
+        modeRow.addView(mSpacer2, new LinearLayout.LayoutParams(dp(6), 1));
+
+        Button btnModeHw = createPixelButton("MEDIACODEC", isHwMode ? getAccentColor() : getSurfaceElevatedColor(), isHwMode ? Color.WHITE : getSecondaryTextColor());
+        btnModeHw.setOnClickListener(v -> {
+            JellyfinEncodingConfig.updateTranscodingMode(this, JellyfinEncodingConfig.HW_ACCEL_MEDIACODEC, -1);
+            Toast.makeText(this, "Set transcoding mode to Hardware MediaCodec", Toast.LENGTH_SHORT).show();
+            recreate();
+        });
+        modeRow.addView(btnModeHw, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+        transcodeContent.addView(modeRow);
+
+        TextView tvModeExplanation = new TextView(this);
+        tvModeExplanation.setTextSize(12);
+        tvModeExplanation.setPadding(dp(4), 0, dp(4), dp(10));
+        if (isAutoMode) {
+            tvModeExplanation.setText("✓ AUTO (Smart Direct Stream - Recommended)\nClient devices (Smart TVs, PC browsers, iPads) stream directly over Wi-Fi with 0% CPU load on your phone. Automatically falls back to multi-core NEON SIMD if a client requires video conversion.");
+            tvModeExplanation.setTextColor(Color.parseColor("#81C784"));
+        } else if (isHwMode) {
+            tvModeExplanation.setText("✓ HARDWARE MEDIACODEC (SoC Accelerated)\nHardware encoding via Qualcomm Snapdragon / MediaTek mobile video engine.");
+            tvModeExplanation.setTextColor(Color.parseColor("#FFB74D"));
+        } else {
+            tvModeExplanation.setText("✓ SOFTWARE NEON (Universal SIMD)\nMulti-threaded software transcoding using 64-bit ARM NEON vector instructions.");
+            tvModeExplanation.setTextColor(Color.parseColor("#00B4D8"));
+        }
+        transcodeContent.addView(tvModeExplanation);
+
         LinearLayout transcodeSpecs = new LinearLayout(this);
         transcodeSpecs.setOrientation(LinearLayout.VERTICAL);
-        transcodeSpecs.setPadding(0, dp(8), 0, dp(8));
-        transcodeSpecs.addView(buildSpecRow("Software Transcoder", "libx264, libx265, aac, opus"));
-        transcodeSpecs.addView(buildSpecRow("Hardware Codecs", "MediaCodec Detected"));
+        transcodeSpecs.setPadding(0, dp(6), 0, dp(8));
+        transcodeSpecs.addView(buildSpecRow("Active Engine", isAutoMode ? "Auto (Direct Stream Prioritized)" : isHwMode ? "Hardware MediaCodec" : "Software NEON SIMD"));
+        transcodeSpecs.addView(buildSpecRow("Video Codecs", "libx264, libx265, H.264 / HEVC MediaCodec"));
+        transcodeSpecs.addView(buildSpecRow("Audio Codecs", "AAC, Opus, FLAC, AC3, Vorbis, MP3"));
         transcodeSpecs.addView(buildSpecRow("FFmpeg Binary", "7.1.4-Jellyfin ARM64"));
-        transcodeSpecs.addView(buildSpecRow("Active Pipeline", "Software (Verified @ 60 FPS)"));
         transcodeContent.addView(transcodeSpecs);
 
         TextView tvDiag = new TextView(this);
@@ -1696,73 +2085,181 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         tvDiag.setPadding(0, dp(2), 0, dp(8));
         transcodeContent.addView(tvDiag);
 
-        Button btnTestTranscode = createPixelButton("TEST TRANSCODING", getAccentColor(), Color.WHITE);
+        // Dual Benchmark & Probe Row
+        LinearLayout benchRow = new LinearLayout(this);
+        benchRow.setOrientation(LinearLayout.HORIZONTAL);
+        benchRow.setPadding(0, 0, 0, dp(8));
+
+        Button btnTestTranscode = createPixelButton("BENCHMARK SOFTWARE", getAccentColor(), Color.WHITE);
         btnTestTranscode.setOnClickListener(v -> {
             btnTestTranscode.setEnabled(false);
-            btnTestTranscode.setText("TESTING TRANSCODING...");
+            btnTestTranscode.setText("BENCHMARKING...");
             new Thread(() -> {
-                TranscodingDiagnostics.TranscodeTestResult tr = TranscodingDiagnostics.runTestTranscode(this);
+                TranscodingDiagnostics.TranscodeTestResult tr = TranscodingDiagnostics.runTestTranscode(this, false);
                 runOnUiThread(() -> {
                     btnTestTranscode.setEnabled(true);
-                    btnTestTranscode.setText("TEST TRANSCODING");
-                    String res = "Test Result: " + (tr.success ? "SUCCESS" : "FAILED") +
-                            " | " + tr.speed + " (" + tr.fps + " fps) | " + tr.inputCodec + " -> " + tr.outputCodec;
+                    btnTestTranscode.setText("BENCHMARK SOFTWARE");
+                    String res = "Software Benchmark: " + (tr.success ? "SUCCESS" : "FAILED") +
+                            " | " + tr.speed + " (" + tr.fps + " fps) | " + tr.inputCodec + " -> " + tr.outputCodec +
+                            " (" + tr.durationMs + " ms)";
                     tvDiag.setText(res);
                     tvDiag.setTextColor(tr.success ? Color.parseColor("#81C784") : Color.parseColor("#E57373"));
                 });
             }).start();
         });
-        transcodeContent.addView(btnTestTranscode);
+        benchRow.addView(btnTestTranscode, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
 
-        transcodeCard.addView(createCollapsibleCardHeader("Transcoding & Hardware Codecs", transcodeContent, false));
-        transcodeCard.addView(transcodeContent);
+        View bSpacer = new View(this);
+        benchRow.addView(bSpacer, new LinearLayout.LayoutParams(dp(8), 1));
 
-        layout.addView(transcodeCard);
+        Button btnProbeHw = createPixelButton("PROBE HARDWARE", Color.parseColor("#222630"), Color.WHITE);
+        btnProbeHw.setOnClickListener(v -> {
+            btnProbeHw.setEnabled(false);
+            btnProbeHw.setText("PROBING...");
+            new Thread(() -> {
+                TranscodingDiagnostics.TranscodeTestResult tr = TranscodingDiagnostics.runTestTranscode(this, true);
+                runOnUiThread(() -> {
+                    btnProbeHw.setEnabled(true);
+                    btnProbeHw.setText("PROBE HARDWARE");
+                    String res = "Hardware Probe: " + (tr.success ? "SUCCESS" : "DIAGNOSTIC REPORT") +
+                            "\n" + (tr.details != null && !tr.details.isEmpty() ? tr.details : tr.error);
+                    tvDiag.setText(res);
+                    tvDiag.setTextColor(tr.success ? Color.parseColor("#81C784") : Color.parseColor("#FFB74D"));
+                });
+            }).start();
+        });
+        benchRow.addView(btnProbeHw, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+        transcodeContent.addView(benchRow);
 
-        // Updates Card
-        LinearLayout updatesCard = new LinearLayout(this);
-        updatesCard.setOrientation(LinearLayout.VERTICAL);
-        updatesCard.setPadding(dp(18), dp(18), dp(18), dp(18));
-        updatesCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
-        LinearLayout.LayoutParams pUpdates = new LinearLayout.LayoutParams(-1, -2);
-        pUpdates.topMargin = dp(14);
-        updatesCard.setLayoutParams(pUpdates);
+        // Audio & Subtitle Benchmark Row
+        LinearLayout benchRow2 = new LinearLayout(this);
+        benchRow2.setOrientation(LinearLayout.HORIZONTAL);
+        benchRow2.setPadding(0, 0, 0, dp(8));
+
+        Button btnBenchAudio = createPixelButton("BENCHMARK AUDIO", Color.parseColor("#1B2A32"), Color.parseColor("#00B4D8"));
+        btnBenchAudio.setOnClickListener(v -> {
+            btnBenchAudio.setEnabled(false);
+            btnBenchAudio.setText("BENCHMARKING...");
+            new Thread(() -> {
+                TranscodingDiagnostics.TranscodeTestResult tr = TranscodingDiagnostics.runAudioBenchmark(this);
+                runOnUiThread(() -> {
+                    btnBenchAudio.setEnabled(true);
+                    btnBenchAudio.setText("BENCHMARK AUDIO");
+                    String res = "Audio Benchmark: " + (tr.success ? "SUCCESS" : "FAILED") +
+                            " | " + tr.speed + " | AC3 5.1 -> AAC 2.0 (" + tr.durationMs + " ms)";
+                    tvDiag.setText(res);
+                    tvDiag.setTextColor(tr.success ? Color.parseColor("#81C784") : Color.parseColor("#E57373"));
+                });
+            }).start();
+        });
+        benchRow2.addView(btnBenchAudio, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        View bSpacer2 = new View(this);
+        benchRow2.addView(bSpacer2, new LinearLayout.LayoutParams(dp(8), 1));
+
+        Button btnCheckSubtitles = createPixelButton("CHECK SUBTITLES", Color.parseColor("#1B2A32"), Color.parseColor("#81C784"));
+        btnCheckSubtitles.setOnClickListener(v -> {
+            btnCheckSubtitles.setEnabled(false);
+            btnCheckSubtitles.setText("CHECKING...");
+            new Thread(() -> {
+                TranscodingDiagnostics.TranscodeTestResult tr = TranscodingDiagnostics.runSubtitleCheck(this);
+                runOnUiThread(() -> {
+                    btnCheckSubtitles.setEnabled(true);
+                    btnCheckSubtitles.setText("CHECK SUBTITLES");
+                    tvDiag.setText(tr.details);
+                    tvDiag.setTextColor(tr.success ? Color.parseColor("#81C784") : Color.parseColor("#FFB74D"));
+                });
+            }).start();
+        });
+        benchRow2.addView(btnCheckSubtitles, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+        transcodeContent.addView(benchRow2);
+
+        Button btnAuditCodecs = createPixelButton("AUDIT ALL CODECS & SUBTITLES", Color.parseColor("#1B2A32"), Color.parseColor("#00B4D8"));
+        btnAuditCodecs.setOnClickListener(v -> showCodecAuditDialog());
+        transcodeContent.addView(btnAuditCodecs);
+
+        layout.addView(buildCollapsibleCard("Transcoding & Client Streaming", "Auto Direct Stream (0% CPU) • Codecs & Tests", transcodeContent, false));
+
+        // 5. Updates & Release Channel Card (Collapsed by default)
+        LinearLayout updatesContent = new LinearLayout(this);
+        updatesContent.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout updateHeaderRow = new LinearLayout(this);
+        updateHeaderRow.setOrientation(LinearLayout.HORIZONTAL);
+        updateHeaderRow.setGravity(Gravity.CENTER_VERTICAL);
+        updateHeaderRow.setPadding(0, 0, 0, dp(8));
 
         TextView tUpdatesTitle = new TextView(this);
-        tUpdatesTitle.setText("Updates");
-        tUpdatesTitle.setTextSize(17);
-        tUpdatesTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        tUpdatesTitle.setText("Active Channel");
+        tUpdatesTitle.setTextSize(14);
+        tUpdatesTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         tUpdatesTitle.setTextColor(getPrimaryTextColor());
-        updatesCard.addView(tUpdatesTitle);
+        updateHeaderRow.addView(tUpdatesTitle, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        updateChannelBadge = new TextView(this);
+        updateChannelBadge.setTextSize(10);
+        updateChannelBadge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        updateChannelBadge.setPadding(dp(8), dp(4), dp(8), dp(4));
+        updateHeaderRow.addView(updateChannelBadge);
+        updatesContent.addView(updateHeaderRow);
+
+        LinearLayout channelRow = new LinearLayout(this);
+        channelRow.setOrientation(LinearLayout.HORIZONTAL);
+        channelRow.setPadding(0, dp(4), 0, dp(6));
+
+        btnChannelStable = createPixelButton("STABLE (Official)", getSurfaceElevatedColor(), getSecondaryTextColor());
+        btnChannelStable.setOnClickListener(v -> {
+            UpdateManager.getInstance(this).setUpdateChannel(UpdateManager.CHANNEL_STABLE);
+            updateChannelSelectionUI();
+            UpdateManager.getInstance(this).checkForUpdates(this, true);
+        });
+        channelRow.addView(btnChannelStable, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        View cSpacer = new View(this);
+        channelRow.addView(cSpacer, new LinearLayout.LayoutParams(dp(8), 1));
+
+        btnChannelBeta = createPixelButton("BETA (Pre-release)", getSurfaceElevatedColor(), getSecondaryTextColor());
+        btnChannelBeta.setOnClickListener(v -> {
+            UpdateManager.getInstance(this).setUpdateChannel(UpdateManager.CHANNEL_BETA);
+            updateChannelSelectionUI();
+            UpdateManager.getInstance(this).checkForUpdates(this, true);
+        });
+        channelRow.addView(btnChannelBeta, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+        updatesContent.addView(channelRow);
+
+        TextView tvChannelDesc = new TextView(this);
+        tvChannelDesc.setText("Beta channel delivers pre-releases (such as Beta 3 multitasking and USB-OTG enhancements) directly from GitHub releases.");
+        tvChannelDesc.setTextSize(11);
+        tvChannelDesc.setTextColor(getSecondaryTextColor());
+        tvChannelDesc.setPadding(0, 0, 0, dp(10));
+        updatesContent.addView(tvChannelDesc);
 
         updateStatusText = new TextView(this);
         updateStatusText.setTextSize(13);
         updateStatusText.setTextColor(getSecondaryTextColor());
-        updateStatusText.setPadding(0, dp(8), 0, dp(12));
-        updatesCard.addView(updateStatusText);
+        updateStatusText.setPadding(0, 0, 0, dp(12));
+        updatesContent.addView(updateStatusText);
 
         updateActionBtn = createPixelButton("Check for updates", getAccentColor(), Color.WHITE);
-        updatesCard.addView(updateActionBtn);
+        updatesContent.addView(updateActionBtn);
 
-        layout.addView(updatesCard);
+        updateForceDownloadBtn = createPixelButton("Force Re-download / Test OTA", getSurfaceElevatedColor(), Color.parseColor("#81C784"));
+        updateForceDownloadBtn.setVisibility(View.GONE);
+        LinearLayout.LayoutParams pF = new LinearLayout.LayoutParams(-1, dp(40));
+        pF.topMargin = dp(8);
+        updatesContent.addView(updateForceDownloadBtn, pF);
 
-        // Installed Packages & System Security Transparency Card (Non-Essential / Collapsible Drawer)
-        LinearLayout aboutCard = new LinearLayout(this);
-        aboutCard.setOrientation(LinearLayout.VERTICAL);
-        aboutCard.setPadding(dp(18), dp(18), dp(18), dp(18));
-        aboutCard.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
-        LinearLayout.LayoutParams pAbout = new LinearLayout.LayoutParams(-1, -2);
-        pAbout.topMargin = dp(14);
-        aboutCard.setLayoutParams(pAbout);
+        updateChannelSelectionUI();
 
+        layout.addView(buildCollapsibleCard("Updates & Release Channel", "v" + com.termux.BuildConfig.VERSION_NAME + " • GitHub Releases OTA", updatesContent, false));
+
+        // 6. System Architecture & Specifications Card (Collapsed by default)
         LinearLayout aboutContent = new LinearLayout(this);
         aboutContent.setOrientation(LinearLayout.VERTICAL);
 
-        // Runtime Installation Status Summary Item
         View runtimeStatusItem = buildRuntimeStatusItem();
         aboutContent.addView(runtimeStatusItem);
 
-        // Compact Specs Summary
         LinearLayout specSummary = new LinearLayout(this);
         specSummary.setOrientation(LinearLayout.VERTICAL);
         specSummary.setPadding(0, dp(6), 0, dp(8));
@@ -1775,7 +2272,6 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         specSummary.addView(buildSpecRow("Privacy & Telemetry", "0 Trackers | 100% Local"));
         aboutContent.addView(specSummary);
 
-        // Collapsible Technical Component Details (Collapsed by default)
         LinearLayout detailsContainer = new LinearLayout(this);
         detailsContainer.setOrientation(LinearLayout.VERTICAL);
         detailsContainer.setVisibility(View.GONE);
@@ -1807,81 +2303,84 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         });
         aboutContent.addView(btnToggleDetails);
 
-        LinearLayout repoRow = new LinearLayout(this);
-        repoRow.setOrientation(LinearLayout.HORIZONTAL);
-        repoRow.setPadding(0, dp(6), 0, 0);
-
-        Button btnGithubRepo = createPixelButton("GITHUB REPO", getSurfaceElevatedColor(), getPrimaryTextColor());
-        btnGithubRepo.setOnClickListener(v -> {
-            try {
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Suz41/Fishbowl")));
-            } catch (Throwable t) {
-                Toast.makeText(this, "Could not open browser: https://github.com/Suz41/Fishbowl", Toast.LENGTH_LONG).show();
-            }
-        });
-        repoRow.addView(btnGithubRepo, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
-
-        View repoSpacer = new View(this);
-        repoRow.addView(repoSpacer, new LinearLayout.LayoutParams(dp(8), 1));
-
-        Button btnGithubIssues = createPixelButton("REPORT ISSUE", getSurfaceElevatedColor(), getAccentColor());
-        btnGithubIssues.setOnClickListener(v -> {
-            try {
-                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Suz41/Fishbowl/issues"));
-                startActivity(intent);
-            } catch (Throwable t) {
-                Toast.makeText(this, "Could not open browser: https://github.com/Suz41/Fishbowl/issues", Toast.LENGTH_LONG).show();
-            }
-        });
-        repoRow.addView(btnGithubIssues, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
-
-        aboutContent.addView(repoRow);
-
-        aboutCard.addView(createCollapsibleCardHeader("System Components & Security", aboutContent, false));
-        aboutCard.addView(aboutContent);
-
-        layout.addView(aboutCard);
+        layout.addView(buildCollapsibleCard("System Architecture & Specifications", "ARM64 • .NET 10 • FFmpeg 7.1.4 • OpenSSL", aboutContent, false));
 
         scroll.addView(layout);
         return scroll;
     }
 
-    private LinearLayout createCollapsibleCardHeader(String titleText, View contentContainer, boolean initiallyExpanded) {
+    private LinearLayout buildCollapsibleCard(String titleText, String subtitleText, View contentContainer, boolean initiallyExpanded) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
+        card.setPadding(dp(18), dp(16), dp(18), dp(16));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.bottomMargin = dp(12);
+        card.setLayoutParams(params);
+
+        // Header layout (clickable)
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(0, 0, 0, initiallyExpanded ? dp(8) : 0);
+        header.setClickable(true);
+        header.setFocusable(true);
+
+        LinearLayout titleCol = new LinearLayout(this);
+        titleCol.setOrientation(LinearLayout.VERTICAL);
 
         TextView title = new TextView(this);
         title.setText(titleText);
-        title.setTextSize(17);
+        title.setTextSize(16);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(getPrimaryTextColor());
-        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        titleCol.addView(title);
+
+        TextView sub = new TextView(this);
+        sub.setText(subtitleText);
+        sub.setTextSize(12);
+        sub.setTextColor(getSecondaryTextColor());
+        sub.setPadding(0, dp(2), 0, 0);
+        titleCol.addView(sub);
+
+        header.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         TextView arrow = new TextView(this);
         arrow.setText(initiallyExpanded ? "▲" : "▼");
         arrow.setTextSize(14);
         arrow.setTextColor(getSecondaryTextColor());
-        arrow.setPadding(dp(8), dp(4), dp(4), dp(4));
+        arrow.setPadding(dp(10), dp(4), dp(4), dp(4));
         header.addView(arrow);
 
+        card.addView(header);
+
+        // Subtle divider separating header and content
+        View divider = new View(this);
+        divider.setBackgroundColor(colorWithAlpha(getSecondaryTextColor(), 25));
+        LinearLayout.LayoutParams pDiv = new LinearLayout.LayoutParams(-1, dp(1));
+        pDiv.topMargin = dp(12);
+        pDiv.bottomMargin = dp(12);
+        divider.setLayoutParams(pDiv);
+        divider.setVisibility(initiallyExpanded ? View.VISIBLE : View.GONE);
+        card.addView(divider);
+
+        // Content
         contentContainer.setVisibility(initiallyExpanded ? View.VISIBLE : View.GONE);
+        card.addView(contentContainer);
 
         header.setOnClickListener(v -> {
-            boolean isExpanded = contentContainer.getVisibility() == View.VISIBLE;
+            boolean isExpanded = (contentContainer.getVisibility() == View.VISIBLE);
             if (isExpanded) {
                 contentContainer.setVisibility(View.GONE);
+                divider.setVisibility(View.GONE);
                 arrow.setText("▼");
-                header.setPadding(0, 0, 0, 0);
             } else {
                 contentContainer.setVisibility(View.VISIBLE);
+                divider.setVisibility(View.VISIBLE);
                 arrow.setText("▲");
-                header.setPadding(0, 0, 0, dp(8));
             }
         });
 
-        return header;
+        return card;
     }
 
     private View buildSpecRow(String label, String value) {
@@ -1938,24 +2437,12 @@ public final class JellyfinDroidActivity extends AppCompatActivity
     private View buildPermissionsCard() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(18), dp(18), dp(18));
-        card.setBackground(createRoundedDrawable(getSurfaceColor(), dp(18)));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(14);
-        card.setLayoutParams(params);
-
-        TextView title = new TextView(this);
-        title.setText("System Permissions & Privileges");
-        title.setTextSize(17);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(getPrimaryTextColor());
-        card.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Verify critical Android permissions for uninterrupted streaming and storage access.");
+        subtitle.setText("Verify critical Android permissions for uninterrupted streaming and multitasking survival.");
         subtitle.setTextSize(12);
         subtitle.setTextColor(getSecondaryTextColor());
-        subtitle.setPadding(0, dp(4), 0, dp(12));
+        subtitle.setPadding(0, 0, 0, dp(10));
         card.addView(subtitle);
 
         // 1. Storage Permission Row
@@ -2037,8 +2524,169 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         permNotifAction = rowNotif.findViewWithTag("action_text");
         card.addView(rowNotif);
 
+        // Divider
+        View d3 = new View(this);
+        d3.setBackgroundColor(colorWithAlpha(getSecondaryTextColor(), 25));
+        LinearLayout.LayoutParams pD3 = new LinearLayout.LayoutParams(-1, dp(1));
+        pD3.topMargin = dp(8);
+        pD3.bottomMargin = dp(8);
+        card.addView(d3, pD3);
+
+        // 4. Universal OEM Background Survival Row
+        String mfg = (Build.MANUFACTURER != null && !Build.MANUFACTURER.isEmpty()) ? Build.MANUFACTURER : "OEM";
+        String brandFormatted = mfg.substring(0, 1).toUpperCase(Locale.ROOT) + (mfg.length() > 1 ? mfg.substring(1).toLowerCase(Locale.ROOT) : "");
+        String oemTitle = brandFormatted + " Background Survival & Auto-Start";
+        String oemDesc = "Configure " + brandFormatted + " power saving, background execution, and autostart to prevent Android process kills during multitasking.";
+
+        LinearLayout rowOem = buildPermissionItem(
+                oemTitle,
+                oemDesc,
+                v -> openOemBatteryOptimization()
+        );
+        TextView badgeOem = rowOem.findViewWithTag("badge");
+        if (badgeOem != null) {
+            badgeOem.setText("CONFIGURE");
+            badgeOem.setTextColor(Color.parseColor("#FFB74D"));
+            badgeOem.setBackground(createRoundedDrawable(Color.parseColor("#3A2E1A"), dp(8)));
+        }
+        TextView actionOem = rowOem.findViewWithTag("action_text");
+        if (actionOem != null) {
+            actionOem.setText("Tap to open " + brandFormatted + " power & autostart manager");
+            actionOem.setTextColor(Color.parseColor("#FFB74D"));
+        }
+        card.addView(rowOem);
+
         refreshPermissionsUI();
         return card;
+    }
+
+    private View buildKillTrackerCard() {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+
+        TextView desc = new TextView(this);
+        desc.setText("Persistent log of server terminations, Android OS Low-Memory-Killer (LMK) events, and storage exhaustion incidents.");
+        desc.setTextSize(12);
+        desc.setTextColor(getSecondaryTextColor());
+        desc.setPadding(0, 0, 0, dp(10));
+        content.addView(desc);
+
+        List<JellyfinController.KillEvent> events = (controller != null) ? controller.getKillHistory(this) : new java.util.ArrayList<>();
+
+        if (events == null || events.isEmpty()) {
+            TextView emptyTv = new TextView(this);
+            emptyTv.setText("✓ No server terminations or crash events recorded. Server has been operating normally.");
+            emptyTv.setTextSize(12);
+            emptyTv.setTextColor(Color.parseColor("#81C784"));
+            emptyTv.setPadding(dp(8), dp(8), dp(8), dp(8));
+            content.addView(emptyTv);
+        } else {
+            LinearLayout listLayout = new LinearLayout(this);
+            listLayout.setOrientation(LinearLayout.VERTICAL);
+            for (JellyfinController.KillEvent ev : events) {
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.VERTICAL);
+                row.setPadding(dp(12), dp(8), dp(12), dp(8));
+                row.setBackground(createRoundedDrawable(getSurfaceElevatedColor(), dp(10)));
+                LinearLayout.LayoutParams pRow = new LinearLayout.LayoutParams(-1, -2);
+                pRow.bottomMargin = dp(6);
+                row.setLayoutParams(pRow);
+
+                TextView reasonTv = new TextView(this);
+                reasonTv.setText(ev.reason);
+                reasonTv.setTextSize(13);
+                reasonTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+                reasonTv.setTextColor(ev.exitCode == 0 ? Color.parseColor("#81C784") : Color.parseColor("#EF5350"));
+                row.addView(reasonTv);
+
+                TextView metaTv = new TextView(this);
+                java.text.SimpleDateFormat df = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                String dateStr = df.format(new java.util.Date(ev.timestamp));
+                metaTv.setText(dateStr + " • Uptime: " + ev.uptimeSeconds + "s • RAM: " + ev.freeRamMb + " MB free • Disk: " + ev.freeStorageMb + " MB free");
+                metaTv.setTextSize(11);
+                metaTv.setTextColor(getSecondaryTextColor());
+                metaTv.setPadding(0, dp(2), 0, 0);
+                row.addView(metaTv);
+
+                listLayout.addView(row);
+            }
+            content.addView(listLayout);
+
+            // Action row
+            LinearLayout actionRow = new LinearLayout(this);
+            actionRow.setOrientation(LinearLayout.HORIZONTAL);
+            actionRow.setPadding(0, dp(6), 0, 0);
+
+            Button btnCopyHistory = createPixelButton("COPY REPORT", getSurfaceElevatedColor(), getPrimaryTextColor());
+            btnCopyHistory.setOnClickListener(v -> {
+                StringBuilder sb = new StringBuilder();
+                sb.append("Fishbowl Server Kill & Crash History\n");
+                for (JellyfinController.KillEvent ev : events) {
+                    sb.append(ev.toFormattedString()).append("\n");
+                }
+                ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(ClipData.newPlainText("Kill History", sb.toString()));
+                    Toast.makeText(this, "Kill history copied to clipboard", Toast.LENGTH_SHORT).show();
+                }
+            });
+            actionRow.addView(btnCopyHistory, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+            View spacer = new View(this);
+            actionRow.addView(spacer, new LinearLayout.LayoutParams(dp(8), 1));
+
+            Button btnClearHistory = createPixelButton("CLEAR HISTORY", getSurfaceElevatedColor(), Color.parseColor("#EF5350"));
+            btnClearHistory.setOnClickListener(v -> {
+                if (controller != null) {
+                    controller.clearKillHistory(this);
+                    Toast.makeText(this, "Kill history cleared", Toast.LENGTH_SHORT).show();
+                    renderActiveTab();
+                }
+            });
+            actionRow.addView(btnClearHistory, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+            content.addView(actionRow);
+        }
+
+        return content;
+    }
+
+    private void openOemBatteryOptimization() {
+        Intent[] oemIntents = new Intent[] {
+            // Vivo / iQOO / OriginOS: High background power consumption & Auto-start
+            new Intent().setComponent(new android.content.ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.PurviewTabActivity")),
+            new Intent().setComponent(new android.content.ComponentName("com.iqoo.powersaving", "com.iqoo.powersaving.PowerSavingActivity")),
+            new Intent().setComponent(new android.content.ComponentName("com.vivo.abe", "com.vivo.applicationbehaviorengine.ui.ExcessivePowerManagerActivity")),
+            new Intent().setComponent(new android.content.ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.SoftPermissionDetailActivity")).putExtra("packagename", getPackageName()),
+            // Xiaomi MIUI / HyperOS: Autostart & Power Management
+            new Intent().setComponent(new android.content.ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")),
+            new Intent().setComponent(new android.content.ComponentName("com.miui.securitycenter", "com.miui.powercenter.PowerSettings")),
+            // Samsung Device Care & Battery
+            new Intent().setComponent(new android.content.ComponentName("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity")),
+            new Intent().setComponent(new android.content.ComponentName("com.samsung.android.sm", "com.samsung.android.sm.battery.ui.BatteryActivity")),
+            // Oppo / Realme / OnePlus ColorOS / OxygenOS
+            new Intent().setComponent(new android.content.ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity")),
+            new Intent().setComponent(new android.content.ComponentName("com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity")),
+            new Intent().setComponent(new android.content.ComponentName("com.oplus.battery", "com.oplus.powermanager.fuelgaue.PowerUsageModelActivity")),
+            new Intent().setComponent(new android.content.ComponentName("com.oneplus.security", "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity")),
+            // Huawei / Honor EMUI / MagicOS
+            new Intent().setComponent(new android.content.ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")),
+            new Intent().setComponent(new android.content.ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity")),
+            // Transsion / Infinix / Tecno
+            new Intent().setComponent(new android.content.ComponentName("com.transsion.phonemaster", "com.transsion.phonemaster.AutoStartActivity")),
+            // Android 6+ standard ignore battery optimization
+            new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+            new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).setData(Uri.parse("package:" + getPackageName())),
+            new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(Uri.parse("package:" + getPackageName()))
+        };
+
+        for (Intent intent : oemIntents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                return;
+            } catch (Throwable ignored) {}
+        }
     }
 
     private LinearLayout buildPermissionItem(String name, String desc, View.OnClickListener onClick) {
@@ -2268,6 +2916,28 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         card.addView(errorCardRawContainer);
 
+        // Storage Full Recovery Action Buttons Row
+        LinearLayout storageBtnRow = new LinearLayout(this);
+        storageBtnRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams sRowParams = new LinearLayout.LayoutParams(-1, -2);
+        sRowParams.topMargin = dp(8);
+        storageBtnRow.setLayoutParams(sRowParams);
+
+        btnErrorClearCache = createPixelButton("CLEAR CACHE & FREE SPACE", Color.parseColor("#D32F2F"), Color.WHITE);
+        btnErrorClearCache.setOnClickListener(v -> showClearCacheConfirmation());
+        storageBtnRow.addView(btnErrorClearCache, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        View sSpacer = new View(this);
+        storageBtnRow.addView(sSpacer, new LinearLayout.LayoutParams(dp(8), 1));
+
+        btnErrorOpenStorage = createPixelButton("OPEN STORAGE SETTINGS", getSurfaceElevatedColor(), Color.parseColor("#FFB74D"));
+        btnErrorOpenStorage.setOnClickListener(v -> openStorageSettings());
+        storageBtnRow.addView(btnErrorOpenStorage, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        btnErrorClearCache.setVisibility(View.GONE);
+        btnErrorOpenStorage.setVisibility(View.GONE);
+        card.addView(storageBtnRow);
+
         // Action Buttons Row
         LinearLayout btnRow = new LinearLayout(this);
         btnRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -2321,36 +2991,55 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         errorDiagnosticCard.setVisibility(View.VISIBLE);
 
         String errStr = (lastErr != null) ? lastErr : "";
+        long freeMb = (controller != null) ? controller.getAvailableInternalStorageMb() : 500;
+        boolean isStorageFull = (freeMb < 50)
+                || errStr.toLowerCase(Locale.ROOT).contains("storage is full")
+                || errStr.toLowerCase(Locale.ROOT).contains("disk is full")
+                || errStr.toLowerCase(Locale.ROOT).contains("sqlite_full")
+                || errStr.toLowerCase(Locale.ROOT).contains("enospc");
+
         String cat;
         String what;
         String why;
         String fix;
 
-        if (errStr.contains("8096") || errStr.toLowerCase(Locale.ROOT).contains("port")) {
-            cat = "PORT CONFLICT";
-            what = "HTTP Port 8096 is already bound or in use.";
-            why = "Another instance of Jellyfin or another network server on your phone is occupying TCP port 8096.";
-            fix = "1. Tap RESTART SERVER to terminate stale process sockets.\n2. Verify no secondary background media servers are running.";
-        } else if (state == JellyfinController.State.CRASH_LOOP || errStr.toLowerCase(Locale.ROOT).contains("crash loop")) {
-            cat = "CRASH LOOP";
-            what = "Server failed repeatedly during launch sequence.";
-            why = "Consecutive crashes exceeded the safety threshold (3 retries). This typically points to corrupted configuration, damaged database, or native library mismatch.";
-            fix = "1. Tap RESET CRASH LOOP to unlatch the server.\n2. Inspect terminal traces in the Logs tab.\n3. If database is corrupt, perform CLEAN REINSTALL in Settings.";
-        } else if (errStr.toLowerCase(Locale.ROOT).contains("bootstrap") || errStr.toLowerCase(Locale.ROOT).contains("extract") || errStr.toLowerCase(Locale.ROOT).contains("runtime")) {
-            cat = "RUNTIME INIT ERROR";
-            what = "Jellyfin binary package initialization failed.";
-            why = "Asset decompression or binary permission setup was interrupted. Device storage may be exhausted or file access restricted.";
-            fix = "1. Ensure at least 1 GB free internal storage.\n2. Confirm Storage permission is ON in Settings.\n3. Tap REINSTALL RUNTIME to unpack clean binaries.";
-        } else if (errStr.contains("139") || errStr.contains("137") || errStr.toLowerCase(Locale.ROOT).contains("sigkill") || errStr.toLowerCase(Locale.ROOT).contains("sigsegv")) {
-            cat = "PROCESS KILLED";
-            what = "Jellyfin engine process was killed by the operating system.";
-            why = "Android Low Memory Killer (LMK) stopped the background process to reclaim memory, or a native library segmentation fault occurred.";
-            fix = "1. Tap START SERVER to relaunch.\n2. Set Battery Optimization to UNRESTRICTED in Settings.\n3. Close heavy background apps before scanning large media libraries.";
+        if (isStorageFull) {
+            cat = "CRITICAL: STORAGE FULL";
+            what = "Device internal storage is completely exhausted (< 50 MB free).";
+            why = "Jellyfin SQLite databases and server logs require disk space. Server launch and auto-restarts have been halted to prevent a continuous crash loop.";
+            fix = "1. Tap CLEAR CACHE & FREE SPACE below to remove temporary transcode caches.\n2. Tap OPEN STORAGE SETTINGS to delete unused applications or media files.\n3. Relaunch server once at least 100 MB free space is available.";
+            if (btnErrorClearCache != null) btnErrorClearCache.setVisibility(View.VISIBLE);
+            if (btnErrorOpenStorage != null) btnErrorOpenStorage.setVisibility(View.VISIBLE);
         } else {
-            cat = "STARTUP FAILURE";
-            what = "Server process exited unexpectedly (" + state.name() + ").";
-            why = (errStr.isEmpty()) ? "The Jellyfin daemon stopped without completing readiness handshake." : errStr;
-            fix = "1. Tap START SERVER or RESTART SERVER to retry.\n2. Review the terminal output in the Logs tab.\n3. Verify Storage and Battery permissions in Settings.";
+            if (btnErrorClearCache != null) btnErrorClearCache.setVisibility(View.GONE);
+            if (btnErrorOpenStorage != null) btnErrorOpenStorage.setVisibility(View.GONE);
+
+            if (errStr.contains("8096") || errStr.toLowerCase(Locale.ROOT).contains("port")) {
+                cat = "PORT CONFLICT";
+                what = "HTTP Port 8096 is already bound or in use.";
+                why = "Another instance of Jellyfin or another network server on your phone is occupying TCP port 8096.";
+                fix = "1. Tap RESTART SERVER to terminate stale process sockets.\n2. Verify no secondary background media servers are running.";
+            } else if (state == JellyfinController.State.CRASH_LOOP || errStr.toLowerCase(Locale.ROOT).contains("crash loop")) {
+                cat = "CRASH LOOP";
+                what = "Server failed repeatedly during launch sequence.";
+                why = "Consecutive crashes exceeded the safety threshold (3 retries). This typically points to corrupted configuration, damaged database, or native library mismatch.";
+                fix = "1. Tap RESET CRASH LOOP to unlatch the server.\n2. Inspect terminal traces in the Logs tab.\n3. If database is corrupt, perform CLEAN REINSTALL in Settings.";
+            } else if (errStr.toLowerCase(Locale.ROOT).contains("bootstrap") || errStr.toLowerCase(Locale.ROOT).contains("extract") || errStr.toLowerCase(Locale.ROOT).contains("runtime")) {
+                cat = "RUNTIME INIT ERROR";
+                what = "Jellyfin binary package initialization failed.";
+                why = "Asset decompression or binary permission setup was interrupted. Device storage may be exhausted or file access restricted.";
+                fix = "1. Ensure at least 1 GB free internal storage.\n2. Confirm Storage permission is ON in Settings.\n3. Tap REINSTALL RUNTIME to unpack clean binaries.";
+            } else if (errStr.contains("139") || errStr.contains("137") || errStr.toLowerCase(Locale.ROOT).contains("sigkill") || errStr.toLowerCase(Locale.ROOT).contains("sigsegv")) {
+                cat = "PROCESS KILLED";
+                what = "Jellyfin engine process was killed by the operating system.";
+                why = "Android Low Memory Killer (LMK) stopped the background process to reclaim memory, or a native library segmentation fault occurred.";
+                fix = "1. Tap START SERVER to relaunch.\n2. Set Battery Optimization to UNRESTRICTED in Settings.\n3. Close heavy background apps before scanning large media libraries.";
+            } else {
+                cat = "STARTUP FAILURE";
+                what = "Server process exited unexpectedly (" + state.name() + ").";
+                why = (errStr.isEmpty()) ? "The Jellyfin daemon stopped without completing readiness handshake." : errStr;
+                fix = "1. Tap START SERVER or RESTART SERVER to retry.\n2. Review the terminal output in the Logs tab.\n3. Verify Storage and Battery permissions in Settings.";
+            }
         }
 
         if (errorCardCategoryText != null) errorCardCategoryText.setText(cat);
@@ -2405,6 +3094,76 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         }
     }
 
+    private void checkAndShowErrorPopup(JellyfinController.State state, String lastError) {
+        if (state == JellyfinController.State.RUNNING || state == JellyfinController.State.STOPPED || state == JellyfinController.State.UNINITIALIZED) {
+            hasShownErrorPopupForIncident = false;
+            lastPoppedIncident = "";
+            return;
+        }
+
+        boolean isCritical = (state == JellyfinController.State.CRASHED || state == JellyfinController.State.CRASH_LOOP || state == JellyfinController.State.FAILED);
+        long freeMb = (controller != null) ? controller.getAvailableInternalStorageMb() : 500;
+        boolean isStorageFull = (freeMb < 50) || (lastError != null && (lastError.toLowerCase(Locale.ROOT).contains("storage is full") || lastError.toLowerCase(Locale.ROOT).contains("disk is full") || lastError.toLowerCase(Locale.ROOT).contains("sqlite_full")));
+
+        if (!isCritical && !isStorageFull) return;
+
+        String incidentKey = state.name() + ":" + (lastError != null ? lastError : "") + ":" + (isStorageFull ? "storage" : "normal");
+        if (hasShownErrorPopupForIncident && incidentKey.equals(lastPoppedIncident)) {
+            return;
+        }
+
+        hasShownErrorPopupForIncident = true;
+        lastPoppedIncident = incidentKey;
+
+        showErrorPopupDialog(state, lastError, isStorageFull);
+    }
+
+    private void showErrorPopupDialog(JellyfinController.State state, String lastError, boolean isStorageFull) {
+        if (isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())) return;
+
+        androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this);
+
+        if (isStorageFull) {
+            builder.setTitle("Critical: Storage Full");
+            builder.setMessage("Device internal storage has less than 50 MB remaining. The server cannot safely write to SQLite or log files and auto-restart has been halted to prevent a crash loop.\n\nPlease free up internal storage space.");
+            builder.setPositiveButton("CLEAR CACHE", (dialog, which) -> showClearCacheConfirmation());
+            builder.setNeutralButton("OPEN STORAGE", (dialog, which) -> openStorageSettings());
+            builder.setNegativeButton("DISMISS", null);
+        } else {
+            builder.setTitle("Server Crash Detected (" + state.name() + ")");
+            String msg = (lastError != null && !lastError.isEmpty()) ? lastError : "The server process exited unexpectedly.";
+            builder.setMessage(msg + "\n\nA diagnostic report can be copied or submitted to GitHub.");
+            builder.setPositiveButton("COPY REPORT", (dialog, which) -> copyDiagnosticsToClipboard());
+            builder.setNeutralButton("REPORT ISSUE", (dialog, which) -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Suz41/Fishbowl/issues")));
+                } catch (Throwable t) {
+                    Toast.makeText(this, "Could not open browser", Toast.LENGTH_SHORT).show();
+                }
+            });
+            builder.setNegativeButton("DISMISS", null);
+        }
+
+        try {
+            builder.show();
+        } catch (Throwable ignored) {}
+    }
+
+    private void openStorageSettings() {
+        Intent[] storageIntents = new Intent[] {
+                new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS),
+                new Intent(Settings.ACTION_SETTINGS),
+                new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))
+        };
+        for (Intent intent : storageIntents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                return;
+            } catch (Throwable ignored) {}
+        }
+    }
+
     private void updateStorageInfoText() {
         if (storageInfoText == null) return;
         File prefix = com.termux.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR;
@@ -2426,6 +3185,31 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         String info = freeStorageStr + "Runtime: " + prefixMB + " MB | Data: " + dataMB + " MB | Cache: " + cacheMB + " MB";
         storageInfoText.setText(info);
+    }
+
+    private void showCodecAuditDialog() {
+        TextView reportTv = new TextView(this);
+        reportTv.setText(TranscodingDiagnostics.generateDetailedAuditReport());
+        reportTv.setTypeface(Typeface.MONOSPACE);
+        reportTv.setTextSize(11);
+        reportTv.setTextColor(getPrimaryTextColor());
+        reportTv.setPadding(dp(16), dp(16), dp(16), dp(16));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(reportTv);
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Complete Codec & Subtitle Audit Report")
+                .setView(scroll)
+                .setPositiveButton("COPY REPORT", (dialog, which) -> {
+                    ClipboardManager cb = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (cb != null) {
+                        cb.setPrimaryClip(ClipData.newPlainText("Codec Report", reportTv.getText()));
+                        Toast.makeText(this, "Copied SoC codec report to clipboard", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("CLOSE", null)
+                .show();
     }
 
     private void showClearCacheConfirmation() {
@@ -2817,53 +3601,65 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         // Real-Time Server Error Diagnosis Card
         updateErrorDiagnosticCard(state);
+        checkAndShowErrorPopup(state, controller.getLastError());
 
-        // Authoritative Readiness Guard for OPEN JELLYFIN
+        // Authoritative Readiness Guard for OPEN JELLYFIN WEB UI & START SERVER
         boolean isReady = (state == JellyfinController.State.RUNNING && stage == JellyfinController.StartupStage.READY);
-        if (btnOpenJellyfin != null) {
-            if (isReady) {
-                applyButtonStyle(btnOpenJellyfin, "OPEN JELLYFIN", getAccentColor(), Color.WHITE, true);
-            } else {
-                applyButtonStyle(btnOpenJellyfin, "OPEN JELLYFIN", Color.parseColor("#262930"), Color.parseColor("#616161"), false);
-            }
-        }
-
         boolean busy = (state == JellyfinController.State.INITIALIZING || state == JellyfinController.State.STARTING || state == JellyfinController.State.STOPPING);
         boolean crashLoop = (state == JellyfinController.State.CRASH_LOOP);
         boolean failed = (state == JellyfinController.State.FAILED || state == JellyfinController.State.CRASHED);
 
+        if (btnOpenJellyfin != null) {
+            if (state == JellyfinController.State.RUNNING) {
+                btnOpenJellyfin.setVisibility(View.VISIBLE);
+                if (isReady) {
+                    applyButtonStyle(btnOpenJellyfin, "OPEN JELLYFIN WEB UI", getAccentColor(), Color.WHITE, true);
+                } else {
+                    applyButtonStyle(btnOpenJellyfin, "STARTING WEB UI...", Color.parseColor("#1B2A32"), Color.parseColor("#81C784"), false);
+                }
+            } else {
+                btnOpenJellyfin.setVisibility(View.GONE);
+            }
+        }
+
         if (btnStartServer != null) {
             if (state == JellyfinController.State.RUNNING) {
-                applyButtonStyle(btnStartServer, "SERVER RUNNING", Color.parseColor("#1F2A22"), Color.parseColor("#81C784"), false);
-            } else if (state == JellyfinController.State.STARTING || state == JellyfinController.State.INITIALIZING) {
-                applyButtonStyle(btnStartServer, "STARTING...", Color.parseColor("#F57F17"), Color.WHITE, false);
-            } else if (state == JellyfinController.State.STOPPING) {
-                applyButtonStyle(btnStartServer, "STOPPING...", Color.parseColor("#BF360C"), Color.WHITE, false);
-            } else if (crashLoop) {
-                applyButtonStyle(btnStartServer, "SERVER CRASHED", Color.parseColor("#5A1A1A"), Color.parseColor("#EF9A9A"), false);
-            } else if (failed) {
-                applyButtonStyle(btnStartServer, "RETRY START SERVER", Color.parseColor("#C62828"), Color.WHITE, true);
-            } else if (!JellyfinBootstrapper.isInitialized(this)) {
-                applyButtonStyle(btnStartServer, "SETUP / RETRY INSTALL", Color.parseColor("#0288D1"), Color.WHITE, true);
+                btnStartServer.setVisibility(View.GONE);
             } else {
-                applyButtonStyle(btnStartServer, "START SERVER", Color.parseColor("#2E7D32"), Color.WHITE, true);
+                btnStartServer.setVisibility(View.VISIBLE);
+                if (state == JellyfinController.State.STARTING || state == JellyfinController.State.INITIALIZING) {
+                    applyButtonStyle(btnStartServer, "STARTING SERVER...", Color.parseColor("#F57F17"), Color.WHITE, false);
+                } else if (state == JellyfinController.State.STOPPING) {
+                    applyButtonStyle(btnStartServer, "STOPPING SERVER...", Color.parseColor("#BF360C"), Color.WHITE, false);
+                } else if (crashLoop) {
+                    applyButtonStyle(btnStartServer, "SERVER CRASHED", Color.parseColor("#5A1A1A"), Color.parseColor("#EF9A9A"), false);
+                } else if (failed) {
+                    applyButtonStyle(btnStartServer, "RETRY START SERVER", Color.parseColor("#C62828"), Color.WHITE, true);
+                } else if (!JellyfinBootstrapper.isInitialized(this)) {
+                    applyButtonStyle(btnStartServer, "SETUP / RETRY INSTALL", Color.parseColor("#0288D1"), Color.WHITE, true);
+                } else {
+                    applyButtonStyle(btnStartServer, "START SERVER", Color.parseColor("#2E7D32"), Color.WHITE, true);
+                }
             }
         }
+
         if (btnStopServer != null) {
             if (state == JellyfinController.State.RUNNING) {
-                applyButtonStyle(btnStopServer, "STOP SERVER", Color.parseColor("#D32F2F"), Color.WHITE, true);
+                applyButtonStyle(btnStopServer, "STOP", Color.parseColor("#D32F2F"), Color.WHITE, true);
             } else {
-                applyButtonStyle(btnStopServer, "STOP SERVER", Color.parseColor("#262930"), Color.parseColor("#616161"), false);
+                applyButtonStyle(btnStopServer, "STOP", getSurfaceElevatedColor(), Color.parseColor("#616161"), false);
             }
         }
+
         if (btnRestartServer != null) {
-            boolean canRestart = !busy && !crashLoop;
+            boolean canRestart = !busy && !crashLoop && (state == JellyfinController.State.RUNNING);
             if (canRestart) {
-                applyButtonStyle(btnRestartServer, "RESTART SERVER", getSurfaceColor(), getPrimaryTextColor(), true);
+                applyButtonStyle(btnRestartServer, "RESTART", getSurfaceElevatedColor(), getPrimaryTextColor(), true);
             } else {
-                applyButtonStyle(btnRestartServer, "RESTART SERVER", Color.parseColor("#262930"), Color.parseColor("#616161"), false);
+                applyButtonStyle(btnRestartServer, "RESTART", getSurfaceElevatedColor(), Color.parseColor("#616161"), false);
             }
         }
+
         if (btnResetCrash != null) btnResetCrash.setVisibility(crashLoop ? View.VISIBLE : View.GONE);
 
         // Show REINSTALL RUNTIME button on Home dashboard when installation/startup failed or user wants to re-bootstrap
@@ -3158,6 +3954,24 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         }
     };
 
+    private void updateChannelSelectionUI() {
+        if (btnChannelStable == null || btnChannelBeta == null) return;
+        String channel = UpdateManager.getInstance(this).getUpdateChannel();
+        boolean isBeta = UpdateManager.CHANNEL_BETA.equals(channel);
+
+        btnChannelStable.setBackground(createRoundedDrawable(!isBeta ? getAccentColor() : getSurfaceElevatedColor(), dp(16)));
+        btnChannelStable.setTextColor(!isBeta ? Color.WHITE : getSecondaryTextColor());
+
+        btnChannelBeta.setBackground(createRoundedDrawable(isBeta ? Color.parseColor("#EF6C00") : getSurfaceElevatedColor(), dp(16)));
+        btnChannelBeta.setTextColor(isBeta ? Color.WHITE : getSecondaryTextColor());
+
+        if (updateChannelBadge != null) {
+            updateChannelBadge.setText(isBeta ? "BETA CHANNEL" : "STABLE CHANNEL");
+            updateChannelBadge.setTextColor(isBeta ? Color.parseColor("#FFB74D") : Color.parseColor("#00B4D8"));
+            updateChannelBadge.setBackground(createRoundedDrawable(isBeta ? Color.parseColor("#3A2E1A") : Color.parseColor("#1B2A32"), dp(6)));
+        }
+    }
+
     private void refreshUpdateUI() {
         if (updateStatusText == null || updateActionBtn == null) return;
         UpdateManager manager = UpdateManager.getInstance(this);
@@ -3165,78 +3979,104 @@ public final class JellyfinDroidActivity extends AppCompatActivity
 
         int currentCode = manager.getCurrentVersionCode(this);
         String currentName = manager.getCurrentVersionName(this);
+        String channel = manager.getUpdateChannel();
+        String channelLabel = UpdateManager.CHANNEL_BETA.equals(channel) ? "Beta Channel" : "Stable Channel";
 
-        String verInfo = "Current version: " + currentName + " (" + currentCode + ")\n";
+        StringBuilder sb = new StringBuilder();
+        sb.append("• Installed Build: v").append(currentName).append(" (Build ").append(currentCode).append(")\n");
+        sb.append("• Update Channel: ").append(channelLabel).append("\n");
+        if (manager.getLatestVersionCode() > 0) {
+            sb.append("• Latest on GitHub: v").append(manager.getLatestVersionName())
+              .append(" (Build ").append(manager.getLatestVersionCode()).append(")\n");
+        }
+        sb.append("\n");
+        String verInfo = sb.toString();
+
+        updateChannelSelectionUI();
+        if (updateForceDownloadBtn != null) {
+            updateForceDownloadBtn.setVisibility(View.GONE);
+        }
 
         switch (state) {
             case IDLE:
-                updateStatusText.setText(verInfo + "Status: Ready to check");
+                updateStatusText.setText(verInfo + "Status: Ready to check GitHub for updates.");
                 updateActionBtn.setText("Check for updates");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.checkForUpdates(this, true));
                 break;
             case CHECKING:
-                updateStatusText.setText(verInfo + "Checking for updates...");
+                updateStatusText.setText(verInfo + "Checking GitHub releases for " + channelLabel + "...");
                 updateActionBtn.setVisibility(View.GONE);
                 break;
             case UP_TO_DATE:
-                updateStatusText.setText(verInfo + "You're up to date");
+                if (manager.getLatestVersionCode() > 0 && currentCode > manager.getLatestVersionCode()) {
+                    updateStatusText.setText(verInfo + "Status: You are running an active development build (Build " + currentCode + "), which is newer than the latest GitHub release (Build " + manager.getLatestVersionCode() + ").");
+                } else if (manager.getLatestVersionCode() > 0 && currentCode == manager.getLatestVersionCode()) {
+                    updateStatusText.setText(verInfo + "Status: You're running the latest official release for " + channelLabel + ".");
+                } else {
+                    updateStatusText.setText(verInfo + "Status: Your app is up to date.");
+                }
                 updateActionBtn.setText("Check for updates");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.checkForUpdates(this, true));
+                if (updateForceDownloadBtn != null && !manager.getApkUrl().isEmpty()) {
+                    updateForceDownloadBtn.setVisibility(View.VISIBLE);
+                    updateForceDownloadBtn.setText("Force Re-download (v" + manager.getLatestVersionName() + ")");
+                    updateForceDownloadBtn.setOnClickListener(v -> manager.startDownload(this));
+                }
                 break;
             case UPDATE_AVAILABLE:
-                updateStatusText.setText(verInfo + "Update available\n\nWhat's new:\n" + manager.getLatestReleaseNotes());
+                updateStatusText.setText(verInfo + "Status: Update Available! (v" + manager.getLatestVersionName() + ")\n\nWhat's new:\n" + manager.getLatestReleaseNotes());
                 updateActionBtn.setText("Download update");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.startDownload(this));
                 break;
             case DOWNLOADING:
-                updateStatusText.setText(verInfo + "Downloading update...");
+                updateStatusText.setText(verInfo + "Status: Downloading update...");
                 updateActionBtn.setVisibility(View.GONE);
                 break;
             case DOWNLOAD_COMPLETE:
-                updateStatusText.setText(verInfo + "Update downloaded.");
+                updateStatusText.setText(verInfo + "Status: Update downloaded successfully.");
                 updateActionBtn.setText("Verify and install");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.installUpdate(this));
                 break;
             case VERIFYING:
-                updateStatusText.setText(verInfo + "Verifying update...");
+                updateStatusText.setText(verInfo + "Status: Verifying SHA-256 package checksum...");
                 updateActionBtn.setVisibility(View.GONE);
                 break;
             case VERIFICATION_SUCCESSFUL:
-                updateStatusText.setText(verInfo + "Update verified.");
+                updateStatusText.setText(verInfo + "Status: Package verified and integrity confirmed.");
                 updateActionBtn.setText("Install update");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.installUpdate(this));
                 break;
             case VERIFICATION_FAILED:
-                updateStatusText.setText(verInfo + "Update verification failed.");
+                updateStatusText.setText(verInfo + "Status: Update verification failed (corrupt file).");
                 updateActionBtn.setText("Retry download");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.startDownload(this));
                 break;
             case PERMISSION_REQUIRED:
-                updateStatusText.setText(verInfo + "Installation permission is required.");
+                updateStatusText.setText(verInfo + "Status: Permission to install unknown apps is required.");
                 updateActionBtn.setText("Open settings");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.openInstallPermissionSettings(this));
                 break;
             case DOWNLOAD_FAILED:
-                updateStatusText.setText(verInfo + "Update download failed.");
+                updateStatusText.setText(verInfo + "Status: Update download failed. Check network connection.");
                 updateActionBtn.setText("Retry download");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.startDownload(this));
                 break;
             case NETWORK_UNAVAILABLE:
-                updateStatusText.setText(verInfo + "Unable to check for updates.");
+                updateStatusText.setText(verInfo + "Status: Unable to reach GitHub or rate limit exceeded. Please check connection.");
                 updateActionBtn.setText("Check for updates");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.checkForUpdates(this, true));
                 break;
             case RELEASE_UNAVAILABLE:
-                updateStatusText.setText(verInfo + "Update information is currently unavailable.");
+                updateStatusText.setText(verInfo + "Status: No releases currently available for " + channelLabel + ".");
                 updateActionBtn.setText("Check for updates");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.checkForUpdates(this, true));
@@ -3249,13 +4089,15 @@ public final class JellyfinDroidActivity extends AppCompatActivity
         UpdateManager manager = UpdateManager.getInstance(this);
         String currentName = manager.getCurrentVersionName(this);
         int currentCode = manager.getCurrentVersionCode(this);
-        String verInfo = "Current version: " + currentName + " (" + currentCode + ")\n";
+        String channel = manager.getUpdateChannel();
+        String channelLabel = UpdateManager.CHANNEL_BETA.equals(channel) ? "Beta Channel" : "Stable Channel";
+        String verInfo = "• Installed: v" + currentName + " (" + currentCode + ") • " + channelLabel + "\n\n";
 
         long downloadedMb = downloaded / (1024 * 1024);
         long totalMb = total / (1024 * 1024);
         int percent = total > 0 ? (int) ((downloaded * 100) / total) : 0;
 
-        updateStatusText.setText(verInfo + "Downloading update...\nFishbowl " + manager.getLatestVersionName() + "\n" + percent + "%\nDownloaded: " + downloadedMb + " MB / " + totalMb + " MB");
+        updateStatusText.setText(verInfo + "Downloading update: Fishbowl v" + manager.getLatestVersionName() + "\n" + percent + "%\nProgress: " + downloadedMb + " MB / " + totalMb + " MB");
     }
 
     private String readFirstLine(File f) {
