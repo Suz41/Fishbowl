@@ -229,12 +229,12 @@ Install new release APKs directly over your existing installation. Fishbowl pres
 
 Fishbowl is an unofficial community project and is not supported, maintained, or endorsed by the official Jellyfin project.
 
-This project is licensed under the [GNU General Public License v3.0](LICENSE.md).
+This project is licensed under the [GNU General Public License v3.0](LICENSE.md). For complete third-party attributions, component licenses, and GPLv3 Section 6 corresponding source disclosures, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 - **Jellyfin:** Licensed under GNU General Public License v3.0.
-- **Termux Components:** Licensed under GNU General Public License v3.0.
+- **Termux Components:** Licensed under GNU General Public License v3.0 / Apache 2.0 / MIT.
 - **.NET Runtime:** Licensed under the MIT License.
-- **FFmpeg:** Licensed under GNU General Public License v3.0 / LGPL v3.0.
+- **FFmpeg Engine:** Licensed under GNU General Public License v3.0 / LGPL v3.0 (built without `--enable-nonfree`).
 - **SQLite:** Public Domain.
 
 This application is provided freely without warranties or service-level guarantees. Always back up important library configurations and use this project for personal experimentation and home-lab use only.
