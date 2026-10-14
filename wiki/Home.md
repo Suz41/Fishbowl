@@ -1,24 +1,35 @@
 # Welcome to the Fishbowl Wiki
 
-Fishbowl is a standalone, native server host and launcher for Jellyfin on Android ARM64 with a Material 3 UI. It transforms any Android phone, tablet, or TV box into an energy-efficient, dedicated home media streaming server.
+Fishbowl is a standalone, native Jellyfin server host and launcher for compatible ARM64 Android devices. It runs a local Jellyfin media server directly on the phone, tablet, or TV box without root access, Docker, or a PC, while keeping configuration, databases, and media indexing local to the device.
 
-Use the navigation below to learn more about setting up, configuring, and developing for Fishbowl:
+## Quick Start
 
-## Navigation
+1. Download the latest Fishbowl release from the [GitHub Releases page](https://github.com/Suz41/Fishbowl/releases).
+2. Install the APK and grant the required Android permissions when prompted, especially Notifications and All-Files Storage Access.
+3. Start the server from the Home tab, wait for the status card to show `SERVER RUNNING`, and then tap `OPEN JELLYFIN`.
+4. Complete the Jellyfin setup wizard, then add media folders through Fishbowl's storage tools.
 
-*   [**Installation & Setup**](Installation-&-Setup) - Step-by-step instructions to get Fishbowl v1.4.6 running on your Android device.
-*   [**Storage Architecture & Directory Setup**](Storage-Access-Framework) - Guide on configuring media directories across Scoped Storage boundaries and external drives.
-*   [**System Architecture & Internals**](Architecture-&-Internals) - Detailed look at the native POSIX subsystem, Dotnet host, background services, and error diagnosis.
-*   [**Troubleshooting & FAQ**](Troubleshooting-&-FAQ) - Solutions to battery optimization killers, empty library prevention, network connection issues, and update preservation.
+For the latest release notes, source build instructions, and project overview, see the main [README](https://github.com/Suz41/Fishbowl/blob/main/README.md).
 
 ---
 
-## Technology Stack
+## Navigation
 
-*   **Android Host:** Native Android application runtime with pure dark OLED theme and tactile feedback.
-*   **Server Core:** Full Jellyfin 12.1.0 Media Server.
-*   **Runtime:** Embedded Microsoft .NET 10 JIT-compiled host (v10.0.12 Linux Bionic ARM64).
-*   **Transcoder:** Tailored native Jellyfin-FFmpeg binary for video/audio conversion and HLS segmenting.
-*   **Database:** Local SQLite3 (`libe_sqlite3.so`) managing state, accounts, and metadata.
-*   **Diagnostics:** Comprehensive Error Diagnoser analyzing failure stages and providing actionable recovery steps.
-*   **Security:** 100% CodeQL cleared with ZipSlip protection, canonical path validation, and deterministic parsing.
+*   [**Installation & Setup**](Installation-&-Setup) - Step-by-step instructions for setting up Fishbowl on Android.
+*   [**Storage Architecture & Directory Setup**](Storage-Access-Framework) - Information about media folders, Scoped Storage, and external drive access.
+*   [**System Architecture & Internals**](Architecture-&-Internals) - Details on the native runtime, Jellyfin host, background services, and diagnostics.
+*   [**Troubleshooting & FAQ**](Troubleshooting-&-FAQ) - Solutions for battery optimization issues, empty libraries, network connectivity, and updates.
+
+---
+
+## Highlights
+
+*   **Android Host:** Native Android runtime with a Material 3 interface and lightweight background service management.
+*   **Server Core:** Full Jellyfin 12.1.0 media server running on-device.
+*   **Runtime:** Embedded Microsoft .NET 10 JIT runtime for Linux Bionic ARM64.
+*   **Transcoding:** Native Jellyfin-FFmpeg binary for HLS streaming, media remuxing, and thumbnails.
+*   **Database:** Local SQLite storage for server state, libraries, user data, and metadata.
+*   **Diagnostics:** Built-in error analysis for startup problems, port conflicts, storage issues, and SELinux restrictions.
+*   **Privacy:** No cloud account requirement, no telemetry SDKs, and all server state remains local to the device.
+
+> Fishbowl is an unofficial community project and is not affiliated with or endorsed by the official Jellyfin project.
