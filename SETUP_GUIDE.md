@@ -19,8 +19,8 @@ Fishbowl hosts the full, native **Jellyfin Media Server (v12.1.0)** on your Andr
 ## Step-by-Step Setup
 
 ### Step 1: Download & Install
-1. Go to [Fishbowl Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.6).
-2. Download the latest `Fishbowl-v1.4.6-release-universal.apk` (SHA-256: `D9F9AF398D988AFBF6483E8196F0226B8B90CF0C7557B566537BF20D05E8A930`).
+1. Go to [Fishbowl Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2).
+2. Download the latest `Fishbowl-v1.4.8-beta.2-release-universal.apk` (SHA-256: `8AC58D02E84BD53D2FF2F53E2CE39139BB42FEE7ED0AB9B5F66070B78E65AC4C`).
 3. Open the downloaded file and install the app.
 4. Grant Notification, All-Files Storage Access, and Battery Optimization permissions when prompted.
 
@@ -33,7 +33,7 @@ Fishbowl hosts the full, native **Jellyfin Media Server (v12.1.0)** on your Andr
 1. Choose your preferred display language.
 2. Create an admin username and password.
 3. Configure your media libraries using Fishbowl's Consolidated Storage Engine (**Settings -> Manage Media Storage & Folders**):
-   - **Internal Storage:** Select any folder (e.g. `/storage/emulated/0/Movies` or `/storage/emulated/0/Music`).
+   - **Internal Storage:** Select any folder (e.g. `/storage/emulated/0/FishbowlMedia/Movies` or `/storage/emulated/0/FishbowlMedia/TV Shows`).
    - **Custom Paths:** Tap `[ ENTER PATH ]` to type or paste any absolute storage path.
    - **External USB / SD Cards:** Android 11-16 restricts native access to raw external mounts. Tap the `[ App Data (Guaranteed) ]` chip on your external drive card to copy the verified readable path (`/storage/<UUID>/Android/data/com.fishbowl.app/files`).
    - **Active Empty Library Prevention:** Tap `[ COPY PATH FOR JELLYFIN ]`. Fishbowl actively validates that media files exist inside and that SELinux does not block access, alerting you before scanning.
@@ -46,25 +46,41 @@ Fishbowl hosts the full, native **Jellyfin Media Server (v12.1.0)** on your Andr
 
 ---
 
-## Media Organization
+## Media Organization & Automated Downloading
 
-Organize media inside standard folder structures for automatic metadata matching:
+Fishbowl automatically maintains a clean, separated storage scaffolding under internal storage:
 
 ```
-Media/
-|-- Movies/
-|   |-- Inception (2010)/
-|   |   `-- Inception (2010).mkv
-|-- TV Shows/
-|   `-- Breaking Bad/
-|       `-- Season 01/
-|           `-- Breaking Bad - S01E01.mkv
-`-- Music/
-    `-- Artist Name/
-        `-- Album Name/
-            |-- 01 - Track Name.flac
-            `-- cover.jpg
+FishbowlMedia/
+├── Movies/                # Radarr auto-organized movies
+│   └── Inception (2010)/
+│       └── Inception (2010).mkv
+├── TV Shows/              # Sonarr auto-organized series
+│   └── Breaking Bad/
+│       └── Season 01/
+│           └── Breaking Bad - S01E01.mkv
+├── Music/                 # Lidarr / music files
+│   └── Artist Name/
+│       └── Album Name/
+│           └── 01 - Track Name.flac
+└── Downloads/             # Isolated download staging
+    ├── radarr/            # Radarr movie downloads
+    └── sonarr/            # Sonarr episode downloads
 ```
+
+> **Automated Deduplication:** When downloads complete and Radarr or Sonarr imports the media into `Movies/` or `TV Shows/`, Fishbowl's background deduplication watcher automatically purges the duplicate file in `Downloads/` to prevent wasted storage.
+
+---
+
+## 1-Tap Backup & Disaster Recovery
+
+Protect your library configurations and media history against device crashes or OS wipes:
+
+1. Open **Settings -> 6. Backup & Restore System**.
+2. Tap **[ CREATE FULL BACKUP ]**.
+3. All Jellyfin accounts, databases, Radarr/Sonarr profiles, Transmission settings, and Seerr preferences are compressed into:
+   `/storage/emulated/0/FishbowlMedia/Backups/fishbowl_backup_YYYYMMDD_HHmmss.tar.gz`
+4. To migrate or recover, tap **[ RESTORE BACKUP ]** and pick your archive. Fishbowl unpacks all configurations and restores databases automatically.
 
 ---
 
