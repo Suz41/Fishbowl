@@ -15,6 +15,7 @@ An unofficial standalone server host and media stack launcher for Jellyfin on An
 > [!IMPORTANT]
 > **Disclaimer, Community Notice & Security Transparency:**
 > - **Unofficial Project & Upstream Protection:** Fishbowl is an independent, unofficial community project and is **not affiliated with, maintained by, or endorsed by the official Jellyfin project**.
+> - **Strict Anti-Piracy & Content Disclaimer:** Fishbowl is strictly a personal media server launcher, library organizer, and self-hosting utility. It is intended solely for managing personal media collections, legally owned digital backups, public domain archives, and open-access/Creative Commons distributions. Fishbowl **does not provide, host, stream, index, or distribute any media files or copyrighted content**. The developers do not endorse, facilitate, or condone copyright infringement or unauthorized downloading. Users are solely responsible for adhering to applicable copyright and intellectual property laws in their jurisdictions.
 > - **Voluntary Use & Security Transparency:** Nobody is forced or pressured to download or install this application. Because this is a community-driven project, we encourage security-conscious use and independent review.
 > - **Reproducible Source Builds:** You do not have to trust pre-compiled release binaries. All build configurations are open and reproducible; you can build the application directly from clean source.
 > - **Mobile Hardware & Thermals:** Smartphones and TV boxes are not rackmount servers. Continuous high-bitrate video transcoding generates significant heat and drains battery. For sustained 24/7 use, keep the device cooled and on AC power.
@@ -270,6 +271,15 @@ Install new release APKs directly over your existing installation. Fishbowl pres
 ---
 
 ## Disclosures & License
+
+### Content & Anti-Piracy Policy
+
+Fishbowl does not host, provide, distribute, index, or link to any copyrighted media, video streams, or unauthorized content:
+- **Zero Bundled Content:** The software ships exclusively as hosting infrastructure and automation orchestration daemons. No audio files, television shows, movies, proprietary video streams, or copyright-protected codecs are included, hosted, or provided.
+- **Lawful & Personal Use Only:** Fishbowl is engineered strictly for personal self-hosting and private media organization (e.g. personal home recordings, legally digitized backups of media owned by the user, public domain archives, and Creative Commons productions).
+- **User Responsibility:** The project maintainers do not operate indexers, torrent trackers, or public content distribution services, and strictly disclaim any liability for how users configure third-party tools. End users bear 100% legal responsibility for ensuring they possess all requisite rights, licenses, and authorizations for any media files managed or streamed on their servers under local and international intellectual property laws.
+
+### Project License & Disclosures
 
 Fishbowl is an unofficial community project and is not supported, maintained, or endorsed by the official Jellyfin project.
 

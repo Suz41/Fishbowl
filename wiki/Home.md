@@ -32,4 +32,4 @@ For the latest release notes, source build instructions, and project overview, s
 *   **Diagnostics:** Built-in error analysis for startup problems, port conflicts, storage issues, and SELinux restrictions.
 *   **Privacy:** No cloud account requirement, no telemetry SDKs, and all server state remains local to the device.
 
-> Fishbowl is an unofficial community project and is not affiliated with or endorsed by the official Jellyfin project.
+> Fishbowl is an unofficial community project and is not affiliated with or endorsed by the official Jellyfin project. Fishbowl does not host, provide, or distribute media content and is intended strictly for personal, legally authorized media collections.
