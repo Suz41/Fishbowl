@@ -15,12 +15,21 @@ In accordance with Section 6 of the GNU General Public License v3.0 (*Conveying 
 | **Jellyfin Media Server Core** | `12.1.0` (ARM64) | [jellyfin/jellyfin](https://github.com/jellyfin/jellyfin) | GNU GPLv3 |
 | **Microsoft .NET Runtime Engine** | `10.0.12` (ARM64 Bionic) | [dotnet/runtime](https://github.com/dotnet/runtime) | MIT License |
 | **Jellyfin FFmpeg Engine** | `7.1.4-Jellyfin` (ARM64) | [jellyfin/jellyfin-ffmpeg](https://github.com/jellyfin/jellyfin-ffmpeg) | GNU GPLv3 / LGPLv3 |
+| **Radarr** | `6.4.4` (ARM64) | [Radarr/Radarr](https://github.com/Radarr/Radarr) | GNU GPLv3 |
+| **Sonarr** | `4.0.9` (ARM64) | [Sonarr/Sonarr](https://github.com/Sonarr/Sonarr) | GNU GPLv3 |
+| **Prowlarr** | `1.21.2` (ARM64) | [Prowlarr/Prowlarr](https://github.com/Prowlarr/Prowlarr) | GNU GPLv3 |
+| **Transmission Daemon** | `4.1.3` (ARM64 Bionic) | [transmission/transmission](https://github.com/transmission/transmission) | GNU GPLv2 / GPLv3 |
+| **Seerr (Jellyseerr)** | `2.2.0` (ARM64) | [fallenbagel/jellyseerr](https://github.com/fallenbagel/jellyseerr) | MIT License |
+| **Lidarr** | `2.8.2` (ARM64) | [Lidarr/Lidarr](https://github.com/Lidarr/Lidarr) | GNU GPLv3 |
 | **SQLite3 Database Engine** | `3.46.1` (`libe_sqlite3.so`) | [sqlite/sqlite](https://sqlite.org) | Public Domain |
 | **Fontconfig Engine** | `2.15.0` (`libfontconfig.so`) | [fontconfig/fontconfig](https://gitlab.freedesktop.org/fontconfig/fontconfig) | MIT / Permissive |
 | **FreeType Font Engine** | `2.13.2` (`libfreetype.so`) | [freetype/freetype](https://freetype.org) | FreeType License (FTL) |
 | **OpenSSL Security Engine** | `3.x` (`libcrypto.so` / `libssl.so`) | [openssl/openssl](https://www.openssl.org) | Apache License 2.0 |
 | **ICU Globalization Engine** | `74.x` | [unicode-org/icu](https://icu.unicode.org) | Unicode-DFS-2016 |
 | **Termux Bootstrap Archive** | `2026.02.12-r1` (Android 7+) | [termux/termux-packages](https://github.com/termux/termux-packages) | GNU GPLv3 |
+| **Apache Commons Compress** | `1.26.0` | [apache/commons-compress](https://github.com/apache/commons-compress) | Apache License 2.0 |
+| **XZ for Java** | `1.9` | [tukaani-project/xz-java](https://tukaani.org/xz/java.html) | Public Domain |
+| **Markwon Markdown Library** | `4.6.2` | [noties/Markwon](https://github.com/noties/Markwon) | Apache License 2.0 |
 
 > **FFmpeg Compilation Notice:** The bundled mobile FFmpeg transcoding binary is compiled exclusively using free and open-source codecs and libraries. It is built **without** `--enable-nonfree` (such as Fraunhofer FDK AAC) to ensure full legal redistributability under GNU GPLv3 / LGPLv3.
 
@@ -34,6 +43,21 @@ In accordance with Section 6 of the GNU General Public License v3.0 (*Conveying 
 - **Website:** <https://jellyfin.org>
 - **Notice:** Fishbowl is an independent, unofficial community project. It is not affiliated with, endorsed by, maintained by, or sponsored by the official Jellyfin Project.
 
+### Servarr Automation Stack (Radarr, Sonarr, Prowlarr, Lidarr)
+- **Copyright:** (c) 2010–2026 Sonarr, Radarr, Prowlarr, and Lidarr Contributors
+- **License:** GNU General Public License v3.0 (GPLv3)
+- **Source:** <https://github.com/Radarr/Radarr>, <https://github.com/Sonarr/Sonarr>, <https://github.com/Prowlarr/Prowlarr>, <https://github.com/Lidarr/Lidarr>
+
+### Transmission BitTorrent Client
+- **Copyright:** (c) 2005–2026 Transmission Project and Contributors
+- **License:** GNU General Public License v2.0 / v3.0
+- **Source:** <https://github.com/transmission/transmission>
+
+### Seerr (Jellyseerr)
+- **Copyright:** (c) 2021–2026 Fallenbagel, Overseerr Contributors
+- **License:** MIT License
+- **Source:** <https://github.com/fallenbagel/jellyseerr>
+
 ### Termux Subsystems & Shared Libraries
 - **Copyright:** (c) Fredrik Fornwall and Termux Contributors
 - **License:** GNU General Public License v3.0 (GPLv3), with modules under MIT and Apache 2.0
@@ -45,48 +69,10 @@ In accordance with Section 6 of the GNU General Public License v3.0 (*Conveying 
 - **License:** Apache License, Version 2.0
 - **Source:** <https://github.com/jackpal/Android-Terminal-Emulator>
 
-```text
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
-
 ### Microsoft .NET Runtime
 - **Copyright:** (c) .NET Foundation and Contributors
 - **License:** MIT License
 - **Source:** <https://github.com/dotnet/runtime>
-
-```text
-The MIT License (MIT)
-
-Copyright (c) .NET Foundation and Contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
 
 ### SQLite
 - **Author:** D. Richard Hipp and the SQLite Development Team
@@ -108,6 +94,26 @@ SOFTWARE.
 - **Copyright:** (c) 2000, 2001, 2002, 2003, 2004 Keith Packard, (c) 2005 Patrick Lam, (c) 2009 Roozbeh Pournader
 - **License:** MIT / Permissive License
 - **Source:** <https://gitlab.freedesktop.org/fontconfig/fontconfig>
+
+### Apache Commons Compress
+- **Copyright:** (c) 2002–2026 The Apache Software Foundation
+- **License:** Apache License, Version 2.0
+- **Source:** <https://github.com/apache/commons-compress>
+
+### XZ for Java
+- **Author:** Lasse Collin and Igor Pavlov
+- **License:** Public Domain
+- **Source:** <https://tukaani.org/xz/java.html>
+
+### Markwon
+- **Copyright:** (c) 2017 Dimitry Ivanov (noties)
+- **License:** Apache License, Version 2.0
+- **Source:** <https://github.com/noties/Markwon>
+
+### Google Guava
+- **Copyright:** (c) The Guava Authors
+- **License:** Apache License, Version 2.0
+- **Source:** <https://github.com/google/guava>
 
 ### AndroidX & Android Open Source Project (AOSP)
 - **Copyright:** (c) The Android Open Source Project

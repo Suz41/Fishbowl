@@ -1,9 +1,12 @@
+<p align="center">
+  <img src="art/fishbowl_logo.svg" width="128" height="128" alt="Fishbowl Logo" />
+</p>
+
 # Fishbowl
 
-An unofficial standalone server host and launcher for Jellyfin on Android (ARM64).
+An unofficial standalone server host and media stack launcher for Jellyfin on Android (ARM64).
 
-[![Release](https://img.shields.io/badge/Release-v1.4.6-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.6)
-[![Pre--Release](https://img.shields.io/badge/Test%20Build-v1.4.7--beta.3-orange.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.7-beta.3)
+[![Release](https://img.shields.io/badge/Release-v1.4.8--beta.2-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2)
 [![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-12.1.0-purple.svg)](https://jellyfin.org)
 [![Runtime](https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
 [![Platform](https://img.shields.io/badge/Android-ARM64-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
@@ -17,16 +20,15 @@ An unofficial standalone server host and launcher for Jellyfin on Android (ARM64
 > - **Mobile Hardware & Thermals:** Smartphones and TV boxes are not rackmount servers. Continuous high-bitrate video transcoding generates significant heat and drains battery. For sustained 24/7 use, keep the device cooled and on AC power.
 > - **Provided "As-Is":** Distributed freely under the GNU General Public License v3.0 (GPLv3) for personal experimentation and home-lab use without commercial warranties or service-level agreements.
 
-Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a native interface for starting the server, viewing status, managing media storage folders, and accessing diagnostic logs while keeping the underlying server local to the device.
+Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a native interface for starting the server, viewing status, managing media storage folders, orchestrating companion automation services, and accessing diagnostic logs while keeping the underlying server local to the device.
 
 ---
 
 ## Quick Start (3 Steps)
 
 1. **Download & Install:**
-   - **Recommended Stable Release:** Download [**Fishbowl v1.4.6**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.6) (`Fishbowl-v1.4.6-release-universal.apk`).
-     - **SHA-256:** `D9F9AF398D988AFBF6483E8196F0226B8B90CF0C7557B566537BF20D05E8A930`
-   - **Latest Testing Pre-Release:** Install the newest beta build for early validation under [**Fishbowl v1.4.7-beta.3**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.7-beta.3) (`Fishbowl-v1.4.7-beta.3-release-arm64-v8a.apk`).
+   - **Latest Production Release:** Download [**Fishbowl v1.4.8-beta.2**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2) (`Fishbowl-v1.4.8-beta.2-release-universal.apk`).
+     - **SHA-256:** `8AC58D02E84BD53D2FF2F53E2CE39139BB42FEE7ED0AB9B5F66070B78E65AC4C`
 2. **Launch & Start:**
    - Open Fishbowl on your device. The server will start automatically. When the status indicator turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
 3. **Connect & Stream:**
@@ -37,11 +39,11 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 ## Preview & Interface
 
 <p align="center">
-  <img src="docs/screenshots/01_home_screen.png" width="30%" alt="Fishbowl home screen" />
+  <img src="docs/screenshots/01_home_screen.jpeg" width="30%" alt="Fishbowl home screen" />
   &nbsp;
-  <img src="docs/screenshots/02_logs_tab.png" width="30%" alt="Fishbowl logs screen" />
+  <img src="docs/screenshots/02_media_stack.jpeg" width="30%" alt="Fishbowl media stack orchestrator" />
   &nbsp;
-  <img src="docs/screenshots/03_settings_tab.png" width="30%" alt="Fishbowl settings and diagnostics" />
+  <img src="docs/screenshots/03_widgets.jpeg" width="30%" alt="Fishbowl Android home widgets" />
 </p>
 
 ---
@@ -70,13 +72,20 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 - **Local SQLite3 Database:** Embedded SQLite engine (`libe_sqlite3.so`) managing media libraries, user playback states, and metadata locally.
 - **Port Conflict & Health Guard:** Active socket loopback probing and HTTP readiness polling (`/system/info/public` and `/health`) to verify genuine server readiness and prevent collisions.
 
+### Media Automation & Management Suite
+- **1-Tap Configuration Backup & Restore:** Package all Jellyfin, Sonarr, Radarr, Prowlarr, and Transmission configs, credentials, and databases into a single timestamped `.tar.gz` archive with seamless 1-tap restore.
+- **Dedicated Download Directory Routing:** Dedicated download staging paths for Radarr (`Downloads/radarr`) and Sonarr (`Downloads/sonarr`) to bypass label-drop issues and ensure zero import collisions.
+- **Automated Deduplication Watcher:** Background storage guardian that auto-detects and purges completed staging duplicates once media is successfully imported into library folders, conserving critical flash storage.
+- **Integrated Companion Orchestration:** Native support and health monitoring for Radarr, Sonarr, Prowlarr, Transmission daemon, Seerr (media requests), and Lidarr.
+- **Home Screen Supervision Widgets:** Glanceable service state tiles and quick-toggle controls directly from the Android home launcher.
+
 ### User Interface & Diagnostics
 - **Comprehensive Error Diagnoser:** Automatically analyzes startup and runtime failures (port conflicts, SELinux blocks, database stalls, or corrupted files) and displays clear recovery instructions.
 - **Network Hub:** Live display of local loopback (`127.0.0.1`), local Wi-Fi LAN IP, and Tailscale VPN CGNAT (`100.x.x.x`) addresses with 1-tap copy buttons.
 - **Button Rate Limiting & Touch Feedback:** Prevents duplicate service invocations with debounced actions and immediate visual state transitions (`STARTING...`, `RUNNING`, `STOPPING...`).
 - **Dual Log Console:** Real-time log terminal with auto-scroll and direct on-disk Serilog log viewer for troubleshooting.
 - **Permissions Dashboard:** Live status badges (All-Files Access, Battery Optimization Exemption, Notifications) with 1-tap deep links to system settings.
-- **Collapsible Settings Drawers:** Clean accordion drawers for Transcoding & Hardware Codecs and System Components to keep the interface uncluttered.
+- **Collapsible Settings Drawers:** Clean accordion drawers for Transcoding & Hardware Codecs, Backup & Restore, and System Components to keep the interface uncluttered.
 
 ---
 
@@ -89,6 +98,11 @@ Fishbowl integrates tested native binaries and runtimes compiled for the Android
 | **Jellyfin Media Server Core** | `12.1.0` (ARM64) | Core media server runtime (`jellyfin.dll`), library indexing, playback reporting, and REST API | [GPLv3](https://github.com/jellyfin/jellyfin) |
 | **Microsoft .NET Runtime Engine** | `10.0.12` (ARM64) | High-performance managed JIT execution host located in `lib/dotnet/` | [MIT](https://github.com/dotnet/runtime) |
 | **Jellyfin FFmpeg Transcoder** | `7.1.4-Jellyfin` | Native ARM64 binary located in `opt/jellyfin/bin/ffmpeg` for media remuxing, thumbnail generation, and audio transcoding | [GPLv3 / LGPLv3](https://www.ffmpeg.org/legal.html) |
+| **Radarr** | `6.4.4` (ARM64) | Automated movie collection manager and metadata grabber | [GPLv3](https://github.com/Radarr/Radarr) |
+| **Sonarr** | `4.0.9` (ARM64) | Smart TV series collection manager and automated indexer coordinator | [GPLv3](https://github.com/Sonarr/Sonarr) |
+| **Prowlarr** | `1.21.2` (ARM64) | Unified torrent indexer proxy manager integrating with Radarr and Sonarr | [GPLv3](https://github.com/Prowlarr/Prowlarr) |
+| **Transmission Daemon** | `4.1.3` (ARM64 Bionic) | Headless native BitTorrent download client with RPC management | [GPLv2 / GPLv3](https://github.com/transmission/transmission) |
+| **Seerr** | `2.2.0` (Node.js) | Media discovery, request management, and user voting portal for Jellyfin | [MIT](https://github.com/fallenbagel/jellyseerr) |
 | **SQLite3 Database Driver** | `3.46.1` (`libe_sqlite3.so`) | Embedded relational database engine storing user library catalogs, metadata, and watch progress | [Public Domain](https://sqlite.org) |
 | **Fontconfig & FreeType Engines** | `libfontconfig.so` / `libfreetype.so` | Native C libraries used by FFmpeg for video subtitle burn-in and font shaping | [FTL / GPLv2](https://freetype.org) |
 | **OpenSSL Security & TLS Stack** | OpenSSL `3.x` (`libcrypto.so` / `libssl.so`) | Cryptographic engine managing local HTTPS sockets and secure outbound metadata requests | [Apache 2.0](https://www.openssl.org) |
@@ -106,6 +120,7 @@ All server state is strictly contained inside Fishbowl's private application pac
 | **Config (`--configdir`)** | `/data/data/com.fishbowl.app/files/home/.config/jellyfin` | Server XML configuration files (`system.xml`, `network.xml`) |
 | **Cache (`--cachedir`)** | `/data/data/com.fishbowl.app/files/home/.cache/jellyfin` | Image thumbnail caches, fanart, and temporary transcode chunks |
 | **Logs (`--logdir`)** | `/data/data/com.fishbowl.app/files/home/.local/share/jellyfin/log` | On-disk Serilog log files accessible via the in-app Disk Log viewer |
+| **Services Directory** | `/data/data/com.fishbowl.app/files/home/services` | Companion binaries and managed modules (`radarr`, `sonarr`, `prowlarr`, `seerr`) |
 
 ---
 
@@ -126,11 +141,23 @@ Playback capabilities depend on client capabilities, network throughput, and ava
 
 Jellyfin requires direct read access to your media files. Fishbowl provides dedicated storage tools under **Settings → Media Storage & Folders** to browse, verify, and copy paths for Jellyfin libraries.
 
+### Standard Media Storage Structure
+Fishbowl automatically provisions a clean media scaffolding under `/storage/emulated/0/FishbowlMedia/`:
+```text
+/storage/emulated/0/FishbowlMedia/
+├── Movies/                # Radarr movie library root
+├── TV Shows/              # Sonarr TV series library root
+├── Music/                 # Lidarr / user music library root
+└── Downloads/             # Isolated download staging
+    ├── radarr/            # Radarr movie download target
+    └── sonarr/            # Sonarr episode download target
+```
+
 ### Internal Storage
 Grant the All-Files Storage Access permission when prompted, then select your media directory, such as:
-- `/storage/emulated/0/Movies`
-- `/storage/emulated/0/Music`
-- `/storage/emulated/0/Download`
+- `/storage/emulated/0/FishbowlMedia/Movies`
+- `/storage/emulated/0/FishbowlMedia/TV Shows`
+- `/storage/emulated/0/FishbowlMedia/Music`
 
 ### USB OTG & External MicroSD Storage
 Android 11+ OEM security restricts untrusted application UIDs from traversing raw kernel mount points (`/mnt/media_rw/`). Fishbowl resolves this through two accessible methods:
@@ -146,6 +173,23 @@ Tapping **[ COPY PATH FOR JELLYFIN ]** verifies folder contents before copying t
 - Alerts if the directory does not exist on disk.
 - Alerts if Android SELinux blocks native read access, offering a 1-tap redirect to the guaranteed app data folder.
 - Alerts if 0 media files are detected, advising you to add video or audio files before initiating a library scan in Jellyfin.
+
+---
+
+## 1-Tap Backup & Restore
+
+Under **Settings → 6. Backup & Restore System**, Fishbowl provides complete disaster recovery and device migration:
+
+- **Create Backup:** Aggregates and compresses all application configurations, databases, and keys into a timestamped archive:
+  ```text
+  /storage/emulated/0/FishbowlMedia/Backups/fishbowl_backup_YYYYMMDD_HHmmss.tar.gz
+  ```
+- **Included in Backups:**
+  - Jellyfin server configuration, users, libraries, and SQLite state (`~/.config/jellyfin`, `~/.local/share/jellyfin`)
+  - Radarr, Sonarr, Prowlarr, and Lidarr configurations and SQLite catalogs (`~/.config/Radarr`, `~/.config/Sonarr`, etc.)
+  - Transmission daemon settings and torrent resume state (`~/.config/transmission-daemon`)
+  - Seerr preferences and database (`~/.config/seerr`)
+- **Restore:** Select any previous `.tar.gz` archive with 1-tap restoration, automated service restart, and database integrity verification.
 
 ---
 
@@ -232,6 +276,9 @@ Fishbowl is an unofficial community project and is not supported, maintained, or
 This project is licensed under the [GNU General Public License v3.0](LICENSE.md). For complete third-party attributions, component licenses, and GPLv3 Section 6 corresponding source disclosures, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 - **Jellyfin:** Licensed under GNU General Public License v3.0.
+- **Radarr / Sonarr / Prowlarr / Lidarr:** Licensed under GNU General Public License v3.0.
+- **Transmission:** Licensed under GNU General Public License v2.0 / v3.0.
+- **Seerr (Jellyseerr):** Licensed under the MIT License.
 - **Termux Components:** Licensed under GNU General Public License v3.0 / Apache 2.0 / MIT.
 - **.NET Runtime:** Licensed under the MIT License.
 - **FFmpeg Engine:** Licensed under GNU General Public License v3.0 / LGPL v3.0 (built without `--enable-nonfree`).
