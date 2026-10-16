@@ -2,7 +2,7 @@
 
 <!DOCTYPE resources [
     <!ENTITY TERMUX_PACKAGE_NAME "com.fishbowl.app">
-    <!ENTITY TERMUX_APP_NAME "Fishbowl">
+    <!ENTITY TERMUX_APP_NAME "FishBowl">
     <!ENTITY TERMUX_API_APP_NAME "Termux:API">
     <!ENTITY TERMUX_BOOT_APP_NAME "Termux:Boot">
     <!ENTITY TERMUX_FLOAT_APP_NAME "Termux:Float">
@@ -14,9 +14,13 @@
 <resources>
 
     <string name="application_name">&TERMUX_APP_NAME;</string>
-    <string name="jellyfindroid_name">Fishbowl</string>
-    <string name="shared_user_label">Fishbowl user</string>
+    <string name="fishbowl_name">FishBowl</string>
+    <string name="shared_user_label">FishBowl user</string>
     <string name="permission_run_command_label">Run commands in &TERMUX_APP_NAME; environment</string>
+    <string name="fishbowl_widget_name">FishBowl Server Control</string>
+    <string name="fishbowl_widget_desc">Start, restart, stop, and monitor FishBowl and companion media services with live runtime.</string>
+    <string name="fishbowl_services_widget_name">FishBowl Services</string>
+    <string name="fishbowl_services_widget_desc">Glanceable service logos to individually start and stop installed media daemons.</string>
     <string name="permission_run_command_description">execute arbitrary commands within &TERMUX_APP_NAME;
         environment and access files</string>
 

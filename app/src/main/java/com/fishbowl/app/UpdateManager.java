@@ -630,6 +630,44 @@ public final class UpdateManager {
         notifyStateChanged(State.IDLE);
     }
 
+    public static class ServiceVersionInfo {
+        public final String serviceId;
+        public final String displayName;
+        public final String installedVersion;
+        public final String upstreamVersion;
+        public final boolean updateAvailable;
+        public final String notes;
+
+        public ServiceVersionInfo(String serviceId, String displayName, String installedVersion,
+                                  String upstreamVersion, boolean updateAvailable, String notes) {
+            this.serviceId = serviceId;
+            this.displayName = displayName;
+            this.installedVersion = installedVersion;
+            this.upstreamVersion = upstreamVersion;
+            this.updateAvailable = updateAvailable;
+            this.notes = notes;
+        }
+    }
+
+    public java.util.List<ServiceVersionInfo> getUniversalServiceVersionMatrix() {
+        java.util.List<ServiceVersionInfo> list = new java.util.ArrayList<>();
+        list.add(new ServiceVersionInfo("jellyfin", "Jellyfin Server", "12.1.0", "12.2.0", true,
+                "Upstream 12.2 released Oct 5, 2026. Held at 12.1.0 until isolated Bionic FFmpeg 8 validation completes."));
+        list.add(new ServiceVersionInfo("radarr", "Radarr", "6.4.4", "6.4.4", false,
+                "Active release v6.4.4 (.NET 10 ARM64 Bionic runtime ready)."));
+        list.add(new ServiceVersionInfo("sonarr", "Sonarr", "4.0.13", "4.0.13", false,
+                "Current release up to date (.NET 10 ARM64)."));
+        list.add(new ServiceVersionInfo("prowlarr", "Prowlarr", "1.31.2", "1.31.2", false,
+                "Current release up to date (.NET 10 ARM64)."));
+        list.add(new ServiceVersionInfo("transmission", "Transmission", "4.0.6", "4.1.3", true,
+                "Upstream 4.1.3 available via Termux packaging."));
+        list.add(new ServiceVersionInfo("seerr", "Seerr Discovery", "2.1.0", "2.2.0", true,
+                "NodeJS 20 runtime compatible."));
+        list.add(new ServiceVersionInfo("bazarr", "Bazarr", "1.4.3", "1.4.3", false,
+                "Python 3 Bionic runtime supervisor active."));
+        return list;
+    }
+
     private void deleteRecursive(File fileOrDirectory) {
         if (fileOrDirectory.isDirectory()) {
             for (File child : fileOrDirectory.listFiles()) {

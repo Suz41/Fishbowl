@@ -8,7 +8,7 @@ Fishbowl runs Jellyfin natively inside the Android user space without virtualiza
 |                                                                         |
 |  +-------------------------------------------------------------------+  |
 |  |                     Fishbowl UI Shell                           |  |
-|  |   JellyfinDroidActivity (3-Tab Pixel UI / Home / Logs / Settings)  |  |
+|  |   FishbowlActivity (4-Tab Pixel UI / Home / Services / Activity / Settings) |  |
 |  |   JellyfinWebActivity   (Hardware-Accelerated WebView Client)     |  |
 |  |   JellyfinStorageActivity (SAF Document Tree File Bridge)         |  |
 |  +-------------------------------------------------------------------+  |
