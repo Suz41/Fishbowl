@@ -19,7 +19,7 @@ import java.util.Locale;
 
 public final class JellyfinEncodingConfig {
     private static final String TAG = "JellyfinEncodingConfig";
-    private static final String PREF_NAME = "jellyfindroid_transcoding";
+    private static final String PREF_NAME = "fishbowl_transcoding";
 
     public static final String MODE_AUTO = "auto";
     public static final String HW_ACCEL_NONE = "none";

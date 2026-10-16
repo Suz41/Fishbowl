@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/services_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg_card"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:padding="6dp">
+
+    <!-- 1. Jellyfin -->
+    <LinearLayout
+        android:id="@+id/svc_container_jellyfin"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_margin="2dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/svc_tile_jellyfin"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/widget_service_tile_bg">
+
+            <ImageView
+                android:id="@+id/svc_icon_jellyfin"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_service_jellyfin" />
+
+            <ImageView
+                android:id="@+id/svc_dot_jellyfin"
+                android:layout_width="5dp"
+                android:layout_height="5dp"
+                android:layout_gravity="top|end"
+                android:layout_marginEnd="4dp"
+                android:layout_marginTop="4dp"
+                android:src="@drawable/widget_status_dot_red" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- 2. Radarr -->
+    <LinearLayout
+        android:id="@+id/svc_container_radarr"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_margin="2dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/svc_tile_radarr"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/widget_service_tile_bg">
+
+            <ImageView
+                android:id="@+id/svc_icon_radarr"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_service_radarr" />
+
+            <ImageView
+                android:id="@+id/svc_dot_radarr"
+                android:layout_width="5dp"
+                android:layout_height="5dp"
+                android:layout_gravity="top|end"
+                android:layout_marginEnd="4dp"
+                android:layout_marginTop="4dp"
+                android:src="@drawable/widget_status_dot_red" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- 3. Sonarr -->
+    <LinearLayout
+        android:id="@+id/svc_container_sonarr"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_margin="2dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/svc_tile_sonarr"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/widget_service_tile_bg">
+
+            <ImageView
+                android:id="@+id/svc_icon_sonarr"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_service_sonarr" />
+
+            <ImageView
+                android:id="@+id/svc_dot_sonarr"
+                android:layout_width="5dp"
+                android:layout_height="5dp"
+                android:layout_gravity="top|end"
+                android:layout_marginEnd="4dp"
+                android:layout_marginTop="4dp"
+                android:src="@drawable/widget_status_dot_red" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- 4. Prowlarr -->
+    <LinearLayout
+        android:id="@+id/svc_container_prowlarr"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_margin="2dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/svc_tile_prowlarr"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/widget_service_tile_bg">
+
+            <ImageView
+                android:id="@+id/svc_icon_prowlarr"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_service_prowlarr" />
+
+            <ImageView
+                android:id="@+id/svc_dot_prowlarr"
+                android:layout_width="5dp"
+                android:layout_height="5dp"
+                android:layout_gravity="top|end"
+                android:layout_marginEnd="4dp"
+                android:layout_marginTop="4dp"
+                android:src="@drawable/widget_status_dot_red" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- 5. Transmission -->
+    <LinearLayout
+        android:id="@+id/svc_container_transmission"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_margin="2dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/svc_tile_transmission"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/widget_service_tile_bg">
+
+            <ImageView
+                android:id="@+id/svc_icon_transmission"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_service_transmission" />
+
+            <ImageView
+                android:id="@+id/svc_dot_transmission"
+                android:layout_width="5dp"
+                android:layout_height="5dp"
+                android:layout_gravity="top|end"
+                android:layout_marginEnd="4dp"
+                android:layout_marginTop="4dp"
+                android:src="@drawable/widget_status_dot_red" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- 6. Seerr -->
+    <LinearLayout
+        android:id="@+id/svc_container_seerr"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_margin="2dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/svc_tile_seerr"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/widget_service_tile_bg">
+
+            <ImageView
+                android:id="@+id/svc_icon_seerr"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_service_seerr" />
+
+            <ImageView
+                android:id="@+id/svc_dot_seerr"
+                android:layout_width="5dp"
+                android:layout_height="5dp"
+                android:layout_gravity="top|end"
+                android:layout_marginEnd="4dp"
+                android:layout_marginTop="4dp"
+                android:src="@drawable/widget_status_dot_red" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- 7. Bazarr -->
+    <LinearLayout
+        android:id="@+id/svc_container_bazarr"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_margin="2dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/svc_tile_bazarr"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/widget_service_tile_bg">
+
+            <ImageView
+                android:id="@+id/svc_icon_bazarr"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_service_bazarr" />
+
+            <ImageView
+                android:id="@+id/svc_dot_bazarr"
+                android:layout_width="5dp"
+                android:layout_height="5dp"
+                android:layout_gravity="top|end"
+                android:layout_marginEnd="4dp"
+                android:layout_marginTop="4dp"
+                android:src="@drawable/widget_status_dot_red" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- 8. Lidarr -->
+    <LinearLayout
+        android:id="@+id/svc_container_lidarr"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_margin="2dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/svc_tile_lidarr"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/widget_service_tile_bg">
+
+            <ImageView
+                android:id="@+id/svc_icon_lidarr"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_service_lidarr" />
+
+            <ImageView
+                android:id="@+id/svc_dot_lidarr"
+                android:layout_width="5dp"
+                android:layout_height="5dp"
+                android:layout_gravity="top|end"
+                android:layout_marginEnd="4dp"
+                android:layout_marginTop="4dp"
+                android:src="@drawable/widget_status_dot_red" />
+        </FrameLayout>
+    </LinearLayout>
+
+</LinearLayout>

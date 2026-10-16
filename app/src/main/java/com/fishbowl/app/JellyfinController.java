@@ -750,8 +750,15 @@ public class JellyfinController {
                     long uptime = (serverStartTimeMs > 0) ? (System.currentTimeMillis() - serverStartTimeMs) / 1000 : 0;
 
                     if (stopRequested) {
-                        appendLogLocked("Jellyfin stopped normally (exit " + exitCode + ")");
-                        setStateLocked(State.STOPPED);
+                        if (exitCode == 137 || exitCode == 143) {
+                            appendLogLocked("Jellyfin force-killed upon user stop request (exit " + exitCode + ")");
+                            setStateLocked(State.STOPPED);
+                            recordKillEvent(ctx, "Manual Force-Stop (destroyForcibly / exit " + exitCode + ")", exitCode, uptime);
+                        } else {
+                            appendLogLocked("Jellyfin stopped normally (exit " + exitCode + ")");
+                            setStateLocked(State.STOPPED);
+                            recordKillEvent(ctx, "Manual Stop by User (exit " + exitCode + ")", exitCode, uptime);
+                        }
                     } else {
                         long freeMb = getAvailableInternalStorageMb();
                         boolean diskFull = freeMb < 50;

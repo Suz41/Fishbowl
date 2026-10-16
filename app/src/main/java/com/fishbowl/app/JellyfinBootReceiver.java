@@ -22,8 +22,7 @@ public class JellyfinBootReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
 
-        SharedPreferences prefs =
-                context.getSharedPreferences("jellyfindroid", Context.MODE_PRIVATE);
+        SharedPreferences prefs = context.getSharedPreferences("fishbowl", Context.MODE_PRIVATE);
         boolean autoStart = prefs.getBoolean("auto_start", false);
 
         Log.i(TAG, "Boot completed — auto_start=" + autoStart);

@@ -138,7 +138,7 @@ public class JellyfinBootstrapper {
     /**
      * Phase 14: Cross-package migration is NOT possible due to Android UID sandbox isolation.
      * /data/data/com.termux/ (UID u0_a1598) cannot be read by com.fishbowl.app (UID u0_a1599).
-     * JellyfinDroid starts with a fresh independent server instance under its own sandbox.
+     * FishBowl starts with a fresh independent server instance under its own sandbox.
      * Users must reconfigure their Jellyfin server (add libraries, create accounts, etc.).
      */
 

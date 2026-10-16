@@ -38,6 +38,7 @@ android {
         implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
 
         implementation "org.apache.commons:commons-compress:1.26.0"
+        implementation "org.tukaani:xz:1.9"
         implementation project(":terminal-view")
         implementation project(":termux-shared")
     }
@@ -46,8 +47,8 @@ android {
         applicationId "com.fishbowl.app"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 101411
-        versionName "1.4.7-beta.3"
+        versionCode 101413
+        versionName "1.4.8-beta.2"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)

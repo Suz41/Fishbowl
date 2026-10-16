@@ -38,6 +38,7 @@ import androidx.core.view.WindowInsetsControllerCompat;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -45,24 +46,30 @@ import java.util.Set;
 
 public final class JellyfinStorageActivity extends AppCompatActivity {
 
-    private static final int COLOR_BG = Color.parseColor("#121316");
-    private static final int COLOR_SURFACE = Color.parseColor("#1E2025");
-    private static final int COLOR_ELEVATED = Color.parseColor("#272930");
-    private static final int COLOR_ACCENT = Color.parseColor("#00A4DC");
-    private static final int COLOR_TEXT_PRIMARY = Color.parseColor("#E6E8EE");
-    private static final int COLOR_TEXT_MUTED = Color.parseColor("#9AA0A6");
-    private static final int COLOR_SUCCESS = Color.parseColor("#81C784");
-    private static final int COLOR_WARNING = Color.parseColor("#FFB74D");
-    private static final int COLOR_DANGER = Color.parseColor("#E57373");
+    private static final int COLOR_BG = Color.parseColor("#000000");
+    private static final int COLOR_SURFACE = Color.parseColor("#0C0D10");
+    private static final int COLOR_ELEVATED = Color.parseColor("#15161A");
+    private static final int COLOR_BORDER = Color.argb(12, 255, 255, 255);
+    private static final int COLOR_ACCENT = Color.parseColor("#10B981");
+    private static final int COLOR_TEXT_PRIMARY = Color.parseColor("#F4F4F5");
+    private static final int COLOR_TEXT_MUTED = Color.parseColor("#71717A");
+    private static final int COLOR_SUCCESS = Color.parseColor("#10B981");
+    private static final int COLOR_WARNING = Color.parseColor("#F59E0B");
+    private static final int COLOR_DANGER = Color.parseColor("#EF4444");
 
     private SharedPreferences prefs;
-    private String activeSelectedPath = "/storage/emulated/0/Movies";
+    private String activeSelectedPath = "/storage/emulated/0/FishbowlMedia/Movies";
     private LinearLayout drivesContainer;
     private LinearLayout savedListContainer;
     private TextView activePathText;
     private TextView activePathStatus;
     private Button btnCopyActivePath;
     private View permissionBanner;
+    private LinearLayout diagRowsContainer;
+    private LinearLayout stagingRowsContainer;
+    private TextView stagingRetentionText;
+    private TextView stagingStatusBadge;
+    private MediaStorageManager.StagingAnalysisReport lastStagingReport;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private final ActivityResultLauncher<Intent> folderPickerLauncher =
@@ -100,7 +107,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setupSystemBars();
 
-        prefs = getSharedPreferences("jellyfindroid_storage", MODE_PRIVATE);
+        prefs = getSharedPreferences("fishbowl_storage", MODE_PRIVATE);
         String savedLast = prefs.getString("last_selected_path", null);
         if (savedLast != null && !savedLast.trim().isEmpty()) {
             activeSelectedPath = StorageDriveHelper.normalizeStoragePath(savedLast);
@@ -108,7 +115,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 prefs.edit().putString("last_selected_path", activeSelectedPath).apply();
             }
         } else {
-            activeSelectedPath = "/storage/emulated/0/Movies";
+            activeSelectedPath = "/storage/emulated/0/FishbowlMedia/Movies";
         }
 
         setContentView(buildView());
@@ -149,14 +156,20 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         LinearLayout headerRow = new LinearLayout(this);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
-        headerRow.setPadding(0, 0, 0, dp(14));
+        headerRow.setPadding(0, 0, 0, dp(18));
 
         TextView btnBack = new TextView(this);
-        btnBack.setText("< BACK");
-        btnBack.setTextSize(13);
-        btnBack.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        btnBack.setTextColor(COLOR_ACCENT);
-        btnBack.setPadding(0, dp(6), dp(14), dp(6));
+        btnBack.setText("←");
+        btnBack.setTextSize(18);
+        btnBack.setGravity(Gravity.CENTER);
+        btnBack.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        btnBack.setTextColor(COLOR_TEXT_PRIMARY);
+        btnBack.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(18), COLOR_ACCENT));
+        LinearLayout.LayoutParams pBack = new LinearLayout.LayoutParams(dp(36), dp(36));
+        pBack.rightMargin = dp(14);
+        btnBack.setLayoutParams(pBack);
+        btnBack.setClickable(true);
+        btnBack.setFocusable(true);
         btnBack.setOnClickListener(v -> finish());
         headerRow.addView(btnBack);
 
@@ -164,14 +177,14 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         titleCol.setOrientation(LinearLayout.VERTICAL);
 
         TextView title = new TextView(this);
-        title.setText("Media Storage & Folders");
+        title.setText("Media Manager");
         title.setTextSize(20);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         title.setTextColor(COLOR_TEXT_PRIMARY);
         titleCol.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Select your media path and copy directly into Jellyfin");
+        subtitle.setText("Storage folders, library roots & staging");
         subtitle.setTextSize(12);
         subtitle.setTextColor(COLOR_TEXT_MUTED);
         titleCol.addView(subtitle);
@@ -186,13 +199,19 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         // Active Selected Path Card (Prominent at the top)
         root.addView(buildActivePathCard());
 
+        // Fishbowl Media Storage Diagnostics Card (v1.4.8-beta.1)
+        root.addView(buildFishbowlMediaDiagnosticsCard());
+
+        // Staging & Duplicate Lifecycle Manager Card (Spec Sections 15, 16, 17)
+        root.addView(buildStagingAndDuplicateManagerCard());
+
         // Detected Storage Drives Card
         TextView drivesHeader = new TextView(this);
         drivesHeader.setText("CONNECTED STORAGE DRIVES");
-        drivesHeader.setTextSize(12);
+        drivesHeader.setTextSize(11);
         drivesHeader.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        drivesHeader.setTextColor(COLOR_ACCENT);
-        drivesHeader.setPadding(0, dp(18), 0, dp(8));
+        drivesHeader.setTextColor(COLOR_TEXT_MUTED);
+        drivesHeader.setPadding(0, dp(20), 0, dp(8));
         root.addView(drivesHeader);
 
         drivesContainer = new LinearLayout(this);
@@ -202,10 +221,10 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         // Saved Folders Section
         TextView savedHeader = new TextView(this);
         savedHeader.setText("SAVED MEDIA PATHS");
-        savedHeader.setTextSize(12);
+        savedHeader.setTextSize(11);
         savedHeader.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        savedHeader.setTextColor(COLOR_ACCENT);
-        savedHeader.setPadding(0, dp(18), 0, dp(8));
+        savedHeader.setTextColor(COLOR_TEXT_MUTED);
+        savedHeader.setPadding(0, dp(20), 0, dp(8));
         root.addView(savedHeader);
 
         savedListContainer = new LinearLayout(this);
@@ -269,83 +288,106 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         return banner;
     }
 
+    private View createKeyValueRow(String label, String value) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(4), 0, dp(4));
+
+        TextView tvLabel = new TextView(this);
+        tvLabel.setText(label);
+        tvLabel.setTextSize(12.5f);
+        tvLabel.setTextColor(COLOR_TEXT_MUTED);
+        row.addView(tvLabel, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        TextView tvVal = new TextView(this);
+        tvVal.setText(value);
+        tvVal.setTextSize(12.5f);
+        tvVal.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        tvVal.setTextColor(COLOR_TEXT_PRIMARY);
+        row.addView(tvVal);
+
+        return row;
+    }
+
+    private View createHairlineDivider() {
+        View v = new View(this);
+        v.setBackgroundColor(Color.argb(12, 255, 255, 255));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(1));
+        lp.topMargin = dp(6);
+        lp.bottomMargin = dp(6);
+        v.setLayoutParams(lp);
+        return v;
+    }
+
     private View buildActivePathCard() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        card.setBackground(createCardDrawable(COLOR_SURFACE, dp(14)));
+        card.setBackground(createCardDrawable(COLOR_SURFACE, dp(12)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = dp(14);
+        card.setLayoutParams(lp);
 
         LinearLayout activeHeaderRow = new LinearLayout(this);
         activeHeaderRow.setOrientation(LinearLayout.HORIZONTAL);
         activeHeaderRow.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView header = new TextView(this);
-        header.setText("ACTIVE SELECTED MEDIA PATH");
-        header.setTextSize(12);
+        header.setText("ACTIVE JELLYFIN MEDIA PATH");
+        header.setTextSize(10.5f);
         header.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        header.setTextColor(COLOR_ACCENT);
+        header.setTextColor(COLOR_TEXT_MUTED);
+        header.setLetterSpacing(0.08f);
         activeHeaderRow.addView(header, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
-        Button btnEnterPath = createPillSmallButton("ENTER PATH", COLOR_ELEVATED, COLOR_ACCENT);
+        Button btnEnterPath = createPillSmallButton("ENTER PATH", COLOR_ELEVATED, COLOR_TEXT_PRIMARY);
         btnEnterPath.setOnClickListener(v -> showCustomPathDialog(activeSelectedPath));
         activeHeaderRow.addView(btnEnterPath);
         card.addView(activeHeaderRow);
 
-        // Path Display Box
-        LinearLayout pathBox = new LinearLayout(this);
-        pathBox.setOrientation(LinearLayout.VERTICAL);
-        pathBox.setPadding(dp(12), dp(10), dp(12), dp(10));
-        pathBox.setBackground(createCardDrawable(COLOR_ELEVATED, dp(10)));
-        LinearLayout.LayoutParams pBox = new LinearLayout.LayoutParams(-1, -2);
-        pBox.topMargin = dp(10);
-        pBox.bottomMargin = dp(12);
-        pathBox.setLayoutParams(pBox);
-
         activePathText = new TextView(this);
         activePathText.setText(activeSelectedPath);
-        activePathText.setTextSize(14);
+        activePathText.setTextSize(13f);
         activePathText.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         activePathText.setTextColor(COLOR_TEXT_PRIMARY);
+        activePathText.setPadding(0, dp(10), 0, dp(2));
         activePathText.setTextIsSelectable(true);
-        pathBox.addView(activePathText);
+        card.addView(activePathText);
 
         activePathStatus = new TextView(this);
-        activePathStatus.setTextSize(11);
-        activePathStatus.setPadding(0, dp(4), 0, 0);
-        pathBox.addView(activePathStatus);
+        activePathStatus.setTextSize(11f);
+        activePathStatus.setTextColor(COLOR_SUCCESS);
+        activePathStatus.setPadding(0, dp(2), 0, dp(12));
+        card.addView(activePathStatus);
 
-        card.addView(pathBox);
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
 
-        // Primary Prominent COPY Button
         btnCopyActivePath = new Button(this);
         btnCopyActivePath.setText("COPY PATH FOR JELLYFIN");
-        btnCopyActivePath.setTextSize(14);
+        btnCopyActivePath.setTextSize(12);
         btnCopyActivePath.setAllCaps(false);
         btnCopyActivePath.setTextColor(Color.WHITE);
         btnCopyActivePath.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        btnCopyActivePath.setBackground(createButtonRippleDrawable(COLOR_ACCENT, dp(10), Color.WHITE));
-        LinearLayout.LayoutParams pBtn = new LinearLayout.LayoutParams(-1, dp(44));
-        btnCopyActivePath.setLayoutParams(pBtn);
+        btnCopyActivePath.setBackground(createButtonRippleDrawable(COLOR_ACCENT, dp(8), Color.WHITE));
         btnCopyActivePath.setOnClickListener(v -> copyPathToClipboard(activeSelectedPath));
-        card.addView(btnCopyActivePath);
+        actionRow.addView(btnCopyActivePath, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
 
-        // Secondary Action: Open Jellyfin Web UI
+        View aSp = new View(this);
+        actionRow.addView(aSp, new LinearLayout.LayoutParams(dp(8), 1));
+
         Button btnOpenJellyfin = new Button(this);
-        btnOpenJellyfin.setText("OPEN JELLYFIN WEB UI");
-        btnOpenJellyfin.setTextSize(13);
+        btnOpenJellyfin.setText("OPEN WEB UI");
+        btnOpenJellyfin.setTextSize(12);
         btnOpenJellyfin.setAllCaps(false);
         btnOpenJellyfin.setTextColor(COLOR_TEXT_PRIMARY);
         btnOpenJellyfin.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        btnOpenJellyfin.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(10), COLOR_ACCENT));
-        LinearLayout.LayoutParams pOpen = new LinearLayout.LayoutParams(-1, dp(40));
-        pOpen.topMargin = dp(8);
-        btnOpenJellyfin.setLayoutParams(pOpen);
-        btnOpenJellyfin.setOnClickListener(v -> {
-            Intent intent = new Intent(this, JellyfinWebActivity.class);
-            startActivity(intent);
-        });
-        card.addView(btnOpenJellyfin);
+        btnOpenJellyfin.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(8), COLOR_TEXT_PRIMARY));
+        btnOpenJellyfin.setOnClickListener(v -> startActivity(new Intent(this, JellyfinWebActivity.class)));
+        actionRow.addView(btnOpenJellyfin, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
 
+        card.addView(actionRow);
         return card;
     }
 
@@ -353,16 +395,16 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        card.setBackground(createCardDrawable(COLOR_SURFACE, dp(14)));
+        card.setBackground(createCardDrawable(COLOR_SURFACE, dp(12)));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
         p.topMargin = dp(16);
         card.setLayoutParams(p);
 
         TextView guideTitle = new TextView(this);
         guideTitle.setText("How to Add in Jellyfin (3 Steps)");
-        guideTitle.setTextSize(14);
+        guideTitle.setTextSize(13);
         guideTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        guideTitle.setTextColor(COLOR_ACCENT);
+        guideTitle.setTextColor(COLOR_TEXT_PRIMARY);
         guideTitle.setPadding(0, 0, 0, dp(8));
         card.addView(guideTitle);
 
@@ -373,11 +415,485 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 "3. Paste the path into the Folder field and tap Ok."
         );
         steps.setTextSize(12);
-        steps.setTextColor(COLOR_TEXT_PRIMARY);
+        steps.setTextColor(COLOR_TEXT_MUTED);
         steps.setLineSpacing(dp(4), 1.15f);
         card.addView(steps);
 
         return card;
+    }
+
+    private View buildFishbowlMediaDiagnosticsCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        card.setBackground(createCardDrawable(COLOR_SURFACE, dp(12)));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
+        p.topMargin = dp(14);
+        card.setLayoutParams(p);
+
+        // Header Row
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView title = new TextView(this);
+        title.setText("STORAGE STATUS & HARDLINKS");
+        title.setTextSize(10.5f);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        title.setTextColor(COLOR_TEXT_MUTED);
+        title.setLetterSpacing(0.08f);
+        headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        TextView badge = createBadge("SHARED INTERNAL", COLOR_ELEVATED, COLOR_SUCCESS);
+        headerRow.addView(badge);
+        card.addView(headerRow);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setText("Unified media root at /storage/emulated/0/FishbowlMedia");
+        subtitle.setTextSize(11f);
+        subtitle.setTextColor(COLOR_TEXT_MUTED);
+        subtitle.setPadding(0, dp(4), 0, dp(10));
+        card.addView(subtitle);
+
+        diagRowsContainer = new LinearLayout(this);
+        diagRowsContainer.setOrientation(LinearLayout.VERTICAL);
+        diagRowsContainer.setPadding(0, 0, 0, dp(12));
+        card.addView(diagRowsContainer);
+
+        // Action Buttons Row: [PROBE STORAGE] [MIGRATE LEGACY] [SELECT MOVIES]
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button btnDiagProbe = createPillSmallButton("PROBE STORAGE", COLOR_ELEVATED, COLOR_TEXT_PRIMARY);
+        btnDiagProbe.setOnClickListener(v -> triggerDiagnosticsProbe(true));
+        btnRow.addView(btnDiagProbe, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
+
+        View s1 = new View(this);
+        btnRow.addView(s1, new LinearLayout.LayoutParams(dp(6), 1));
+
+        Button btnDiagMigrate = createPillSmallButton("MIGRATE LEGACY", COLOR_ELEVATED, COLOR_WARNING);
+        btnDiagMigrate.setOnClickListener(v -> triggerLegacyMigration());
+        btnRow.addView(btnDiagMigrate, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
+
+        View s2 = new View(this);
+        btnRow.addView(s2, new LinearLayout.LayoutParams(dp(6), 1));
+
+        Button btnDiagSelectMovies = createPillSmallButton("SELECT MOVIES", COLOR_ELEVATED, COLOR_ACCENT);
+        btnDiagSelectMovies.setOnClickListener(v -> {
+            String moviesPath = MediaStorageManager.DEFAULT_MEDIA_ROOT + "/Movies";
+            setActivePath(moviesPath, true);
+            refreshUI();
+            Toast.makeText(this, "Selected " + moviesPath + " for Jellyfin", Toast.LENGTH_SHORT).show();
+        });
+        btnRow.addView(btnDiagSelectMovies, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
+
+        card.addView(btnRow);
+
+        // Initial probe in background
+        triggerDiagnosticsProbe(false);
+
+        return card;
+    }
+
+    private View buildStagingAndDuplicateManagerCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        card.setBackground(createCardDrawable(COLOR_SURFACE, dp(12)));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
+        p.topMargin = dp(14);
+        card.setLayoutParams(p);
+
+        // Header Row: Title + Badge
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView title = new TextView(this);
+        title.setText("DOWNLOAD STAGING & DUPLICATES");
+        title.setTextSize(10.5f);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        title.setTextColor(COLOR_TEXT_MUTED);
+        title.setLetterSpacing(0.08f);
+        headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        stagingStatusBadge = createBadge("SCANNING", COLOR_ELEVATED, COLOR_WARNING);
+        headerRow.addView(stagingStatusBadge);
+        card.addView(headerRow);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setText("Preserves Transmission seeding and monitors temporary downloads");
+        subtitle.setTextSize(11f);
+        subtitle.setTextColor(COLOR_TEXT_MUTED);
+        subtitle.setPadding(0, dp(4), 0, dp(10));
+        card.addView(subtitle);
+
+        stagingRowsContainer = new LinearLayout(this);
+        stagingRowsContainer.setOrientation(LinearLayout.VERTICAL);
+        stagingRowsContainer.setPadding(0, 0, 0, dp(10));
+        card.addView(stagingRowsContainer);
+
+        // Retention Policy Row: Label + Change Button
+        LinearLayout policyRow = new LinearLayout(this);
+        policyRow.setOrientation(LinearLayout.HORIZONTAL);
+        policyRow.setGravity(Gravity.CENTER_VERTICAL);
+        policyRow.setPadding(dp(10), dp(6), dp(10), dp(6));
+        policyRow.setBackground(createBorderedRoundedDrawable(COLOR_ELEVATED, COLOR_BORDER, 1, 8));
+        LinearLayout.LayoutParams pPol = new LinearLayout.LayoutParams(-1, -2);
+        pPol.bottomMargin = dp(12);
+        policyRow.setLayoutParams(pPol);
+
+        stagingRetentionText = new TextView(this);
+        stagingRetentionText.setTextSize(11f);
+        stagingRetentionText.setTextColor(COLOR_TEXT_MUTED);
+        stagingRetentionText.setText("Retention: " + MediaStorageManager.getInstance(this).getRetentionPolicyDisplayName());
+        policyRow.addView(stagingRetentionText, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        Button btnChangePolicy = createPillSmallButton("CHANGE", COLOR_SURFACE, COLOR_ACCENT);
+        btnChangePolicy.setOnClickListener(v -> showRetentionPolicyDialog());
+        policyRow.addView(btnChangePolicy, new LinearLayout.LayoutParams(dp(75), dp(30)));
+        card.addView(policyRow);
+
+        // Action Buttons Row: [SCAN STAGING] [CLEAN SAFE] [REVIEW FILES]
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button btnScan = createPillSmallButton("SCAN STAGING", COLOR_ELEVATED, COLOR_TEXT_PRIMARY);
+        btnScan.setOnClickListener(v -> triggerStagingScan(true));
+        btnRow.addView(btnScan, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
+
+        View s1 = new View(this);
+        btnRow.addView(s1, new LinearLayout.LayoutParams(dp(6), 1));
+
+        Button btnClean = createPillSmallButton("CLEAN SAFE", COLOR_ELEVATED, COLOR_SUCCESS);
+        btnClean.setOnClickListener(v -> triggerCleanSafeDuplicates());
+        btnRow.addView(btnClean, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
+
+        View s2 = new View(this);
+        btnRow.addView(s2, new LinearLayout.LayoutParams(dp(6), 1));
+
+        Button btnReview = createPillSmallButton("REVIEW FILES", COLOR_ELEVATED, COLOR_ACCENT);
+        btnReview.setOnClickListener(v -> showReviewFilesDialog());
+        btnRow.addView(btnReview, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
+
+        card.addView(btnRow);
+
+        // Initial scan in background
+        triggerStagingScan(false);
+
+        return card;
+    }
+
+    private void triggerStagingScan(boolean showToast) {
+        new Thread(() -> {
+            MediaStorageManager msm = MediaStorageManager.getInstance(getApplicationContext());
+            MediaStorageManager.StagingAnalysisReport report = msm.scanStagingAndDuplicates();
+            lastStagingReport = report;
+            mainHandler.post(() -> {
+                if (stagingRowsContainer != null) {
+                    stagingRowsContainer.removeAllViews();
+                    stagingRowsContainer.addView(createKeyValueRow("Files in Staging", report.items.size() + " files"));
+                    stagingRowsContainer.addView(createHairlineDivider());
+                    stagingRowsContainer.addView(createKeyValueRow("Logical Download Size", MediaStorageManager.formatBytes(report.totalStagingLogicalBytes)));
+                    stagingRowsContainer.addView(createHairlineDivider());
+                    stagingRowsContainer.addView(createKeyValueRow("Physical Disk Usage", MediaStorageManager.formatBytes(report.totalStagingPhysicalBytes)));
+                    stagingRowsContainer.addView(createHairlineDivider());
+                    stagingRowsContainer.addView(createKeyValueRow("Hardlink Deduplicated", report.hardlinkCount + " files (0 extra space)"));
+                    stagingRowsContainer.addView(createHairlineDivider());
+                    stagingRowsContainer.addView(createKeyValueRow("Physical Duplicates", report.duplicateCount + " files (" + MediaStorageManager.formatBytes(report.totalPotentialSavingsBytes) + ")"));
+                    stagingRowsContainer.addView(createHairlineDivider());
+                    stagingRowsContainer.addView(createKeyValueRow("Protected Seeding Torrents", report.activeSeedingCount + " active"));
+                    stagingRowsContainer.addView(createHairlineDivider());
+                    stagingRowsContainer.addView(createKeyValueRow("Safe to Clean", report.safeToCleanCount + " files (" + MediaStorageManager.formatBytes(report.safeToCleanBytes) + ")"));
+                }
+
+                if (stagingStatusBadge != null) {
+                    if (report.safeToCleanCount > 0) {
+                        stagingStatusBadge.setText("CLEANABLE (" + report.safeToCleanCount + ")");
+                        stagingStatusBadge.setTextColor(COLOR_WARNING);
+                    } else if (report.duplicateCount == 0 && report.orphanCount == 0) {
+                        stagingStatusBadge.setText("OPTIMIZED");
+                        stagingStatusBadge.setTextColor(COLOR_SUCCESS);
+                    } else {
+                        stagingStatusBadge.setText("PROTECTED");
+                        stagingStatusBadge.setTextColor(COLOR_ACCENT);
+                    }
+                }
+
+                if (stagingRetentionText != null) {
+                    stagingRetentionText.setText("Retention: " + msm.getRetentionPolicyDisplayName());
+                }
+
+                if (showToast) {
+                    Toast.makeText(this, "Staging scan complete (" + report.items.size() + " files analyzed)", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }).start();
+    }
+
+    private void showRetentionPolicyDialog() {
+        MediaStorageManager msm = MediaStorageManager.getInstance(this);
+        String current = msm.getRetentionPolicy();
+
+        String[] options = new String[]{
+                "Immediate upon import (Zero duplicates - Recommended)",
+                "Keep until torrent removed",
+                "Keep for 24 hours after import",
+                "Keep for 3 days after import",
+                "Keep for 7 days after import",
+                "Manual cleanup only"
+        };
+        String[] values = new String[]{
+                MediaStorageManager.RETENTION_IMMEDIATE_ON_IMPORT,
+                MediaStorageManager.RETENTION_UNTIL_TORRENT_REMOVED,
+                MediaStorageManager.RETENTION_24_HOURS,
+                MediaStorageManager.RETENTION_3_DAYS,
+                MediaStorageManager.RETENTION_7_DAYS,
+                MediaStorageManager.RETENTION_MANUAL
+        };
+
+        int selectedIndex = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(current)) {
+                selectedIndex = i;
+                break;
+            }
+        }
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Download Staging Retention Policy")
+                .setSingleChoiceItems(options, selectedIndex, (dialog, which) -> {
+                    msm.setRetentionPolicy(values[which]);
+                    dialog.dismiss();
+                    if (stagingRetentionText != null) {
+                        stagingRetentionText.setText("Retention: " + msm.getRetentionPolicyDisplayName());
+                    }
+                    triggerStagingScan(false);
+                    Toast.makeText(this, "Updated to: " + options[which], Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void triggerCleanSafeDuplicates() {
+        if (lastStagingReport == null || lastStagingReport.safeToCleanCount == 0) {
+            Toast.makeText(this, "No staging files currently safe for automated cleanup.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Clean Safe Staging Files")
+                .setMessage("Found " + lastStagingReport.safeToCleanCount + " staging files (" +
+                        MediaStorageManager.formatBytes(lastStagingReport.safeToCleanBytes) + ") that have verified permanent library copies and are not actively seeding in Transmission.\n\n" +
+                        "Active seeding torrents will remain protected.\n\nProceed with cleanup?")
+                .setPositiveButton("CLEAN FILES", (dialog, which) -> {
+                    new Thread(() -> {
+                        MediaStorageManager msm = MediaStorageManager.getInstance(getApplicationContext());
+                        int cleaned = msm.cleanupAllSafeDuplicates(false);
+                        mainHandler.post(() -> {
+                            Toast.makeText(this, "Cleaned " + cleaned + " staging files safely.", Toast.LENGTH_LONG).show();
+                            triggerStagingScan(false);
+                            triggerDiagnosticsProbe(false);
+                        });
+                    }).start();
+                })
+                .setNegativeButton("CANCEL", null)
+                .show();
+    }
+
+    private void showReviewFilesDialog() {
+        if (lastStagingReport == null || lastStagingReport.items.isEmpty()) {
+            Toast.makeText(this, "No files found in Downloads/radarr or Downloads/sonarr.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(dp(16), dp(12), dp(16), dp(12));
+        sv.addView(container);
+
+        androidx.appcompat.app.AlertDialog dialog = new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Staging Files (" + lastStagingReport.items.size() + ")")
+                .setView(sv)
+                .setPositiveButton("CLOSE", null)
+                .create();
+
+        for (MediaStorageManager.StagingMediaItem item : lastStagingReport.items) {
+            LinearLayout itemCard = new LinearLayout(this);
+            itemCard.setOrientation(LinearLayout.VERTICAL);
+            itemCard.setPadding(dp(12), dp(10), dp(12), dp(10));
+            itemCard.setBackground(createCardDrawable(COLOR_ELEVATED, dp(10)));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = dp(10);
+            itemCard.setLayoutParams(lp);
+
+            // Row 1: Category + Size + Status Tag
+            LinearLayout topRow = new LinearLayout(this);
+            topRow.setOrientation(LinearLayout.HORIZONTAL);
+            topRow.setGravity(Gravity.CENTER_VERTICAL);
+
+            TextView catText = new TextView(this);
+            catText.setText(item.category.toUpperCase(Locale.US) + " • " + MediaStorageManager.formatBytes(item.sizeBytes));
+            catText.setTextSize(11);
+            catText.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+            catText.setTextColor(COLOR_ACCENT);
+            topRow.addView(catText, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+            int badgeColor = item.isHardlink ? COLOR_SUCCESS :
+                    (item.isPhysicalDuplicate ? COLOR_WARNING : (item.isOrphan ? COLOR_TEXT_MUTED : COLOR_ACCENT));
+            String badgeLabel = item.isHardlink ? "HARDLINK" :
+                    (item.isPhysicalDuplicate ? "DUPLICATE" : (item.isOrphan ? "ORPHAN" : "ACTIVE DL"));
+            TextView b = createBadge(badgeLabel, COLOR_SURFACE, badgeColor);
+            topRow.addView(b);
+            itemCard.addView(topRow);
+
+            // Row 2: Filename
+            TextView fileName = new TextView(this);
+            fileName.setText(item.stagingFile.getName());
+            fileName.setTextSize(12);
+            fileName.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+            fileName.setTextColor(COLOR_TEXT_PRIMARY);
+            fileName.setPadding(0, dp(4), 0, dp(2));
+            itemCard.addView(fileName);
+
+            // Row 3: Library Copy Info
+            TextView libInfo = new TextView(this);
+            libInfo.setTextSize(10);
+            if (item.libraryFile != null) {
+                libInfo.setText("Library Copy: " + item.libraryFile.getName());
+                libInfo.setTextColor(COLOR_SUCCESS);
+            } else {
+                libInfo.setText("No verified library copy");
+                libInfo.setTextColor(COLOR_TEXT_MUTED);
+            }
+            itemCard.addView(libInfo);
+
+            // Row 4: Transmission Torrent Info
+            TextView trInfo = new TextView(this);
+            trInfo.setTextSize(10);
+            trInfo.setTextColor(item.isSeeding ? COLOR_ACCENT : COLOR_TEXT_MUTED);
+            trInfo.setText("Torrent: " + item.torrentStatusString + (item.torrentName != null ? (" (" + item.torrentName + ")") : ""));
+            trInfo.setPadding(0, dp(2), 0, dp(6));
+            itemCard.addView(trInfo);
+
+            // Row 5: Action Buttons
+            LinearLayout itemBtnRow = new LinearLayout(this);
+            itemBtnRow.setOrientation(LinearLayout.HORIZONTAL);
+
+            Button btnKeep = createPillSmallButton("KEEP BOTH", COLOR_SURFACE, COLOR_TEXT_PRIMARY);
+            btnKeep.setOnClickListener(v -> Toast.makeText(this, "Preserved in staging: " + item.stagingFile.getName(), Toast.LENGTH_SHORT).show());
+            itemBtnRow.addView(btnKeep, new LinearLayout.LayoutParams(0, dp(30), 1.0f));
+
+            if (item.isPhysicalDuplicate) {
+                View sep1 = new View(this);
+                itemBtnRow.addView(sep1, new LinearLayout.LayoutParams(dp(4), 1));
+
+                Button btnRepair = createPillSmallButton("HARDLINK", COLOR_SURFACE, COLOR_ACCENT);
+                btnRepair.setOnClickListener(v -> {
+                    new Thread(() -> {
+                        boolean ok = MediaStorageManager.getInstance(getApplicationContext()).repairDuplicateWithHardlink(item);
+                        mainHandler.post(() -> {
+                            if (ok) {
+                                Toast.makeText(this, "Repaired duplicate via hardlink!", Toast.LENGTH_SHORT).show();
+                            } else {
+                                Toast.makeText(this, "Hardlink repair failed: " + MediaStorageManager.getInstance(getApplicationContext()).getHardlinkSupportReason(), Toast.LENGTH_LONG).show();
+                            }
+                            dialog.dismiss();
+                            triggerStagingScan(false);
+                            triggerDiagnosticsProbe(false);
+                        });
+                    }).start();
+                });
+                itemBtnRow.addView(btnRepair, new LinearLayout.LayoutParams(0, dp(30), 1.0f));
+            }
+
+            View sep2 = new View(this);
+            itemBtnRow.addView(sep2, new LinearLayout.LayoutParams(dp(4), 1));
+
+            Button btnRemove = createPillSmallButton("REMOVE", COLOR_SURFACE, COLOR_DANGER);
+            btnRemove.setOnClickListener(v -> {
+                if (item.isSeeding) {
+                    new androidx.appcompat.app.AlertDialog.Builder(this)
+                            .setTitle("Active Torrent Warning")
+                            .setMessage("Warning: " + item.stagingFile.getName() + " is currently seeding in Transmission. Deleting it will stop seeding for this torrent.\n\nForce delete anyway?")
+                            .setPositiveButton("FORCE DELETE", (d2, w2) -> {
+                                new Thread(() -> {
+                                    MediaStorageManager.getInstance(getApplicationContext()).cleanupStagingFile(item, true);
+                                    mainHandler.post(() -> {
+                                        dialog.dismiss();
+                                        triggerStagingScan(false);
+                                        triggerDiagnosticsProbe(false);
+                                        Toast.makeText(this, "Removed staging copy", Toast.LENGTH_SHORT).show();
+                                    });
+                                }).start();
+                            })
+                            .setNegativeButton("CANCEL", null)
+                            .show();
+                } else {
+                    new Thread(() -> {
+                        MediaStorageManager.getInstance(getApplicationContext()).cleanupStagingFile(item, false);
+                        mainHandler.post(() -> {
+                            dialog.dismiss();
+                            triggerStagingScan(false);
+                            triggerDiagnosticsProbe(false);
+                            Toast.makeText(this, "Removed staging copy", Toast.LENGTH_SHORT).show();
+                        });
+                    }).start();
+                }
+            });
+            itemBtnRow.addView(btnRemove, new LinearLayout.LayoutParams(0, dp(30), 1.0f));
+
+            itemCard.addView(itemBtnRow);
+            container.addView(itemCard);
+        }
+
+        dialog.show();
+    }
+
+    private void triggerDiagnosticsProbe(boolean showToast) {
+        new Thread(() -> {
+            MediaStorageManager msm = MediaStorageManager.getInstance(getApplicationContext());
+            MediaStorageManager.StorageDiagnosticResult diag = msm.runDiagnostics();
+            mainHandler.post(() -> {
+                if (diagRowsContainer != null) {
+                    diagRowsContainer.removeAllViews();
+                    diagRowsContainer.addView(createKeyValueRow("Unified Media Root", diag.mediaRoot));
+                    diagRowsContainer.addView(createHairlineDivider());
+                    diagRowsContainer.addView(createKeyValueRow("Filesystem Access", (diag.rootReadable && diag.rootWritable) ? "Read & Write Verified" : "Permission Check Required"));
+                    diagRowsContainer.addView(createHairlineDivider());
+                    diagRowsContainer.addView(createKeyValueRow("Hardlink Deduplication", diag.hardlinkSupported ? "Supported (Zero space duplicates)" : "Single-copy storage"));
+                    diagRowsContainer.addView(createHairlineDivider());
+                    diagRowsContainer.addView(createKeyValueRow("Jellyfin Access", diag.jellyfinAccess ? "Verified" : "Missing Folders"));
+                    diagRowsContainer.addView(createHairlineDivider());
+                    diagRowsContainer.addView(createKeyValueRow("Companion Services", (diag.transmissionAccess && diag.radarrAccess && diag.sonarrAccess) ? "All Connected" : "Partial Access"));
+                }
+                if (showToast) {
+                    Toast.makeText(this, "Storage Probe Complete", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }).start();
+    }
+
+    private void triggerLegacyMigration() {
+        new Thread(() -> {
+            MediaStorageManager msm = MediaStorageManager.getInstance(getApplicationContext());
+            if (!msm.hasLegacyMedia()) {
+                mainHandler.post(() -> {
+                    Toast.makeText(this, "No legacy media found to migrate.", Toast.LENGTH_SHORT).show();
+                });
+                return;
+            }
+            mainHandler.post(() -> {
+                Toast.makeText(this, "Starting migration of legacy media...", Toast.LENGTH_SHORT).show();
+            });
+            MediaStorageManager.MigrationResult res = msm.performLegacyMigration();
+            mainHandler.post(() -> {
+                Toast.makeText(this, res.message, Toast.LENGTH_LONG).show();
+                triggerDiagnosticsProbe(false);
+                refreshUI();
+            });
+        }).start();
     }
 
     private void refreshUI() {
@@ -395,6 +911,8 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         updateActivePathVerification();
         renderDrives();
         renderSavedFolders();
+        triggerDiagnosticsProbe(false);
+        triggerStagingScan(false);
     }
 
     private void updateActivePathVerification() {
@@ -560,7 +1078,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 View sp2 = new View(this);
                 actionsRow2.addView(sp2, new LinearLayout.LayoutParams(dp(8), 1));
 
-                Button btnProvision = createSmallActionButton("⭐ SET UP LIKE INTERNAL");
+                Button btnProvision = createSmallActionButton("PROVISION MEDIA FOLDERS");
                 btnProvision.setOnClickListener(v -> {
                     List<String> created = StorageDriveHelper.provisionAppDataMediaFolders(this, drive.rootPath);
                     String primaryTarget = drive.rootPath + "/Android/data/" + getPackageName() + "/files/Movies";
@@ -891,7 +1409,23 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     private GradientDrawable createCardDrawable(int bgColor, int radiusPx) {
         GradientDrawable gd = new GradientDrawable();
         gd.setColor(bgColor);
-        gd.setCornerRadius(radiusPx);
+        gd.setCornerRadius(radiusPx > 0 ? radiusPx : dp(8));
+        gd.setStroke(dp(1), COLOR_BORDER);
+        return gd;
+    }
+
+    private GradientDrawable createRoundedFillDrawable(int bgColor, int radiusPx) {
+        GradientDrawable gd = new GradientDrawable();
+        gd.setColor(bgColor);
+        gd.setCornerRadius(radiusPx > 0 ? radiusPx : dp(8));
+        return gd;
+    }
+
+    private GradientDrawable createBorderedRoundedDrawable(int bgColor, int borderColor, int borderWidthDp, int radiusDp) {
+        GradientDrawable gd = new GradientDrawable();
+        gd.setColor(bgColor);
+        gd.setCornerRadius(dp(radiusDp > 0 ? radiusDp : 8));
+        gd.setStroke(dp(borderWidthDp), borderColor);
         return gd;
     }
 
@@ -913,7 +1447,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         tv.setTextSize(10);
         tv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         tv.setTextColor(textColor);
-        tv.setBackground(createCardDrawable(bgColor, dp(6)));
+        tv.setBackground(createCardDrawable(bgColor, dp(8)));
         tv.setPadding(dp(8), dp(4), dp(8), dp(4));
         return tv;
     }
@@ -937,7 +1471,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     private View createStorageProgressBar(long freeBytes, long totalBytes) {
         LinearLayout track = new LinearLayout(this);
         track.setOrientation(LinearLayout.HORIZONTAL);
-        track.setBackground(createCardDrawable(COLOR_ELEVATED, dp(3)));
+        track.setBackground(createRoundedFillDrawable(COLOR_ELEVATED, dp(3)));
         LinearLayout.LayoutParams pTrack = new LinearLayout.LayoutParams(-1, dp(6));
         pTrack.topMargin = dp(6);
         pTrack.bottomMargin = dp(4);
@@ -948,7 +1482,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         usedRatio = Math.max(0.02f, Math.min(1.0f, usedRatio));
 
         View fill = new View(this);
-        fill.setBackground(createCardDrawable(COLOR_ACCENT, dp(3)));
+        fill.setBackground(createRoundedFillDrawable(COLOR_ACCENT, dp(3)));
         LinearLayout.LayoutParams pFill = new LinearLayout.LayoutParams(0, -1, usedRatio);
         fill.setLayoutParams(pFill);
         track.addView(fill);
@@ -968,7 +1502,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         b.setAllCaps(false);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         b.setTextColor(COLOR_TEXT_PRIMARY);
-        b.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(10), COLOR_ACCENT));
+        b.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(8), COLOR_ACCENT));
         return b;
     }
 
@@ -979,9 +1513,9 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         b.setAllCaps(false);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         b.setTextColor(textColor);
-        b.setBackground(createButtonRippleDrawable(bgColor, dp(10), Color.WHITE));
+        b.setBackground(createButtonRippleDrawable(bgColor, dp(8), Color.WHITE));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, dp(40));
-        p.topMargin = dp(4);
+        p.topMargin = dp(6);
         b.setLayoutParams(p);
         return b;
     }

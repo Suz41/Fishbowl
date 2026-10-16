@@ -39,7 +39,8 @@
         android:allowBackup="false"
         android:banner="@drawable/banner"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/jellyfindroid_name"
+        android:label="@string/fishbowl_name"
+        android:hardwareAccelerated="true"
         android:largeHeap="true"
         android:requestLegacyExternalStorage="true"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -63,11 +64,11 @@
         </activity>
 
         <activity
-            android:name="com.fishbowl.app.JellyfinDroidActivity"
+            android:name="com.fishbowl.app.FishbowlActivity"
             android:exported="true"
-            android:label="@string/jellyfindroid_name"
+            android:label="@string/fishbowl_name"
             android:launchMode="singleTop"
-            android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation"
+            android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode|fontScale|fontWeightAdjustment|locale|layoutDirection"
             android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -78,8 +79,18 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name="com.fishbowl.app.JellyfinStorageActivity" android:exported="true" android:label="Media Storage" android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
-        <activity android:name="com.fishbowl.app.JellyfinWebActivity" android:exported="false" android:label="Jellyfin" android:configChanges="orientation|screenSize" />
+        <activity
+            android:name="com.fishbowl.app.JellyfinStorageActivity"
+            android:exported="true"
+            android:label="Media Storage"
+            android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode|fontScale|fontWeightAdjustment|locale|layoutDirection"
+            android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
+        <activity
+            android:name="com.fishbowl.app.JellyfinWebActivity"
+            android:exported="true"
+            android:label="Fishbowl Web"
+            android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar"
+            android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode|fontScale|fontWeightAdjustment|locale|layoutDirection" />
 
         <activity-alias
             android:name=".HomeActivity"
@@ -220,6 +231,37 @@
             android:name=".shared.activities.ReportActivity$ReportActivityBroadcastReceiver"
             android:exported="false" />
 
+        <!-- Phase 10: Android Home Screen Widget Provider -->
+        <receiver
+            android:name="com.fishbowl.app.widget.FishbowlWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.fishbowl.app.widget.ACTION_WIDGET_UPDATE" />
+                <action android:name="com.fishbowl.app.widget.ACTION_TOGGLE_SERVER" />
+                <action android:name="com.fishbowl.app.widget.ACTION_START_ALL" />
+                <action android:name="com.fishbowl.app.widget.ACTION_RESTART_ALL" />
+                <action android:name="com.fishbowl.app.widget.ACTION_STOP_ALL" />
+                <action android:name="com.fishbowl.app.widget.ACTION_PIN_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/fishbowl_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name="com.fishbowl.app.widget.FishbowlServicesWidgetProvider"
+            android:label="@string/fishbowl_services_widget_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.fishbowl.app.widget.ACTION_SERVICES_WIDGET_UPDATE" />
+                <action android:name="com.fishbowl.app.widget.ACTION_TOGGLE_SERVICE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/fishbowl_services_widget_info" />
+        </receiver>
 
         <service
             android:name=".app.TermuxService"
