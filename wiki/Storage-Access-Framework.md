@@ -2,17 +2,18 @@
 
 Starting with Android 11, the operating system enforces strict Scoped Storage boundaries to restrict applications from traversing filesystem paths outside their designated boundaries.
 
-In Fishbowl v1.4.6, the storage architecture was consolidated into a unified POSIX-first model with active library protection.
+Fishbowl consolidates storage architecture into a unified POSIX-first model with active library protection.
 
 ---
 
 ## Storage Modes & Access Methods
 
 ### 1. Internal Storage (Direct POSIX)
-Grant **All-Files Access** (`MANAGE_EXTERNAL_STORAGE`) when prompted in Fishbowl Settings. You can select standard media directories with one-tap quick chips:
-* `/storage/emulated/0/Movies`
-* `/storage/emulated/0/Music`
-* `/storage/emulated/0/Download`
+Grant **All-Files Access** (`MANAGE_EXTERNAL_STORAGE`) when prompted in Fishbowl Settings. Fishbowl provisions standardized media directories under `/storage/emulated/0/FishbowlMedia/`:
+* `/storage/emulated/0/FishbowlMedia/Movies`
+* `/storage/emulated/0/FishbowlMedia/TV Shows`
+* `/storage/emulated/0/FishbowlMedia/Music`
+* `/storage/emulated/0/FishbowlMedia/Downloads`
 
 ### 2. Custom Path Selection (`[ ENTER PATH ]`)
 Tap `[ ENTER PATH ]` on the Active Media Path card to type or paste any custom storage path (such as nested folders, symlinks, or custom download locations). Fishbowl validates the path in real time and reports detected media file counts.

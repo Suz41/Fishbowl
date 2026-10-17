@@ -7,34 +7,33 @@ assignees: ''
 
 ---
 
-## 🐛 Bug Description
-A clear and concise description of what the bug is.
+## Bug Description
+A clear and concise description of the issue.
 
-## 📋 Steps to Reproduce
-Steps to reproduce the behavior:
+## Steps to Reproduce
 1. Go to '...'
 2. Click on '...'
 3. Scroll down to '...'
-4. See error
+4. Observe the failure
 
-## ✅ Expected Behavior
-A clear and concise description of what you expected to happen.
+## Expected Behavior
+A clear and concise description of what was expected to happen.
 
-## ❌ Actual Behavior
-What actually happens instead.
+## Actual Behavior
+A clear and concise description of what actually happened.
 
-## 📱 Device Information
-- **Device**: (e.g., Pixel 6, Samsung Galaxy S21)
-- **Android Version**: (e.g., 12, 13)
-- **App Version**: (e.g., 1.4.0)
-- **ARM64 Support**: Yes/No
+## Device Information
+- Device Model: (e.g., Google Pixel 8, Samsung Galaxy S24, Vivo X90)
+- Android Version: (e.g., Android 14, API 34)
+- App Version: (e.g., v1.4.8-beta.2)
+- Architecture: ARM64 (aarch64)
 
-## 📸 Screenshots/Logs
-If applicable, add screenshots or error logs to help explain the problem.
+## Diagnostic Logs and Screenshots
+If applicable, attach relevant screenshots or log extracts (from the in-app Disk Log viewer or adb logcat).
 
+```text
+Paste relevant log output here
 ```
-Paste any relevant logs or error messages here
-```
 
-## 🔍 Additional Context
-Add any other context about the problem here.
+## Additional Context
+Add any other context, storage drive configurations, or network topology details here.
