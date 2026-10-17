@@ -10,13 +10,14 @@ An unofficial standalone server host and media stack launcher for Jellyfin on An
 [![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-12.1.0-purple.svg)](https://jellyfin.org)
 [![Runtime](https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
 [![Platform](https://img.shields.io/badge/Android-ARM64-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
-[![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE.md)
+[![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE)
 
 > [!IMPORTANT]
 > **Disclaimer, Community Notice & Security Transparency:**
 > - **Unofficial Project & Upstream Protection:** Fishbowl is an independent, unofficial community project and is **not affiliated with, maintained by, or endorsed by the official Jellyfin project**.
-> - **Strict Anti-Piracy & Content Disclaimer:** Fishbowl is strictly a personal media server launcher, library organizer, and self-hosting utility. It is intended solely for managing personal media collections, legally owned digital backups, public domain archives, and open-access/Creative Commons distributions. Fishbowl **does not provide, host, stream, index, or distribute any media files or copyrighted content**. The developers do not endorse, facilitate, or condone copyright infringement or unauthorized downloading. Users are solely responsible for adhering to applicable copyright and intellectual property laws in their jurisdictions.
-> - **Voluntary Use & Security Transparency:** Nobody is forced or pressured to download or install this application. Because this is a community-driven project, we encourage security-conscious use and independent review.
+> - **Strictly Homelab & Personal Self-Hosting (Not For Piracy):** Fishbowl is engineered strictly for personal homelab experimentation, private media server management, and self-hosted library organization. It is strictly **NOT** designed, intended, or provided for piracy, copyright infringement, or unauthorized downloading. Fishbowl **does not provide, host, stream, index, or distribute any media files or copyrighted content**. Users are solely responsible for ensuring that all media complies with applicable copyright and intellectual property laws in their jurisdictions.
+> - **AI-Assisted Development Disclosure:** Developed using agentic AI coding assistants with rigorous human review and empirical on-device testing. The compiled app is 100% offline with zero cloud AI telemetry.
+> - **Voluntary Use & Security Transparency:** Nobody is forced or pressured to download or install this application. Because this is a community-driven project, we encourage security-conscious use, code auditing, and independent review.
 > - **Reproducible Source Builds:** You do not have to trust pre-compiled release binaries. All build configurations are open and reproducible; you can build the application directly from clean source.
 > - **Mobile Hardware & Thermals:** Smartphones and TV boxes are not rackmount servers. Continuous high-bitrate video transcoding generates significant heat and drains battery. For sustained 24/7 use, keep the device cooled and on AC power.
 > - **Provided "As-Is":** Distributed freely under the GNU General Public License v3.0 (GPLv3) for personal experimentation and home-lab use without commercial warranties or service-level agreements.
@@ -28,7 +29,7 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 ## Quick Start (3 Steps)
 
 1. **Download & Install:**
-   - **Latest Production Release:** Download [**Fishbowl v1.4.8-beta.2**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2) (`Fishbowl-v1.4.8-beta.2-release-universal.apk`).
+   - **Latest Production Release:** Download [**Fishbowl v1.4.8-beta.2**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2) (`Fishbowl-v1.4.8-beta.2-release-universal.apk`) — see [RELEASE.md](RELEASE.md) for the complete technical changelog and checksum verification.
      - **SHA-256:** `8AC58D02E84BD53D2FF2F53E2CE39139BB42FEE7ED0AB9B5F66070B78E65AC4C`
 2. **Launch & Start:**
    - Open Fishbowl on your device. The server will start automatically. When the status indicator turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
@@ -61,6 +62,9 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 - [Building From Source](#building-from-source)
 - [Troubleshooting](#troubleshooting)
 - [Disclosures & License](#disclosures--license)
+  - [Content, Homelab Scope & Anti-Piracy Policy](#content-homelab-scope--anti-piracy-policy)
+  - [AI-Assisted Development & Architectural Transparency](#ai-assisted-development--architectural-transparency)
+  - [Project License & Disclosures](#project-license--disclosures)
 
 ---
 
@@ -272,18 +276,32 @@ Install new release APKs directly over your existing installation. Fishbowl pres
 
 ## Disclosures & License
 
-### Content & Anti-Piracy Policy
+### Content, Homelab Scope & Anti-Piracy Policy
 
-Fishbowl does not host, provide, distribute, index, or link to any copyrighted media, video streams, or unauthorized content:
-- **Zero Bundled Content:** The software ships exclusively as hosting infrastructure and automation orchestration daemons. No audio files, television shows, movies, proprietary video streams, or copyright-protected codecs are included, hosted, or provided.
-- **Lawful & Personal Use Only:** Fishbowl is engineered strictly for personal self-hosting and private media organization (e.g. personal home recordings, legally digitized backups of media owned by the user, public domain archives, and Creative Commons productions).
-- **User Responsibility:** The project maintainers do not operate indexers, torrent trackers, or public content distribution services, and strictly disclaim any liability for how users configure third-party tools. End users bear 100% legal responsibility for ensuring they possess all requisite rights, licenses, and authorizations for any media files managed or streamed on their servers under local and international intellectual property laws.
+Fishbowl is engineered exclusively as a **personal homelab server hosting and media library organization utility**. It is strictly **NOT designed, intended, licensed, or provided for piracy, unauthorized file-sharing, or copyright infringement**.
+
+- **Homelab & Personal Self-Hosting Use Only:** Fishbowl is created for homelab enthusiasts, self-hosters, and developers seeking to run local server infrastructure on low-power ARM64 Android hardware. Intended lawful use cases include:
+  - Streaming private family videos, home recordings, and personal photo/music archives.
+  - Hosting legally acquired, digitized personal backups of physical media owned by the user.
+  - Curating open-access cultural media, public domain films, and Creative Commons audio/video works.
+  - Experimenting with ARM64 POSIX process management, Bionic C runtime hosting, and local home networking.
+- **Zero Bundled Content:** The software ships exclusively as hosting infrastructure and automation orchestration daemons. No movies, television shows, audio files, torrent streams, or proprietary copyright-protected media are included, indexed, hosted, or provided.
+- **Absolute Anti-Piracy Position:** The developers strictly condemn copyright infringement and illegal content distribution. Fishbowl does not operate, link to, or affiliate with any torrent indexers, public trackers, or unauthorized repositories.
+- **User Legal Responsibility:** Users are 100% legally responsible for verifying that all media content stored on or streamed from their personal server complies with all applicable local, national, and international intellectual property and copyright laws.
+
+### AI-Assisted Development & Architectural Transparency
+
+In the spirit of complete engineering honesty and transparency:
+
+- **AI-Assisted Engineering:** The Fishbowl application codebase, build automation scripts, and packaging routines were developed utilizing conversational agentic AI coding assistants (including Google Antigravity and Gemini models), directed, reviewed, and iteratively validated by human developers on physical ARM64 Android hardware.
+- **100% Offline Runtime & Zero AI Telemetry:** While AI tools assisted in code authoring and refactoring, the compiled Fishbowl runtime application is **completely offline and contains zero AI models, zero cloud LLM connections, zero analytics SDKs, and zero telemetry**. All experimental in-app AI features (such as earlier Copilot and AI Fix prototypes) have been completely decommissioned and removed from the codebase to ensure an isolated, secure, and privacy-first local server.
+- **Open Code Auditing & Reproducibility:** Because this project uses an AI-assisted development workflow, we place paramount importance on open scrutiny. Every line of source code, patch, and build script is openly published in this repository. Users are actively encouraged to inspect the code, decompile the APK, monitor background sockets, and verify builds independently by compiling from source via `./gradlew assembleRelease`.
 
 ### Project License & Disclosures
 
 Fishbowl is an unofficial community project and is not supported, maintained, or endorsed by the official Jellyfin project.
 
-This project is licensed under the [GNU General Public License v3.0](LICENSE.md). For complete third-party attributions, component licenses, and GPLv3 Section 6 corresponding source disclosures, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+This project is licensed under the [GNU General Public License v3.0](LICENSE). For complete third-party attributions, component licenses, and GPLv3 Section 6 corresponding source disclosures, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 - **Jellyfin:** Licensed under GNU General Public License v3.0.
 - **Radarr / Sonarr / Prowlarr / Lidarr:** Licensed under GNU General Public License v3.0.

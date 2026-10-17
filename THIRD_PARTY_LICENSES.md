@@ -1,6 +1,6 @@
 # Third-Party Licenses & Open Source Attributions
 
-Fishbowl is free software licensed under the **GNU General Public License v3.0 (GPLv3)**. See [`LICENSE`](LICENSE) or [`LICENSE.md`](LICENSE.md) for the complete license terms.
+Fishbowl is free software licensed under the **GNU General Public License v3.0 (GPLv3)**. See [`LICENSE`](LICENSE) for the complete license terms.
 
 This document provides full attribution, licensing details, and source code disclosures for all open-source libraries, runtimes, and bundled binary components included in or interfaced with Fishbowl.
 
