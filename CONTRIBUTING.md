@@ -70,7 +70,7 @@ cd Fishbowl
 ./gradlew assembleDebug
 
 # Install directly to connected device
-adb install -r -d app/build/outputs/apk/debug/Fishbowl-v1.4.6-debug-arm64-v8a.apk
+adb install -r -d app/build/outputs/apk/debug/Fishbowl-v1.4.8-beta.2-debug-arm64-v8a.apk
 
 # Compile production release universal APK
 ./gradlew assembleRelease

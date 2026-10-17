@@ -17,7 +17,7 @@ Many Android devices have aggressive battery management daemons that terminate b
 ## Server Diagnostics & Startup Recovery
 
 ### Q: What should I do if the Error Diagnoser flags a startup failure?
-Fishbowl v1.4.6 includes an automated Error Diagnoser that inspects startup logs and identifies failure causes:
+Fishbowl includes an automated Error Diagnoser that inspects startup logs and identifies failure causes:
 * **Port Conflict (8096 in use):** Occurs if another instance or media server (like Emby) is running on port 8096. Tap **STOP SERVER**, check background apps, or tap **RESTART SERVER**.
 * **SELinux Storage Denial:** Occurs if an invalid or blocked directory is referenced in media folders. Use Fishbowl's Storage manager to verify paths.
 * **Corrupted Bootstrap Files:** If files were corrupted during an interrupted download, go to Settings and perform a clean cache re-extraction.

@@ -10,7 +10,7 @@ Security fixes and compatibility updates are actively maintained on the followin
 
 | Version | Status | Notes |
 | :--- | :--- | :--- |
-| **v1.4.x** (v1.4.7-beta.3 / v1.4.6+) | Supported | Current active production and beta release line |
+| **v1.4.x** (v1.4.8-beta.2+) | Supported | Current active production and beta release line |
 | **< v1.4.0** | Unsupported | Deprecated legacy releases; upgrade to latest |
 
 ---
