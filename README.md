@@ -17,6 +17,17 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL%20v3.0-F1C40F?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/Telemetry-0%25%20Offline-55A9A0?style=flat-square" alt="Offline" />
   <img src="https://img.shields.io/badge/Compliance-Homelab%20Only-34495E?style=flat-square" alt="Homelab" />
+  <a href="https://github.com/Suz41/Fishbowl/stargazers"><img src="https://img.shields.io/github/stars/Suz41/Fishbowl?style=flat-square&logo=github&color=gray" alt="Stars" /></a>
+  <a href="https://github.com/Suz41/Fishbowl/network/members"><img src="https://img.shields.io/github/forks/Suz41/Fishbowl?style=flat-square&logo=github&color=gray" alt="Forks" /></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start-3-steps"><b>Quick Start</b></a> •
+  <a href="#system-architecture"><b>Architecture</b></a> •
+  <a href="#key-features"><b>Features</b></a> •
+  <a href="#service-endpoint--network-port-matrix"><b>Ports & Endpoints</b></a> •
+  <a href="#storage--media-setup"><b>Storage</b></a> •
+  <a href="#star-history"><b>Star History</b></a>
 </p>
 
 > [!IMPORTANT]
@@ -64,12 +75,15 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 - [Bundled Packages & System Components](#bundled-packages--system-components)
   - [Service Endpoint & Network Port Matrix](#service-endpoint--network-port-matrix)
 - [Client Compatibility](#client-compatibility)
+  - [Hardware Codec Capability Matrix](#hardware-codec--playback-capability-matrix)
 - [Storage & Media Setup](#storage--media-setup)
 - [1-Tap Backup & Restore](#1-tap-backup--restore)
 - [Background Operation & Battery Guidance](#background-operation--battery-guidance)
 - [Permissions & Privacy](#permissions--privacy)
 - [Building From Source](#building-from-source)
 - [Troubleshooting](#troubleshooting)
+  - [ADB Command-Line Inspection Reference](#adb-command-line-diagnostics--inspection-reference)
+- [Star History](#star-history)
 - [Disclosures & License](#disclosures--license)
   - [Content, Homelab Scope & Anti-Piracy Policy](#content-homelab-scope--anti-piracy-policy)
   - [AI-Assisted Development & Architectural Transparency](#ai-assisted-development--architectural-transparency)
@@ -223,6 +237,28 @@ Any client compatible with the official Jellyfin server ecosystem can connect to
 
 Playback capabilities depend on client capabilities, network throughput, and available hardware decoding support. For optimal performance on mobile devices, prioritize Direct Play / Direct Stream.
 
+### Hardware Codec & Playback Capability Matrix
+
+<details open>
+<summary><b>Supported Codec Profiles & Transcoding Performance (ARM64)</b></summary>
+<br />
+
+| Codec / Container | Direct Play | Direct Stream (Remux) | CPU Software Transcode | Hardware Acceleration Notes |
+| :--- | :---: | :---: | :---: | :--- |
+| **H.264 / AVC** (`.mp4`, `.mkv`) | Supported | Supported | Supported (Low Load) | Native client hardware decoding supported on virtually all endpoints. |
+| **H.265 / HEVC 8-bit / 10-bit** | Supported | Supported | Supported (Medium Load) | Client Direct Play recommended. 10-bit HDR tone mapping requires higher CPU budget. |
+| **VP9** (`.webm`, `.mkv`) | Supported | Supported | Supported (Medium Load) | Direct Play on modern Chromium web clients and Android TV endpoints. |
+| **AV1** (`.mp4`, `.mkv`) | Supported | Supported | Intensive | Direct Play supported on newer client hardware (AV1 decode capable chips). |
+| **AAC / MP3 / Opus** | Supported | Supported | Negligible Load | Flawless Direct Play across all mobile, TV, and web players. |
+| **FLAC / ALAC** (Lossless) | Supported | Supported | Negligible Load | Bit-perfect streaming; Direct Play on capable clients, remuxed if needed. |
+| **AC3 / E-AC3 (Dolby Digital)** | Supported | Supported | Supported (Light) | Direct Play supported on Android TV and home theater receivers with bitstream passthrough. |
+| **Subtitles (SRT / VTT)** | Supported | Supported | Negligible Load | Direct rendering on client without burning into video stream. |
+| **Subtitles (ASS / SSA / PGS)** | Supported | Supported | Burn-in (CPU Load) | Client Direct Play recommended (e.g. Jellyfin Media Player, Exoplayer). Burn-in requires transcoding. |
+
+> [!TIP]
+> **Performance Optimization:** Configure client playback settings to **Direct Play** maximum bitrate on local Wi-Fi to eliminate server-side CPU transcode overhead and prevent thermal throttling on host Android hardware.
+</details>
+
 ---
 
 ## Storage & Media Setup
@@ -356,6 +392,47 @@ Set Fishbowl's battery setting to **Unrestricted**. Some OEM skins (MIUI, Origin
 
 ### How to update without losing library databases or user accounts
 Install new release APKs directly over your existing installation. Fishbowl preserves your database, configuration files, and user libraries across upgrades. Avoid using "Clear Data" in Android settings unless you intentionally want to reset the app.
+
+### ADB Command-Line Diagnostics & Inspection Reference
+
+<details>
+<summary><b>Operator Terminal Reference (ADB Shell & Diagnostics)</b></summary>
+<br />
+
+For homelab administrators managing or debugging Fishbowl over USB debugging or Wireless ADB (`adb connect <device-ip>:5555`):
+
+```bash
+# Stream real-time native application and service logs
+adb logcat -v time -s Fishbowl:V JellyfinService:V
+
+# Inspect running processes within the Fishbowl application namespace
+adb shell "ps -ef | grep com.fishbowl.app"
+
+# Verify active listening sockets and port bindings
+adb shell "run-as com.fishbowl.app netstat -tlpn"
+
+# Inspect application package storage permission grants
+adb shell "dumpsys package com.fishbowl.app | grep -i permission"
+
+# Verify Android deviceidle / battery optimization whitelist status
+adb shell "dumpsys deviceidle whitelist | grep com.fishbowl.app"
+```
+
+</details>
+
+---
+
+## Star History
+
+<p align="center">
+  <a href="https://star-history.com/#Suz41/Fishbowl&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Suz41/Fishbowl&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Suz41/Fishbowl&type=Date" />
+      <img alt="Fishbowl Star History Chart" src="https://api.star-history.com/svg?repos=Suz41/Fishbowl&type=Date" width="85%" />
+    </picture>
+  </a>
+</p>
 
 ---
 
