@@ -1,16 +1,23 @@
 <p align="center">
-  <img src="art/fishbowl_logo.svg" width="128" height="128" alt="Fishbowl Logo" />
+  <img src="art/fishbowl_logo.svg" width="136" height="136" alt="Fishbowl Logo" />
 </p>
 
-# Fishbowl
+<h1 align="center">Fishbowl</h1>
 
-An unofficial standalone server host and media stack launcher for Jellyfin on Android (ARM64).
+<p align="center">
+  <b>Standalone Media Server Host & Companion Automation Suite for Android ARM64</b><br>
+  <i>Native POSIX execution on Android Bionic libc without containers, root, or virtualization.</i>
+</p>
 
-[![Release](https://img.shields.io/badge/Release-v1.4.8--beta.2-blue.svg)](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2)
-[![Jellyfin Core](https://img.shields.io/badge/Jellyfin%20Core-12.1.0-purple.svg)](https://jellyfin.org)
-[![Runtime](https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4.svg)](https://dotnet.microsoft.com)
-[![Platform](https://img.shields.io/badge/Android-ARM64-3DDC84.svg?logo=android&logoColor=white)](https://android.com)
-[![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2"><img src="https://img.shields.io/badge/Release-v1.4.8--beta.2-00A4DC?style=flat-square" alt="Release" /></a>
+  <a href="https://jellyfin.org"><img src="https://img.shields.io/badge/Jellyfin%20Core-12.1.0-9B59B6?style=flat-square&logo=jellyfin&logoColor=white" alt="Jellyfin" /></a>
+  <a href="https://dotnet.microsoft.com"><img src="https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4?style=flat-square&logo=dotnet&logoColor=white" alt=".NET" /></a>
+  <a href="https://android.com"><img src="https://img.shields.io/badge/Platform-Android%20ARM64-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL%20v3.0-F1C40F?style=flat-square" alt="License" /></a>
+  <img src="https://img.shields.io/badge/Telemetry-0%25%20Offline-55A9A0?style=flat-square" alt="Offline" />
+  <img src="https://img.shields.io/badge/Compliance-Homelab%20Only-34495E?style=flat-square" alt="Homelab" />
+</p>
 
 > [!IMPORTANT]
 > **Project Scope, Compliance Notice & Architectural Transparency:**
@@ -52,10 +59,13 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 ## Table of Contents
 
 - [Quick Start (3 Steps)](#quick-start-3-steps)
+- [System Architecture](#system-architecture)
 - [Key Features](#key-features)
 - [Bundled Packages & System Components](#bundled-packages--system-components)
+  - [Service Endpoint & Network Port Matrix](#service-endpoint--network-port-matrix)
 - [Client Compatibility](#client-compatibility)
 - [Storage & Media Setup](#storage--media-setup)
+- [1-Tap Backup & Restore](#1-tap-backup--restore)
 - [Background Operation & Battery Guidance](#background-operation--battery-guidance)
 - [Permissions & Privacy](#permissions--privacy)
 - [Building From Source](#building-from-source)
@@ -66,6 +76,66 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
   - [Project License & Disclosures](#project-license--disclosures)
 
 ---
+
+## System Architecture
+
+Fishbowl integrates the Android application framework with a native Linux POSIX environment, executing Jellyfin and companion automation daemons directly against Android's Bionic C runtime (`libc.so`):
+
+```mermaid
+flowchart TD
+    subgraph Clients["Client Ecosystem"]
+        TV["Smart TVs (Android TV, Fire TV, Apple TV)"]
+        Mobile["Mobile Clients (Android, iOS, Swiftfin)"]
+        Browser["Web Players (Chromium, Firefox, Desktop)"]
+    end
+
+    subgraph Network["Network Ingress & Discovery"]
+        LAN["Wi-Fi LAN (:8096)"]
+        Localhost["Loopback 127.0.0.1 (:8096)"]
+        Tailscale["Tailscale Mesh CGNAT (100.x.x.x)"]
+    end
+
+    subgraph AndroidHost["Android Host System (Unprivileged User Space)"]
+        direction TB
+        FGS["Foreground Media Service (Ongoing Notification + WakeLock)"]
+        UI["Fishbowl Control Plane (Dashboard, Disk Log Viewer, Settings)"]
+        Widgets["Android Home Widgets (Status & Service Quick-Tiles)"]
+    end
+
+    subgraph Engine["Native POSIX Runtime (Linux Bionic libc)"]
+        DOTNET[".NET 10 CLR Host (ARM64)"]
+        JFN["Jellyfin 12.1.0 Core (jellyfin.dll)"]
+        FFMPEG["Jellyfin FFmpeg 7.1.4 (HLS & Audio Remux)"]
+        SQLITE["SQLite 3.46.1 Database Engine"]
+        
+        DOTNET --> JFN
+        JFN --> FFMPEG
+        JFN --> SQLITE
+    end
+
+    subgraph Automation["Media Automation Stack"]
+        RADARR["Radarr (Movies :7878)"]
+        SONARR["Sonarr (TV Shows :8989)"]
+        PROWLARR["Prowlarr (Indexers :9696)"]
+        TRANS["Transmission 4.1.3 (:9091)"]
+        SEERR["Seerr Discovery (:5055)"]
+        SOLVER["Native FlareSolver (:8191)"]
+    end
+
+    subgraph Storage["Consolidated POSIX Storage Layer"]
+        INT["Internal Storage (/storage/emulated/0/FishbowlMedia/)"]
+        EXT["External Storage (USB OTG / MicroSD Guaranteed App Data)"]
+        BACKUP["1-Tap Disaster Recovery (fishbowl_backup_*.tar.gz)"]
+    end
+
+    Clients --> Network
+    Network --> JFN
+    Network --> Automation
+    AndroidHost --> Engine
+    AndroidHost --> Automation
+    Engine --> Storage
+    Automation --> Storage
+```
 
 ## Key Features
 
@@ -113,6 +183,20 @@ Fishbowl integrates tested native binaries and runtimes compiled for the Android
 | **Unicode & Globalization Engine** | ICU Runtime | Database internationalization and culture-aware metadata sorting and searching | [Unicode-DFS-2016](https://icu.unicode.org) |
 | **Termux Foundation & Shell** | Core Bootstrap & Terminal | Android Bionic process management, isolated POSIX execution, and console terminal viewer | [GPLv3 / Apache 2.0](https://github.com/termux) |
 
+### Service Endpoint & Network Port Matrix
+
+Fishbowl coordinates and monitors the complete self-hosted media lifecycle through local loopback and LAN endpoints:
+
+| Service | Default Port | Protocol / Transport | Engine / Runtime | Operational Role |
+| :--- | :--- | :--- | :--- | :--- |
+| **Jellyfin Core** | `8096` | HTTP / WebSocket | .NET 10 (ARM64) | Primary media streaming, library catalog indexing, and user playback reporting |
+| **Radarr** | `7878` | HTTP / REST API | .NET 10 (ARM64) | Automated movie library management, metadata gathering, and folder organization |
+| **Sonarr** | `8989` | HTTP / REST API | .NET 10 (ARM64) | Television series tracking, episode monitor, and series renaming |
+| **Prowlarr** | `9696` | HTTP / REST API | .NET 10 (ARM64) | Centralized torrent indexer proxy manager syncing with Radarr and Sonarr |
+| **Transmission** | `9091` | HTTP / RPC | Native C (Bionic) | Headless BitTorrent download engine with dedicated staging directory routing |
+| **Seerr** | `5055` | HTTP / WebSocket | Node.js Runtime | Media discovery, user request voting, and Jellyfin library sync |
+| **Native FlareSolver** | `8191` | HTTP (Headless) | Android Chromium Engine | In-app headless challenge solver for Prowlarr indexer queries |
+
 ### Application Package & Directory Layout
 
 All server state is strictly contained inside Fishbowl's private application package namespace (`com.fishbowl.app`):
@@ -149,12 +233,14 @@ Jellyfin requires direct read access to your media files. Fishbowl provides dedi
 Fishbowl automatically provisions a clean media scaffolding under `/storage/emulated/0/FishbowlMedia/`:
 ```text
 /storage/emulated/0/FishbowlMedia/
-├── Movies/                # Radarr movie library root
-├── TV Shows/              # Sonarr TV series library root
-├── Music/                 # Lidarr / user music library root
-└── Downloads/             # Isolated download staging
-    ├── radarr/            # Radarr movie download target
-    └── sonarr/            # Sonarr episode download target
+├── Movies/                    # Radarr movie library root
+├── TV Shows/                  # Sonarr TV series library root
+├── Music/                     # Lidarr & user music library root
+├── Downloads/                 # Dedicated download staging
+│   ├── radarr/                # Radarr movie download target
+│   └── sonarr/                # Sonarr episode download target
+└── Backups/                   # 1-Tap disaster recovery archives
+    └── fishbowl_backup_YYYYMMDD_HHmmss.tar.gz
 ```
 
 ### Internal Storage
