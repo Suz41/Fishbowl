@@ -31,8 +31,6 @@ Fishbowl is engineered strictly as a personal homelab server hosting and library
 | Artifact Name | Architecture | File Size (Bytes) | SHA-256 Checksum |
 | :--- | :--- | :--- | :--- |
 | `Fishbowl-v1.4.8-beta.2-release-universal.apk` | Universal ARM64 | 338,901,437 | `8AC58D02E84BD53D2FF2F53E2CE39139BB42FEE7ED0AB9B5F66070B78E65AC4C` |
-| `Fishbowl-v1.4.8-beta.2-release-arm64-v8a.apk` | ARM64-v8a | ~338 MB | Verified via GitHub Actions Release Bot |
-| `Fishbowl-v1.4.8-beta.2-debug-arm64-v8a.apk` | ARM64 Debug | ~340 MB | Verified via GitHub Actions Release Bot |
 
 ### Detailed Changes
 

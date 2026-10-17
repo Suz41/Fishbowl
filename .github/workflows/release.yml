@@ -38,8 +38,8 @@ jobs:
     - name: Download Termux Bootstraps
       run: ./gradlew downloadBootstraps
 
-    - name: Build Release and Debug APKs
-      run: ./gradlew assembleRelease assembleDebug
+    - name: Build Production Release APK
+      run: ./gradlew assembleRelease
 
     - name: Create GitHub Release & Upload Assets
       uses: softprops/action-gh-release@v2
@@ -49,5 +49,4 @@ jobs:
         prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-test') || contains(github.event.inputs.tag_name, '-beta') }}
         generate_release_notes: true
         files: |
-          app/build/outputs/apk/release/*.apk
-          app/build/outputs/apk/debug/*.apk
+          app/build/outputs/apk/release/*-universal.apk
