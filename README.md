@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start-3-steps"><b>Quick Start</b></a> •
+  <a href="#quick-start"><b>Quick Start</b></a> •
   <a href="#system-architecture"><b>Architecture</b></a> •
   <a href="#key-features"><b>Features</b></a> •
   <a href="#service-endpoint--network-port-matrix"><b>Ports & Endpoints</b></a> •
@@ -51,15 +51,67 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 
 ---
 
-## Quick Start (3 Steps)
+## Quick Start
 
-1. **Download & Install:**
-   - **Latest Production Release:** Download [**Fishbowl v1.4.8-beta.2**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2) (`Fishbowl-v1.4.8-beta.2-release-universal.apk`) — see [RELEASE.md](RELEASE.md) for the complete technical changelog and checksum verification.
-     - **SHA-256:** `8AC58D02E84BD53D2FF2F53E2CE39139BB42FEE7ED0AB9B5F66070B78E65AC4C`
-2. **Launch & Start:**
-   - Open Fishbowl on your device. The server will start automatically. When the status indicator turns green (**SERVER RUNNING**), tap **OPEN JELLYFIN**.
-3. **Connect & Stream:**
-   - Connect from any Jellyfin client (Smart TV, mobile app, browser) on your local network using the **LAN Address** displayed by Fishbowl (e.g. `http://192.168.1.xxx:8096`).
+### System Prerequisites
+
+| Requirement | Minimum Specification | Recommended Specification |
+| :--- | :--- | :--- |
+| **Processor Architecture** | ARM64 (aarch64 / ARMv8 64-bit) | 8-Core ARM64 SoC (Snapdragon, Dimensity, Tensor) |
+| **Android Operating System** | Android 7.0 (API 24) | Android 11.0 – Android 15.0+ |
+| **System Memory (RAM)** | 2 GB RAM | 4 GB – 8 GB+ RAM |
+| **Local Connectivity** | 2.4 GHz Wi-Fi or Mobile Hotspot | 5 GHz Wi-Fi (802.11ac/ax) or USB-C Ethernet |
+| **Storage Allocation** | 500 MB free (App runtime) | 10 GB+ free storage (Metadata, cache & media) |
+
+---
+
+### Step 1: Download & Install
+
+1. Download the latest universal release package:
+   - [**Fishbowl v1.4.8-beta.2**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2) (`Fishbowl-v1.4.8-beta.2-release-universal.apk`)
+   - **SHA-256 Verification:** `8AC58D02E84BD53D2FF2F53E2CE39139BB42FEE7ED0AB9B5F66070B78E65AC4C`
+2. Install the APK on your ARM64 device.
+3. Grant required runtime permissions when prompted:
+   - **All-Files Storage Access (`MANAGE_EXTERNAL_STORAGE`):** Allows Jellyfin and automation tools to index video and audio files across internal and external storage volumes.
+   - **Battery Optimization Exemption:** Set battery usage to **Unrestricted** (Settings → Apps → Fishbowl → Battery → Unrestricted) to prevent Android from suspending the server when the screen is locked.
+
+---
+
+### Step 2: Initialize the Server
+
+1. Open Fishbowl on your device.
+2. On first launch, Fishbowl automatically unpackages the native Bionic environment and initializes the .NET 10 CLR runtime.
+3. The server status indicator will transition from booting to green (**SERVER RUNNING**).
+4. Tap **[ OPEN JELLYFIN ]** to launch the web client interface directly in the built-in viewer or your device browser (`http://localhost:8096`).
+
+---
+
+### Step 3: Run the Setup Wizard & Add Media Folders
+
+1. Select your preferred display language.
+2. Create your server administrator username and password.
+3. Add your media libraries:
+   - Fishbowl automatically provisions a standardized storage scaffolding under internal storage:
+     - **Movies:** `/storage/emulated/0/FishbowlMedia/Movies`
+     - **TV Shows:** `/storage/emulated/0/FishbowlMedia/TV Shows`
+     - **Music:** `/storage/emulated/0/FishbowlMedia/Music`
+   - **External USB OTG / MicroSD:** If using removable drives on Android 11+, tap **Settings → Media Storage & Folders** in Fishbowl and copy the guaranteed app directory:
+     ```text
+     /storage/<UUID>/Android/data/com.fishbowl.app/files
+     ```
+   - *Tip:* Tap **[ COPY PATH FOR JELLYFIN ]** in the app to run active sanity checks (verifying folder readability and non-empty status) before copying the path to your clipboard.
+4. Complete the wizard to enter the main Jellyfin dashboard.
+
+---
+
+### Step 4: Connect Clients & Stream
+
+1. Note the **LAN Address** displayed on Fishbowl's home screen (e.g. `http://192.168.1.xxx:8096`).
+2. Open any official Jellyfin client (Smart TV, Android TV, Apple TV, Fire TV, Roku, iOS/Android mobile, or web browser) connected to the same Wi-Fi network.
+3. Enter the server LAN address and your login credentials to begin streaming.
+
+> [!TIP]
+> **Always-On Server Recommendation:** Keep the persistent foreground service notification active, enable Wake Lock in Fishbowl settings, and keep the host device connected to AC power for uninterrupted 24/7 background streaming.
 
 ---
 
@@ -77,7 +129,7 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 
 ## Table of Contents
 
-- [Quick Start (3 Steps)](#quick-start-3-steps)
+- [Quick Start](#quick-start)
 - [System Architecture](#system-architecture)
 - [Key Features](#key-features)
 - [Bundled Packages & System Components](#bundled-packages--system-components)
