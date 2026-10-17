@@ -10,6 +10,13 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/DenverCoder1/github-readme-typing-svg">
+    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&pause=1000&color=00A4DC&center=true&vCenter=true&width=550&lines=High-Performance+Jellyfin+on+Android+ARM64;Native+Bionic+POSIX+Runtime+(No+Root);Pre-Bundled+Media+Automation+Stack;100%25+Offline+Homelab+Streaming" alt="Typing SVG" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Suz41/Fishbowl/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/Suz41/Fishbowl/build.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="Build Status" /></a>
   <a href="https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2"><img src="https://img.shields.io/badge/Release-v1.4.8--beta.2-00A4DC?style=flat-square" alt="Release" /></a>
   <a href="https://jellyfin.org"><img src="https://img.shields.io/badge/Jellyfin%20Core-12.1.0-9B59B6?style=flat-square&logo=jellyfin&logoColor=white" alt="Jellyfin" /></a>
   <a href="https://dotnet.microsoft.com"><img src="https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4?style=flat-square&logo=dotnet&logoColor=white" alt=".NET" /></a>
@@ -27,7 +34,8 @@
   <a href="#key-features"><b>Features</b></a> •
   <a href="#service-endpoint--network-port-matrix"><b>Ports & Endpoints</b></a> •
   <a href="#storage--media-setup"><b>Storage</b></a> •
-  <a href="#star-history"><b>Star History</b></a>
+  <a href="#star-history"><b>Star History</b></a> •
+  <a href="#contributors"><b>Contributors</b></a>
 </p>
 
 > [!IMPORTANT]
@@ -83,7 +91,9 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 - [Building From Source](#building-from-source)
 - [Troubleshooting](#troubleshooting)
   - [ADB Command-Line Inspection Reference](#adb-command-line-diagnostics--inspection-reference)
+- [Repository Metrics & Code Analysis](#repository-metrics--code-analysis)
 - [Star History](#star-history)
+- [Contributors](#contributors)
 - [Disclosures & License](#disclosures--license)
   - [Content, Homelab Scope & Anti-Piracy Policy](#content-homelab-scope--anti-piracy-policy)
   - [AI-Assisted Development & Architectural Transparency](#ai-assisted-development--architectural-transparency)
@@ -422,6 +432,20 @@ adb shell "dumpsys deviceidle whitelist | grep com.fishbowl.app"
 
 ---
 
+## Repository Metrics & Code Analysis
+
+<p align="center">
+  <a href="https://github.com/Suz41/Fishbowl">
+    <img src="https://github-readme-stats.vercel.app/api/pin/?username=Suz41&repo=Fishbowl&theme=github_dark" alt="Fishbowl Repository Card" />
+  </a>
+  &nbsp;
+  <a href="https://github.com/Suz41/Fishbowl">
+    <img src="https://github-readme-stats.vercel.app/api/top-langs/?username=Suz41&repo=Fishbowl&theme=github_dark&layout=compact" alt="Languages Breakdown" />
+  </a>
+</p>
+
+---
+
 ## Star History
 
 <p align="center">
@@ -431,6 +455,16 @@ adb shell "dumpsys deviceidle whitelist | grep com.fishbowl.app"
       <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Suz41/Fishbowl&type=Date" />
       <img alt="Fishbowl Star History Chart" src="https://api.star-history.com/svg?repos=Suz41/Fishbowl&type=Date" width="85%" />
     </picture>
+  </a>
+</p>
+
+---
+
+## Contributors
+
+<p align="center">
+  <a href="https://github.com/Suz41/Fishbowl/graphs/contributors">
+    <img src="https://contrib.rocks/image?repo=Suz41/Fishbowl" alt="Contributors" />
   </a>
 </p>
 
