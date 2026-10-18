@@ -17,7 +17,7 @@ android {
         implementation "io.noties.markwon:ext-strikethrough:$markwonVersion"
         implementation "io.noties.markwon:linkify:$markwonVersion"
         implementation "io.noties.markwon:recycler:$markwonVersion"
-        implementation "org.lsposed.hiddenapibypass:hiddenapibypass:6.1"
+        implementation "org.lsposed.hiddenapibypass:hiddenapibypass:6.2"
 
         implementation "androidx.window:window:1.1.0"
 
