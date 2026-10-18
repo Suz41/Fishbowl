@@ -69,7 +69,7 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 
 1. Download the latest universal release package:
    - [**Fishbowl v1.4.8**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8) (`Fishbowl-v1.4.8-release-universal.apk`)
-   - **SHA-256 Verification:** `34B1DEB600961DCA19A3BF8B23F35ABF5B68DB2BB237D3F3D51BCAE05494298F`
+   - **SHA-256 Verification:** `91A424E63C6AC400C1C85134470CF96EE13F46996AB05668F70DC9447ED76F6F`
 2. Install the APK on your ARM64 device.
 3. Grant required runtime permissions when prompted:
    - **All-Files Storage Access (`MANAGE_EXTERNAL_STORAGE`):** Allows Jellyfin and automation tools to index video and audio files across internal and external storage volumes.
