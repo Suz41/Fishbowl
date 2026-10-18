@@ -467,6 +467,7 @@ public class JellyfinBootstrapper {
                 return false;
             }
 
+            ensureNetworkConfig(context);
             Log.i(TAG, "Jellyfin self-contained environment initialized successfully!");
             if (callback != null) {
                 callback.onProgress("Runtime installation complete!", 100);

@@ -15,6 +15,50 @@ Fishbowl is engineered strictly as a personal homelab server hosting and library
 
 ---
 
+## Release v1.4.8 (Stable)
+
+- **Release Date:** October 18, 2026
+- **Target Platform:** Android ARM64 (`aarch64`, Bionic libc)
+- **Minimum Android API:** API 21 (Android 5.0)
+- **Target Android API:** API 35 (Android 15)
+- **Core Server Engine:** Jellyfin 12.1.0 (.NET 10.0.12 ARM64)
+- **Transcoding Engine:** Jellyfin FFmpeg 7.1.4
+- **Database Engine:** SQLite 3.46.1 (`libe_sqlite3.so`)
+
+### Release Artifacts and Verification
+
+| Artifact Name | Architecture | File Size (Bytes) | SHA-256 Checksum |
+| :--- | :--- | :--- | :--- |
+| `Fishbowl-v1.4.8-release-universal.apk` | Universal ARM64 | 338,910,287 | `34B1DEB600961DCA19A3BF8B23F35ABF5B68DB2BB237D3F3D51BCAE05494298F` |
+
+### Detailed Changes
+
+#### 1. Setup Screen Isolation & 0% Extraction Fix
+- Completely decoupled and isolated the initial setup runtime extraction screen on fresh installs (`setChromeVisibilityForSetup(true)`).
+- Eliminated chrome overlap (tabs, header bars, and navigation dividers) during first launch.
+- Resolved race conditions on modern high-refresh OEM devices (Samsung Galaxy S21/S22 Ultra, Vivo) where the setup screen could remain visually stuck at 0%.
+
+#### 2. Dynamic Foreground Notification & System Status
+- Re-architected `JellyfinServerService` foreground notification with dynamic setup progress (`Fishbowl • Setup (X%)`), real-time chronometer uptime tracking, and color-coded status badges.
+- Resolved double-protocol URL formatting (`http://http://`).
+- Added quick action intents for Web UI, Dashboard, Stop All, and Retry.
+
+#### 3. System Console & Log Deduplication
+- Resolved duplicate `[ JELLYFIN ]` filter chips in the System Console by filtering out core service manifestations during companion service discovery.
+- Eliminated duplicated log output lines when viewing `ALL`.
+
+#### 4. Lazy Seerr Deployment
+- Fixed Seerr request engine auto-deploying into the file system on first app open.
+- Refactored `deploySeerrService(boolean forceInstall)` to guarantee Seerr is only unpacked when explicitly requested by user interaction in the Services tab.
+
+#### 5. Production Reliability & Cryptographic Safeguards
+- Hardened `UpdateManager` with SHA-256 cryptographic verification prior to triggering APK installs.
+- Secured `BackupRestoreManager` with canonical Path prefix boundary checks against ZipSlip path traversal and integrated automatic rollback on corrupted archives.
+- Guarded `MediaStorageManager` download staging deduplication watcher against race conditions.
+- Enforced synchronous state validation in `JellyfinController` to guarantee idempotent start/stop operations.
+
+---
+
 ## Release v1.4.8-beta.2
 
 - **Release Date:** October 16, 2026

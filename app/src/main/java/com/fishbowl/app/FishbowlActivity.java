@@ -61,6 +61,7 @@ import java.net.NetworkInterface;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Locale;
 import java.text.SimpleDateFormat;
 import androidx.activity.result.ActivityResultLauncher;
@@ -133,7 +134,9 @@ public final class FishbowlActivity extends AppCompatActivity
     private View headerBar;
     private FrameLayout contentContainer;
     private LinearLayout bottomNavLayout;
+    private View navDivider;
     private int statusBarInsetTop = 0;
+    private int statusBarInsetBottom = 0;
 
     // Dynamic UI References for Dashboard
     private TextView statusBadge;
@@ -289,6 +292,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
     // Dedicated Full-Screen Setup / Loading Overlay
     private View setupOverlayView;
+    private LinearLayout setupOverlayContainer;
     private ProgressBar setupProgressBar;
     private TextView setupProgressText;
     private TextView setupDetailText;
@@ -376,6 +380,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         super.onCreate(savedInstanceState);
         controller = JellyfinController.getInstance();
+        controller.setContext(getApplicationContext());
 
         restoreFilePickerLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
@@ -416,11 +421,17 @@ public final class FishbowlActivity extends AppCompatActivity
             renderActiveTab();
         }
 
-        // Auto-start server on app launch ONLY if explicitly enabled in preferences
-        SharedPreferences launchPrefs = getFishbowlPrefs();
-        if (launchPrefs.getBoolean("auto_start", false)) {
-            if (controller.getState() == JellyfinController.State.STOPPED || controller.getState() == JellyfinController.State.UNINITIALIZED) {
-                triggerServerAction(JellyfinServerService.ACTION_START);
+        // Auto-start server on app launch ONLY if explicitly enabled in preferences or uninitialized
+        if (!JellyfinBootstrapper.isInitialized(this)) {
+            Log.i(TAG, "Fishbowl runtime uninitialized on app launch. Automatically initiating initial setup & extraction.");
+            showSetupOverlay(false);
+            ensureBootstrapStartedIfNeeded();
+        } else {
+            SharedPreferences launchPrefs = getFishbowlPrefs();
+            if (launchPrefs.getBoolean("auto_start", false)) {
+                if (controller.getState() == JellyfinController.State.STOPPED) {
+                    triggerServerAction(JellyfinServerService.ACTION_START);
+                }
             }
         }
         handleControlIntent(getIntent());
@@ -463,6 +474,10 @@ public final class FishbowlActivity extends AppCompatActivity
         runOnUiThread(() -> {
             refreshServicesTabUI();
             refreshHomeServicesBadge();
+            if (activeTab == 2) {
+                refreshLogServiceChips();
+                refreshUnifiedLogsDisplay();
+            }
         });
     };
 
@@ -495,6 +510,10 @@ public final class FishbowlActivity extends AppCompatActivity
         healthHandler.removeCallbacks(healthPollRunnable);
         healthHandler.post(healthPollRunnable);
         refreshPermissionsUI();
+        if (!JellyfinBootstrapper.isInitialized(this)) {
+            showSetupOverlay(false);
+            ensureBootstrapStartedIfNeeded();
+        }
         if (activeTab == 1) {
             downloadAutoRefreshHandler.removeCallbacks(downloadRefreshRunnable);
             downloadAutoRefreshHandler.post(downloadRefreshRunnable);
@@ -582,11 +601,15 @@ public final class FishbowlActivity extends AppCompatActivity
             androidx.core.graphics.Insets navBarInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
 
             statusBarInsetTop = statusBarInset.top;
+            statusBarInsetBottom = navBarInset.bottom;
             if (headerBar != null) {
                 headerBar.setPadding(dp(20), statusBarInset.top + dp(10), dp(20), dp(10));
             }
             if (bottomNavLayout != null) {
                 bottomNavLayout.setPadding(0, dp(6), 0, navBarInset.bottom + dp(6));
+            }
+            if (setupOverlayContainer != null) {
+                setupOverlayContainer.setPadding(dp(24), statusBarInset.top + dp(28), dp(24), navBarInset.bottom + dp(24));
             }
             updateContentInsetsForTab();
             return insets;
@@ -699,7 +722,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         // Bottom Navigation Bar (4 Destinations: Home, Services, Activity, Settings)
-        View navDivider = new View(this);
+        navDivider = new View(this);
         navDivider.setBackgroundColor(Color.argb(10, 255, 255, 255));
         rootLayout.addView(navDivider, new LinearLayout.LayoutParams(-1, dp(1)));
 
@@ -828,8 +851,18 @@ public final class FishbowlActivity extends AppCompatActivity
     private void renderActiveTab() {
         updateBottomNavSelection();
 
-        if (headerBar != null) {
-            headerBar.setVisibility(activeTab == 0 ? View.VISIBLE : View.GONE);
+        if (setupOverlayView != null && setupOverlayView.getVisibility() == View.VISIBLE) {
+            setChromeVisibilityForSetup(true);
+        } else {
+            if (headerBar != null) {
+                headerBar.setVisibility(activeTab == 0 ? View.VISIBLE : View.GONE);
+            }
+            if (bottomNavLayout != null) {
+                bottomNavLayout.setVisibility(View.VISIBLE);
+            }
+            if (navDivider != null) {
+                navDivider.setVisibility(View.VISIBLE);
+            }
         }
         updateContentInsetsForTab();
 
@@ -846,7 +879,7 @@ public final class FishbowlActivity extends AppCompatActivity
             refreshServicesTabUI();
             refreshDownloadCenter();
         } else if (activeTab == 2) {
-            updateLogServiceChips();
+            refreshLogServiceChips();
             updateLogLevelChips();
             refreshUnifiedLogsDisplay();
             if (autoScrollEnabled && logsScrollView != null) {
@@ -885,6 +918,21 @@ public final class FishbowlActivity extends AppCompatActivity
 
     // -- Dedicated Full-Screen Setup & Extraction Screen -----------------------
 
+    private void setChromeVisibilityForSetup(boolean setupActive) {
+        if (setupActive) {
+            if (headerBar != null) headerBar.setVisibility(View.GONE);
+            if (headerProgressBar != null) headerProgressBar.setVisibility(View.GONE);
+            if (headerStatusBanner != null) headerStatusBanner.setVisibility(View.GONE);
+            if (bottomNavLayout != null) bottomNavLayout.setVisibility(View.GONE);
+            if (navDivider != null) navDivider.setVisibility(View.GONE);
+        } else {
+            if (bottomNavLayout != null) bottomNavLayout.setVisibility(View.VISIBLE);
+            if (navDivider != null) navDivider.setVisibility(View.VISIBLE);
+            if (headerBar != null) headerBar.setVisibility(activeTab == 0 ? View.VISIBLE : View.GONE);
+            updateContentInsetsForTab();
+        }
+    }
+
     private View buildSetupOverlay() {
         ScrollView scroll = new ScrollView(this);
         scroll.setVerticalScrollBarEnabled(false);
@@ -893,10 +941,13 @@ public final class FishbowlActivity extends AppCompatActivity
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(getBgColor());
 
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.setGravity(Gravity.CENTER_HORIZONTAL);
-        container.setPadding(dp(24), dp(36), dp(24), dp(28));
+        setupOverlayContainer = new LinearLayout(this);
+        setupOverlayContainer.setOrientation(LinearLayout.VERTICAL);
+        setupOverlayContainer.setGravity(Gravity.CENTER_HORIZONTAL);
+        int topPad = statusBarInsetTop > 0 ? statusBarInsetTop + dp(28) : dp(48);
+        int btmPad = statusBarInsetBottom > 0 ? statusBarInsetBottom + dp(24) : dp(32);
+        setupOverlayContainer.setPadding(dp(24), topPad, dp(24), btmPad);
+        LinearLayout container = setupOverlayContainer;
 
         // Setup Brand Logo with subtle glow / accent tint
         ImageView logo = new ImageView(this);
@@ -1026,7 +1077,11 @@ public final class FishbowlActivity extends AppCompatActivity
 
         // Continue to FishBowl button (Shown when setup is completed or previewed)
         setupDismissBtn = createPixelButton("CONTINUE TO FISHBOWL", getAccentColor(), Color.WHITE);
-        setupDismissBtn.setOnClickListener(v -> setupOverlayView.setVisibility(View.GONE));
+        setupDismissBtn.setOnClickListener(v -> {
+            setupOverlayView.setVisibility(View.GONE);
+            setChromeVisibilityForSetup(false);
+            renderActiveTab();
+        });
         setupDismissBtn.setVisibility(View.GONE);
         LinearLayout.LayoutParams pDismiss = new LinearLayout.LayoutParams(-1, dp(40));
         pDismiss.bottomMargin = dp(8);
@@ -1036,6 +1091,7 @@ public final class FishbowlActivity extends AppCompatActivity
         setupRetryBtn = createPixelButton("RETRY SETUP", getAccentColor(), Color.WHITE);
         setupRetryBtn.setOnClickListener(v -> {
             setupRetryBtn.setVisibility(View.GONE);
+            triggerServerAction(JellyfinServerService.ACTION_START);
             controller.reinstallRuntime(this);
         });
         setupRetryBtn.setVisibility(View.GONE);
@@ -1064,8 +1120,25 @@ public final class FishbowlActivity extends AppCompatActivity
         return tv;
     }
 
+    private void ensureBootstrapStartedIfNeeded() {
+        if (controller == null) return;
+        boolean initialized = JellyfinBootstrapper.isInitialized(this);
+        if (!initialized) {
+            JellyfinController.State state = controller.getState();
+            String lastErr = JellyfinBootstrapper.getLastError();
+            boolean hasFailed = (state == JellyfinController.State.FAILED || state == JellyfinController.State.CRASHED)
+                    || (lastErr != null && !lastErr.isEmpty() && state != JellyfinController.State.INITIALIZING && state != JellyfinController.State.STARTING);
+            if (!hasFailed && state != JellyfinController.State.INITIALIZING && state != JellyfinController.State.STARTING) {
+                Log.i(TAG, "ensureBootstrapStartedIfNeeded: initiating automatic Jellyfin runtime extraction & stack start");
+                triggerServerAction(JellyfinServerService.ACTION_START);
+                controller.start(getApplicationContext());
+            }
+        }
+    }
+
     public void showSetupOverlay(boolean allowDismiss) {
         if (setupOverlayView == null) return;
+        setChromeVisibilityForSetup(true);
         renderSetupOverlayState();
         if (setupDismissBtn != null) {
             setupDismissBtn.setVisibility(allowDismiss || JellyfinBootstrapper.isInitialized(this) ? View.VISIBLE : View.GONE);
@@ -1087,13 +1160,19 @@ public final class FishbowlActivity extends AppCompatActivity
         // Overlay is visible when explicitly INITIALIZING or not yet initialized
         boolean showOverlay = isInitializing || (!initialized && !isRunning);
 
+        if (!initialized && !isFailed && !isInitializing && !isStarting && !isRunning) {
+            ensureBootstrapStartedIfNeeded();
+        }
+
         if (!showOverlay && (setupDismissBtn == null || setupDismissBtn.getVisibility() != View.VISIBLE)) {
             setupOverlayView.setVisibility(View.GONE);
+            setChromeVisibilityForSetup(false);
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             return;
         }
 
         setupOverlayView.setVisibility(View.VISIBLE);
+        setChromeVisibilityForSetup(true);
 
         if (isInitializing || isStarting) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -2284,31 +2363,7 @@ public final class FishbowlActivity extends AppCompatActivity
         logServiceChipsContainer = new LinearLayout(this);
         logServiceChipsContainer.setOrientation(LinearLayout.HORIZONTAL);
 
-        String[] services = {"ALL", "JELLYFIN", "RADARR", "SONARR", "PROWLARR", "TRANSMISSION", "SEERR", "BAZARR", "LIDARR"};
-        for (String svcName : services) {
-            Button chip = new Button(this);
-            chip.setText(svcName);
-            chip.setTextSize(10);
-            chip.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-            chip.setAllCaps(true);
-            chip.setMinHeight(0);
-            chip.setMinimumHeight(0);
-            chip.setMinWidth(0);
-            chip.setMinimumWidth(0);
-            chip.setPadding(dp(10), dp(5), dp(10), dp(5));
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                chip.setStateListAnimator(null);
-            }
-            chip.setOnClickListener(v -> {
-                selectedLogService = svcName;
-                updateLogServiceChips();
-                refreshUnifiedLogsDisplay();
-            });
-
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(28));
-            lp.rightMargin = dp(6);
-            logServiceChipsContainer.addView(chip, lp);
-        }
+        refreshLogServiceChips();
         hScrollServices.addView(logServiceChipsContainer);
         layout.addView(hScrollServices);
 
@@ -2928,6 +2983,63 @@ public final class FishbowlActivity extends AppCompatActivity
 
     // -- Unified Console & Logs Engine ---------------------------------------
 
+    private void refreshLogServiceChips() {
+        if (logServiceChipsContainer == null) return;
+        logServiceChipsContainer.removeAllViews();
+
+        List<String> installedServices = new ArrayList<>();
+        installedServices.add("ALL");
+        if (JellyfinBootstrapper.isInitialized(this)) {
+            installedServices.add("JELLYFIN");
+        }
+
+        MediaServiceManager mgr = MediaServiceManager.getInstance(this);
+        for (ManagedService s : mgr.getAllServices()) {
+            if (s != null && s.isInstalled()) {
+                if (s.getManifest().isCore() || "jellyfin".equalsIgnoreCase(s.getId())) continue;
+                installedServices.add(s.getId().toUpperCase(Locale.ROOT));
+            }
+        }
+
+        // Validate selectedLogService
+        boolean isValid = false;
+        for (String svc : installedServices) {
+            if (svc.equalsIgnoreCase(selectedLogService)) {
+                isValid = true;
+                break;
+            }
+        }
+        if (!isValid) {
+            selectedLogService = "ALL";
+        }
+
+        for (String svcName : installedServices) {
+            Button chip = new Button(this);
+            chip.setText(svcName);
+            chip.setTextSize(10);
+            chip.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+            chip.setAllCaps(true);
+            chip.setMinHeight(0);
+            chip.setMinimumHeight(0);
+            chip.setMinWidth(0);
+            chip.setMinimumWidth(0);
+            chip.setPadding(dp(10), dp(5), dp(10), dp(5));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                chip.setStateListAnimator(null);
+            }
+            chip.setOnClickListener(v -> {
+                selectedLogService = svcName;
+                updateLogServiceChips();
+                refreshUnifiedLogsDisplay();
+            });
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(28));
+            lp.rightMargin = dp(6);
+            logServiceChipsContainer.addView(chip, lp);
+        }
+        updateLogServiceChips();
+    }
+
     private void updateLogServiceChips() {
         if (logServiceChipsContainer == null) return;
         for (int i = 0; i < logServiceChipsContainer.getChildCount(); i++) {
@@ -3101,8 +3213,8 @@ public final class FishbowlActivity extends AppCompatActivity
         int lineCount = 0;
 
         if ("ALL".equalsIgnoreCase(selectedLogService)) {
-            // Gather Jellyfin controller logs
-            if (controller != null) {
+            // Gather Jellyfin controller logs (if installed/initialized)
+            if (controller != null && JellyfinBootstrapper.isInitialized(this)) {
                 String jfLogs = showingDiskLog ? controller.getDiskLogs() : controller.getLogs();
                 if (jfLogs != null && !jfLogs.isEmpty()) {
                     String[] lines = jfLogs.split("\n");
@@ -3113,9 +3225,11 @@ public final class FishbowlActivity extends AppCompatActivity
                     }
                 }
             }
-            // Gather all managed services
+            // Gather all managed services that are installed
             MediaServiceManager mgr = MediaServiceManager.getInstance(this);
             for (ManagedService s : mgr.getAllServices()) {
+                if (s == null || !s.isInstalled()) continue;
+                if (s.getManifest().isCore() || "jellyfin".equalsIgnoreCase(s.getId())) continue;
                 String sLogs = s.getRecentLogs(50);
                 if (sLogs == null || sLogs.trim().isEmpty() || sLogs.startsWith("--- No logs")) continue;
                 String[] lines = sLogs.split("\n");
@@ -3125,6 +3239,14 @@ public final class FishbowlActivity extends AppCompatActivity
                 }
             }
         } else if ("JELLYFIN".equalsIgnoreCase(selectedLogService)) {
+            if (!JellyfinBootstrapper.isInitialized(this)) {
+                logsOutputText.setText("--- Jellyfin server runtime is not installed ---");
+                logsOutputText.setTextColor(Color.parseColor("#71717A"));
+                if (logsStatusSubtitle != null) {
+                    logsStatusSubtitle.setText("[JELLYFIN] - Not installed");
+                }
+                return;
+            }
             if (controller != null) {
                 String raw = showingDiskLog ? controller.getDiskLogs() : controller.getLogs();
                 if (raw != null && !raw.isEmpty()) {
@@ -3149,7 +3271,7 @@ public final class FishbowlActivity extends AppCompatActivity
         } else {
             MediaServiceManager mgr = MediaServiceManager.getInstance(this);
             ManagedService s = mgr.getService(selectedLogService.toLowerCase(Locale.ROOT));
-            if (s != null) {
+            if (s != null && s.isInstalled()) {
                 String raw = s.getRecentLogs(250);
                 if (raw != null && !raw.isEmpty() && !raw.startsWith("--- No logs")) {
                     String[] lines = raw.split("\n");
@@ -3158,6 +3280,13 @@ public final class FishbowlActivity extends AppCompatActivity
                         lineCount++;
                     }
                 }
+            } else {
+                logsOutputText.setText("--- Service [" + selectedLogService + "] is not installed ---");
+                logsOutputText.setTextColor(Color.parseColor("#71717A"));
+                if (logsStatusSubtitle != null) {
+                    logsStatusSubtitle.setText("[" + selectedLogService + "] - Not installed");
+                }
+                return;
             }
         }
 
@@ -4823,7 +4952,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
                 if ("seerr".equalsIgnoreCase(id)) {
                     runOnUiThread(() -> progress.setMessage("Deploying Seerr Request Engine..."));
-                    MediaServiceManager.getInstance(this).deploySeerrServiceIfNeeded();
+                    MediaServiceManager.getInstance(this).deploySeerrService(true);
                     MediaServiceManager.getInstance(this).autoWireStack(null);
                     runOnUiThread(() -> {
                         progress.dismiss();
@@ -8011,6 +8140,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (setupOverlayView == null) return;
         if (setupOverlayView.getVisibility() != View.VISIBLE && !JellyfinBootstrapper.isInitialized(this)) {
             setupOverlayView.setVisibility(View.VISIBLE);
+            setChromeVisibilityForSetup(true);
             setupOverlayView.bringToFront();
         }
 
@@ -8043,6 +8173,8 @@ public final class FishbowlActivity extends AppCompatActivity
             setupOverlayView.postDelayed(() -> {
                 if (setupOverlayView != null && JellyfinBootstrapper.isInitialized(this)) {
                     setupOverlayView.setVisibility(View.GONE);
+                    setChromeVisibilityForSetup(false);
+                    renderActiveTab();
                 }
                 renderCurrentState();
             }, 600);
@@ -8102,7 +8234,11 @@ public final class FishbowlActivity extends AppCompatActivity
 
         // Render Slim Header Progress Bar & Notification Banner (Small progress bar not full screen)
         if (headerProgressBar != null) {
-            boolean showLoading = (state == JellyfinController.State.INITIALIZING || state == JellyfinController.State.STARTING);
+            boolean isSetupActive = (setupOverlayView != null && setupOverlayView.getVisibility() == View.VISIBLE);
+            if (isSetupActive) {
+                setChromeVisibilityForSetup(true);
+            }
+            boolean showLoading = !isSetupActive && (state == JellyfinController.State.INITIALIZING || state == JellyfinController.State.STARTING);
             if (showLoading) {
                 headerProgressBar.setVisibility(View.VISIBLE);
                 if (headerStatusBanner != null) headerStatusBanner.setVisibility(View.VISIBLE);

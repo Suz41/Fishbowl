@@ -74,7 +74,18 @@ public final class UpdateManager {
 
     private static UpdateManager instance;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    private void postOnMainThread(Runnable r) {
+        if (r == null) return;
+        try {
+            if (Looper.getMainLooper() != null) {
+                new Handler(Looper.getMainLooper()).post(r);
+                return;
+            }
+        } catch (Throwable ignored) {}
+        r.run();
+    }
+
     private final CopyOnWriteArrayList<UpdateListener> listeners = new CopyOnWriteArrayList<>();
     private final SharedPreferences prefs;
 
@@ -142,7 +153,7 @@ public final class UpdateManager {
         synchronized (this) {
             currentState = state;
         }
-        mainHandler.post(() -> {
+        postOnMainThread(() -> {
             for (UpdateListener l : listeners) {
                 l.onUpdateStateChanged(state);
             }
@@ -154,7 +165,7 @@ public final class UpdateManager {
             downloadedBytes = downloaded;
             totalApkSize = total;
         }
-        mainHandler.post(() -> {
+        postOnMainThread(() -> {
             for (UpdateListener l : listeners) {
                 l.onDownloadProgress(downloaded, total);
             }
@@ -297,12 +308,12 @@ public final class UpdateManager {
                             }
                         }
 
-                        // Pass 3: Fallback to any .apk asset
+                        // Pass 3: Fallback to any Fishbowl release .apk asset
                         if (downloadUrl.isEmpty()) {
                             for (int i = 0; i < assets.length(); i++) {
                                 JSONObject asset = assets.getJSONObject(i);
                                 String name = asset.optString("name", "");
-                                if (name.endsWith(".apk") && !name.contains("indices")) {
+                                if (name.startsWith("Fishbowl") && name.endsWith(".apk") && !name.contains("indices")) {
                                     downloadUrl = asset.optString("browser_download_url", "");
                                     bestApkName = name;
                                     break;
@@ -323,7 +334,8 @@ public final class UpdateManager {
                         }
                     }
 
-                    if (downloadUrl.isEmpty()) {
+                    if (downloadUrl.isEmpty() || !downloadUrl.toLowerCase(Locale.ROOT).startsWith("https://")) {
+                        Log.e(TAG, "Invalid or unencrypted download URL: " + downloadUrl);
                         notifyStateChanged(State.RELEASE_UNAVAILABLE);
                         return;
                     }
@@ -385,7 +397,7 @@ public final class UpdateManager {
         return parseVersionCodeFromTag(tagName);
     }
 
-    private int parseVersionCodeFromTag(String tagName) {
+    public static int parseVersionCodeFromTag(String tagName) {
         if (tagName == null) return -1;
         String lower = tagName.toLowerCase(Locale.ROOT);
         if (lower.contains("1.4.7-beta.2")) return 101410;
@@ -448,6 +460,21 @@ public final class UpdateManager {
 
     public synchronized void startDownload(Context context) {
         if (isDownloading) return;
+
+        if (apkUrl == null || !apkUrl.toLowerCase(Locale.ROOT).startsWith("https://")) {
+            Log.e(TAG, "Refusing download: non-HTTPS or invalid URL: " + apkUrl);
+            notifyStateChanged(State.DOWNLOAD_FAILED);
+            return;
+        }
+
+        long usableCache = context.getCacheDir().getUsableSpace();
+        long requiredSpace = (totalApkSize > 0) ? (totalApkSize + 50 * 1024 * 1024L) : (150 * 1024 * 1024L);
+        if (usableCache < requiredSpace) {
+            Log.e(TAG, "Insufficient storage for update: " + (usableCache / (1024 * 1024)) + " MB available");
+            notifyStateChanged(State.DOWNLOAD_FAILED);
+            return;
+        }
+
         isDownloading = true;
         notifyStateChanged(State.DOWNLOADING);
 
@@ -508,6 +535,13 @@ public final class UpdateManager {
     private void verifyAndInstall(Context context) {
         notifyStateChanged(State.VERIFYING);
 
+        if (downloadedApkFile == null || !downloadedApkFile.exists() || downloadedApkFile.length() <= 0) {
+            Log.e(TAG, "Update verification failed: APK file missing or empty");
+            notifyStateChanged(State.VERIFICATION_FAILED);
+            return;
+        }
+
+        // 1. SHA-256 Checksum Verification (if available)
         String expectedHash = "";
         if (!sha256Url.isEmpty()) {
             HttpURLConnection conn = null;
@@ -532,33 +566,80 @@ public final class UpdateManager {
             }
         }
 
-        if (expectedHash.isEmpty()) {
-            Log.w(TAG, "Missing expected checksum. Performing package archive structural integrity check.");
-            try {
-                PackageInfo archiveInfo = context.getPackageManager().getPackageArchiveInfo(
-                        downloadedApkFile.getAbsolutePath(), PackageManager.GET_ACTIVITIES);
-                if (archiveInfo != null && archiveInfo.packageName != null) {
-                    Log.i(TAG, "Package archive integrity check succeeded for " + archiveInfo.packageName);
-                    notifyStateChanged(State.VERIFICATION_SUCCESSFUL);
-                    return;
+        if (!expectedHash.isEmpty()) {
+            String calculatedHash = calculateSHA256(downloadedApkFile);
+            if (calculatedHash == null || !calculatedHash.equalsIgnoreCase(expectedHash)) {
+                Log.e(TAG, "Checksum verification failed: expected=" + expectedHash + ", got=" + calculatedHash);
+                if (downloadedApkFile != null && downloadedApkFile.exists()) {
+                    downloadedApkFile.delete();
                 }
-            } catch (Throwable t) {
-                Log.e(TAG, "Package archive check threw exception", t);
+                notifyStateChanged(State.VERIFICATION_FAILED);
+                return;
             }
-            Log.e(TAG, "Downloaded APK is corrupt or invalid package structure");
-            if (downloadedApkFile != null && downloadedApkFile.exists()) {
-                downloadedApkFile.delete();
-            }
-            notifyStateChanged(State.VERIFICATION_FAILED);
-            return;
+            Log.i(TAG, "Checksum SHA-256 verification succeeded.");
         }
 
-        String calculatedHash = calculateSHA256(downloadedApkFile);
-        if (calculatedHash != null && calculatedHash.equals(expectedHash)) {
-            Log.i(TAG, "Checksum verification successful.");
+        // 2. Structural & Cryptographic Package Verification
+        try {
+            PackageManager pm = context.getPackageManager();
+            PackageInfo archiveInfo = pm.getPackageArchiveInfo(
+                    downloadedApkFile.getAbsolutePath(),
+                    PackageManager.GET_SIGNATURES | PackageManager.GET_ACTIVITIES);
+
+            if (archiveInfo == null || archiveInfo.packageName == null) {
+                Log.e(TAG, "Package archive info could not be parsed from downloaded APK");
+                if (downloadedApkFile.exists()) downloadedApkFile.delete();
+                notifyStateChanged(State.VERIFICATION_FAILED);
+                return;
+            }
+
+            // Verify expected package name
+            String currentPkg = context.getPackageName();
+            if (!currentPkg.equals(archiveInfo.packageName)) {
+                Log.e(TAG, "Package ID mismatch: expected " + currentPkg + ", got " + archiveInfo.packageName);
+                if (downloadedApkFile.exists()) downloadedApkFile.delete();
+                notifyStateChanged(State.VERIFICATION_FAILED);
+                return;
+            }
+
+            // Verify version code compatibility
+            int currentVerCode = getCurrentVersionCode(context);
+            if (archiveInfo.versionCode < currentVerCode) {
+                Log.e(TAG, "Rejecting downgrade attempt: current=" + currentVerCode + ", update=" + archiveInfo.versionCode);
+                if (downloadedApkFile.exists()) downloadedApkFile.delete();
+                notifyStateChanged(State.VERIFICATION_FAILED);
+                return;
+            }
+
+            // Verify signature compatibility with currently installed package
+            try {
+                PackageInfo currentInfo = pm.getPackageInfo(currentPkg, PackageManager.GET_SIGNATURES);
+                if (currentInfo.signatures != null && currentInfo.signatures.length > 0 &&
+                        archiveInfo.signatures != null && archiveInfo.signatures.length > 0) {
+                    boolean sigMatch = false;
+                    for (android.content.pm.Signature curSig : currentInfo.signatures) {
+                        for (android.content.pm.Signature archSig : archiveInfo.signatures) {
+                            if (curSig.equals(archSig)) {
+                                sigMatch = true;
+                                break;
+                            }
+                        }
+                        if (sigMatch) break;
+                    }
+                    if (!sigMatch) {
+                        Log.e(TAG, "APK signature mismatch with currently installed certificate");
+                        if (downloadedApkFile.exists()) downloadedApkFile.delete();
+                        notifyStateChanged(State.VERIFICATION_FAILED);
+                        return;
+                    }
+                }
+            } catch (PackageManager.NameNotFoundException ignored) {}
+
+            Log.i(TAG, "Package archive structural, identity, and signature verification succeeded for " + archiveInfo.packageName);
             notifyStateChanged(State.VERIFICATION_SUCCESSFUL);
-        } else {
-            Log.e(TAG, "Checksum verification failed: expected=" + expectedHash + ", got=" + calculatedHash);
+
+        } catch (Throwable t) {
+            Log.e(TAG, "Package verification exception", t);
             if (downloadedApkFile != null && downloadedApkFile.exists()) {
                 downloadedApkFile.delete();
             }
@@ -566,7 +647,7 @@ public final class UpdateManager {
         }
     }
 
-    private String calculateSHA256(File file) {
+    public static String calculateSHA256(File file) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             InputStream is = new FileInputStream(file);

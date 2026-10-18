@@ -3,7 +3,7 @@
 Getting your Fishbowl server up and running requires a few straightforward steps. Follow this guide to initialize your server.
 
 ## Step 1: Download & Install
-1. Head to [Fishbowl Releases](https://github.com/Suz41/Fishbowl/releases) and download the latest production release APK (`Fishbowl-v1.4.8-beta.2-release-universal.apk`).
+1. Head to [Fishbowl Releases](https://github.com/Suz41/Fishbowl/releases) and download the latest production release APK (`Fishbowl-v1.4.8-release-universal.apk`).
 2. Open the APK on your Android device and proceed with the installation.
 3. Launch the app and grant **Notifications** and **All-Files Storage Access** permissions when prompted.
 

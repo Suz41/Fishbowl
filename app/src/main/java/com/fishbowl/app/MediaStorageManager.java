@@ -1139,20 +1139,14 @@ public final class MediaStorageManager {
             boolean isRadarr = stagingFile.getAbsolutePath().startsWith(radarrStaging.getAbsolutePath());
             String category = isRadarr ? "radarr" : "sonarr";
             Map<String, File> libByName = isRadarr ? movieFilesByName : tvFilesByName;
-            Map<Long, List<File>> libBySize = isRadarr ? movieFilesBySize : tvFilesBySize;
 
-            // Find library match
+            // Find library match strictly by name (do not match unrelated files solely by size!)
             File libraryFile = libByName.get(stagingFile.getName().toLowerCase(Locale.US));
-            if (libraryFile == null && fileSize > 10 * 1024 * 1024L) { // >10MB
-                List<File> sameSize = libBySize.get(fileSize);
-                if (sameSize != null && !sameSize.isEmpty()) {
-                    libraryFile = sameSize.get(0);
-                }
-            }
 
             // Check hardlink
             boolean isHardlink = (libraryFile != null) && areFilesHardlinked(stagingFile, libraryFile);
-            boolean isPhysicalDuplicate = (libraryFile != null) && !isHardlink && (libraryFile.length() == fileSize);
+            boolean isPhysicalDuplicate = (libraryFile != null) && !isHardlink && (libraryFile.length() == fileSize)
+                    && (fileSize > 0) && verifyFileContentMatch(stagingFile, libraryFile);
 
             // Match with Transmission torrents
             TorrentInfo matchingTorrent = null;
@@ -1264,13 +1258,104 @@ public final class MediaStorageManager {
         );
     }
 
+    public boolean isFileInStagingDirectory(File file) {
+        return isPathInStagingRoots(file, getMediaRoot());
+    }
+
+    public static boolean isPathInStagingRoots(File file, File mediaRoot) {
+        if (file == null || mediaRoot == null) return false;
+        try {
+            String targetPath = file.getCanonicalPath();
+            File[] approvedRoots = new File[]{
+                    new File(mediaRoot, SUB_DOWNLOADS_RADARR).getCanonicalFile(),
+                    new File(mediaRoot, SUB_DOWNLOADS_SONARR).getCanonicalFile(),
+                    new File(mediaRoot, SUB_DOWNLOADS_TORRENTS).getCanonicalFile(),
+                    new File(mediaRoot, SUB_DOWNLOADS).getCanonicalFile()
+            };
+            for (File root : approvedRoots) {
+                String rootPath = root.getCanonicalPath();
+                if (targetPath.equals(rootPath) || targetPath.startsWith(rootPath + File.separator)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (IOException e) {
+            Log.w(TAG, "Failed to resolve canonical path for staging check: " + file.getAbsolutePath(), e);
+            return false;
+        }
+    }
+
+    public static boolean verifyFileContentMatch(File src, File dst) {
+        if (src == null || dst == null) return false;
+        if (!src.exists() || !dst.exists() || !src.isFile() || !dst.isFile()) return false;
+        long srcLen = src.length();
+        long dstLen = dst.length();
+        if (srcLen <= 0 || dstLen <= 0 || srcLen != dstLen) return false;
+
+        try {
+            // Source and destination must never be the same canonical file
+            if (src.getCanonicalFile().equals(dst.getCanonicalFile())) {
+                Log.w(TAG, "verifyFileContentMatch: Source and destination resolve to identical canonical file!");
+                return false;
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "verifyFileContentMatch canonical check error: " + e.getMessage());
+            return false;
+        }
+
+        // Stream SHA-256 with 64KB buffer without loading large media into memory
+        try {
+            java.security.MessageDigest mdSrc = java.security.MessageDigest.getInstance("SHA-256");
+            java.security.MessageDigest mdDst = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] bufSrc = new byte[65536];
+            byte[] bufDst = new byte[65536];
+            try (InputStream inSrc = new java.io.BufferedInputStream(new FileInputStream(src));
+                 InputStream inDst = new java.io.BufferedInputStream(new FileInputStream(dst))) {
+                int readSrc;
+                while ((readSrc = inSrc.read(bufSrc)) > 0) {
+                    int readDst = inDst.read(bufDst, 0, readSrc);
+                    if (readDst != readSrc) return false;
+                    mdSrc.update(bufSrc, 0, readSrc);
+                    mdDst.update(bufDst, 0, readDst);
+                }
+            }
+            return java.security.MessageDigest.isEqual(mdSrc.digest(), mdDst.digest());
+        } catch (Throwable t) {
+            Log.e(TAG, "verifyFileContentMatch calculation error: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
     public synchronized boolean cleanupStagingFile(StagingMediaItem item, boolean force) {
         if (item == null || item.stagingFile == null || !item.stagingFile.exists()) return false;
 
-        // Invariant 1: If physical duplicate, ensure library file is verified!
+        // Invariant 1: Restrict cleanup to approved Fishbowl-managed staging directories
+        if (!isFileInStagingDirectory(item.stagingFile)) {
+            Log.e(TAG, "Refusing cleanup: file " + item.stagingFile.getAbsolutePath() + " is outside approved staging roots!");
+            return false;
+        }
+
+        // Invariant 2: If physical duplicate, ensure library file is verified!
         if (item.isPhysicalDuplicate) {
-            if (item.libraryFile == null || !item.libraryFile.exists() || item.libraryFile.length() != item.stagingFile.length()) {
-                Log.e(TAG, "Refusing to delete staging duplicate: library copy not verified!");
+            if (item.libraryFile == null || !item.libraryFile.exists() || !item.libraryFile.isFile()) {
+                Log.e(TAG, "Refusing to delete staging duplicate: library destination does not exist!");
+                return false;
+            }
+            if (item.libraryFile.length() <= 0 || item.libraryFile.length() != item.stagingFile.length()) {
+                Log.e(TAG, "Refusing to delete staging duplicate: destination size mismatch or 0-byte!");
+                return false;
+            }
+            try {
+                if (item.stagingFile.getCanonicalFile().equals(item.libraryFile.getCanonicalFile())) {
+                    Log.e(TAG, "Refusing to delete staging duplicate: staging and library resolve to identical canonical file!");
+                    return false;
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "Refusing to delete staging duplicate: failed to verify canonical paths!");
+                return false;
+            }
+            if (!verifyFileContentMatch(item.stagingFile, item.libraryFile)) {
+                Log.e(TAG, "Refusing to delete staging duplicate: checksum / content verification failed!");
                 return false;
             }
         }
@@ -1297,21 +1382,37 @@ public final class MediaStorageManager {
     public synchronized boolean repairDuplicateWithHardlink(StagingMediaItem item) {
         if (item == null || !item.isPhysicalDuplicate || item.libraryFile == null) return false;
         if (!item.stagingFile.exists() || !item.libraryFile.exists()) return false;
-        if (item.stagingFile.length() != item.libraryFile.length()) return false;
+        if (item.stagingFile.length() <= 0 || item.stagingFile.length() != item.libraryFile.length()) return false;
 
         if (!isHardlinkSupported()) {
             Log.w(TAG, "Cannot repair duplicate with hardlink: hardlink unsupported on filesystem (" + getHardlinkSupportReason() + ")");
             return false;
         }
 
+        File staging = item.stagingFile;
+        File library = item.libraryFile;
+        File backup = new File(staging.getParentFile(), staging.getName() + ".hardlink_tmp_" + System.currentTimeMillis());
+
+        if (!staging.renameTo(backup)) {
+            Log.e(TAG, "repairDuplicateWithHardlink: failed to create temporary backup for staging file");
+            return false;
+        }
+
         try {
-            File staging = item.stagingFile;
-            File library = item.libraryFile;
-            if (!staging.delete()) return false;
             Os.link(library.getAbsolutePath(), staging.getAbsolutePath());
-            return areFilesHardlinked(staging, library);
+            if (areFilesHardlinked(staging, library)) {
+                backup.delete();
+                return true;
+            } else {
+                staging.delete();
+                backup.renameTo(staging);
+                return false;
+            }
         } catch (Throwable t) {
-            Log.e(TAG, "repairDuplicateWithHardlink failed: " + t.getMessage(), t);
+            if (!staging.exists() && backup.exists()) {
+                backup.renameTo(staging);
+            }
+            Log.e(TAG, "repairDuplicateWithHardlink failed, staging restored: " + t.getMessage(), t);
             return false;
         }
     }
@@ -1322,16 +1423,28 @@ public final class MediaStorageManager {
             ".ogg", ".wav", ".opus"
     ));
 
+    private static final Set<String> IN_PROGRESS_OR_ARCHIVE_EXTENSIONS = new HashSet<>(Arrays.asList(
+            ".part", ".aria2", ".tmp", ".crdownload", ".download", ".torrent",
+            ".rar", ".zip", ".7z", ".tar", ".gz", ".xz", ".bz2", ".r00", ".r01"
+    ));
+
     public boolean containsMediaFiles(File dir) {
+        return dirContainsMediaFiles(dir);
+    }
+
+    public static boolean dirContainsMediaFiles(File dir) {
         if (dir == null || !dir.exists() || !dir.isDirectory()) return false;
         File[] files = dir.listFiles();
         if (files == null) return false;
         for (File f : files) {
             if (f.isDirectory()) {
-                if (containsMediaFiles(f)) return true;
+                if (dirContainsMediaFiles(f)) return true;
             } else if (f.isFile()) {
                 String name = f.getName().toLowerCase(Locale.US);
                 for (String ext : MEDIA_EXTENSIONS) {
+                    if (name.endsWith(ext)) return true;
+                }
+                for (String ext : IN_PROGRESS_OR_ARCHIVE_EXTENSIONS) {
                     if (name.endsWith(ext)) return true;
                 }
             }
@@ -1341,6 +1454,10 @@ public final class MediaStorageManager {
 
     public boolean deleteDirectoryContents(File dir) {
         if (dir == null || !dir.exists() || !dir.isDirectory()) return false;
+        if (!isFileInStagingDirectory(dir)) {
+            Log.e(TAG, "Refusing directory contents deletion: " + dir.getAbsolutePath() + " is outside staging roots!");
+            return false;
+        }
         File[] files = dir.listFiles();
         if (files == null) return true;
         boolean allDeleted = true;
@@ -1355,39 +1472,57 @@ public final class MediaStorageManager {
         return allDeleted;
     }
 
-    public synchronized int cleanupAllSafeDuplicates(boolean force) {
-        StagingAnalysisReport report = scanStagingAndDuplicates();
-        int cleaned = 0;
-        for (StagingMediaItem item : report.items) {
-            if (item.isSafeToClean || (force && item.isPhysicalDuplicate && !item.isSeeding)) {
-                if (cleanupStagingFile(item, force)) {
-                    cleaned++;
+    private final java.util.concurrent.atomic.AtomicBoolean isCleanupActive = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    public int cleanupAllSafeDuplicates(boolean force) {
+        if (!isCleanupActive.compareAndSet(false, true)) {
+            Log.w(TAG, "cleanupAllSafeDuplicates already in progress. Skipping duplicate run.");
+            return 0;
+        }
+        try {
+            StagingAnalysisReport report = scanStagingAndDuplicates();
+            int cleaned = 0;
+            for (StagingMediaItem item : report.items) {
+                if (item.isSafeToClean || (force && item.isPhysicalDuplicate && !item.isSeeding)) {
+                    if (cleanupStagingFile(item, force)) {
+                        cleaned++;
+                    }
                 }
             }
+            cleanupStagingJunkAndEmptyDirs(getRadarrDownloadsDir());
+            cleanupStagingJunkAndEmptyDirs(getSonarrDownloadsDir());
+            cleanupStagingJunkAndEmptyDirs(getTorrents());
+            cleanEmptyDirsRecursive(getDownloadsDir());
+            return cleaned;
+        } finally {
+            isCleanupActive.set(false);
         }
-        cleanupStagingJunkAndEmptyDirs(getRadarrDownloadsDir());
-        cleanupStagingJunkAndEmptyDirs(getSonarrDownloadsDir());
-        cleanupStagingJunkAndEmptyDirs(getTorrents());
-        cleanEmptyDirsRecursive(getDownloadsDir());
-        return cleaned;
     }
 
-    public synchronized int autoPurgeVerifiedDuplicates() {
-        StagingAnalysisReport report = scanStagingAndDuplicates();
-        int cleaned = 0;
-        for (StagingMediaItem item : report.items) {
-            if (item.isPhysicalDuplicate && item.libraryFile != null && item.libraryFile.exists() && item.libraryFile.length() == item.sizeBytes) {
-                if (cleanupStagingFile(item, true)) {
-                    cleaned++;
-                    Log.i(TAG, "[AutoPurge] Cleaned physical duplicate: " + item.stagingFile.getName() + " (" + formatBytes(item.sizeBytes) + ")");
+    public int autoPurgeVerifiedDuplicates() {
+        if (!isCleanupActive.compareAndSet(false, true)) {
+            Log.w(TAG, "autoPurgeVerifiedDuplicates already in progress. Skipping duplicate run.");
+            return 0;
+        }
+        try {
+            StagingAnalysisReport report = scanStagingAndDuplicates();
+            int cleaned = 0;
+            for (StagingMediaItem item : report.items) {
+                if (item.isPhysicalDuplicate && item.libraryFile != null && item.libraryFile.exists() && item.libraryFile.length() == item.sizeBytes) {
+                    if (cleanupStagingFile(item, true)) {
+                        cleaned++;
+                        Log.i(TAG, "[AutoPurge] Cleaned physical duplicate: " + item.stagingFile.getName() + " (" + formatBytes(item.sizeBytes) + ")");
+                    }
                 }
             }
+            cleanupStagingJunkAndEmptyDirs(getRadarrDownloadsDir());
+            cleanupStagingJunkAndEmptyDirs(getSonarrDownloadsDir());
+            cleanupStagingJunkAndEmptyDirs(getTorrents());
+            cleanEmptyDirsRecursive(getDownloadsDir());
+            return cleaned;
+        } finally {
+            isCleanupActive.set(false);
         }
-        cleanupStagingJunkAndEmptyDirs(getRadarrDownloadsDir());
-        cleanupStagingJunkAndEmptyDirs(getSonarrDownloadsDir());
-        cleanupStagingJunkAndEmptyDirs(getTorrents());
-        cleanEmptyDirsRecursive(getDownloadsDir());
-        return cleaned;
     }
 
     public void cleanupStagingJunkAndEmptyDirs(File stagingRoot) {
