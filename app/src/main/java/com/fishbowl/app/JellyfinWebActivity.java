@@ -15,6 +15,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.ConsoleMessage;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -237,6 +238,20 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                     "    document.getElementsByTagName('head')[0].appendChild(meta);" +
                     "  }" +
                     "})();", null);
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                Log.w(TAG, "WebView render process killed (crashed=" + (detail != null && detail.didCrash()) + ")");
+                if (view != null) {
+                    if (view.getParent() instanceof ViewGroup) {
+                        ((ViewGroup) view.getParent()).removeView(view);
+                    }
+                    try {
+                        view.destroy();
+                    } catch (Throwable ignored) {}
+                }
+                return true; // Keep app process alive
             }
         });
 

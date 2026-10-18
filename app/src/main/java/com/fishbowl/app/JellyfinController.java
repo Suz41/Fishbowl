@@ -125,6 +125,38 @@ public class JellyfinController {
     private final AtomicInteger autoRestartCount = new AtomicInteger(0);
     private final AtomicInteger healthPollAttempt = new AtomicInteger(0);
     private long serverStartTimeMs = 0;
+    private long startupStartTimeMs = 0;
+    private long listeningStartTimeMs = 0;
+    private long stopStartTimeMs = 0;
+    private long lastSuccessfulHealthCheckMs = 0;
+    private static final long MAX_STARTUP_DEADLINE_MS = 90_000L;
+    private static final long HEALTH_RESPONSE_DEADLINE_MS = 45_000L;
+    private volatile Context appContext;
+
+    public void setContext(Context context) {
+        if (context != null) {
+            this.appContext = context.getApplicationContext();
+        }
+    }
+
+    public boolean isDiskLogActivelyProgressing() {
+        try {
+            File dataDir = getProgramDataDir();
+            File logDir = new File(dataDir, "log");
+            if (logDir.exists() && logDir.isDirectory()) {
+                File[] files = logDir.listFiles();
+                if (files != null) {
+                    long now = System.currentTimeMillis();
+                    for (File f : files) {
+                        if (now - f.lastModified() < 15_000L) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
 
     public static class KillEvent {
         public final long timestamp;
@@ -405,8 +437,63 @@ public class JellyfinController {
     public void reconcileStateAsync() {
         executor.execute(() -> {
             synchronized (JellyfinController.this) {
-                if (currentState == State.STARTING || currentState == State.INITIALIZING || currentState == State.STOPPING) {
-                    return; // Do not interfere with active transitions
+                if (currentState == State.STARTING || currentState == State.INITIALIZING) {
+                    long elapsed = (startupStartTimeMs > 0) ? (System.currentTimeMillis() - startupStartTimeMs) : 0;
+                    boolean logActive = isDiskLogActivelyProgressing();
+                    boolean processAlive = (jellyfinProcess != null && jellyfinProcess.isAlive());
+
+                    if (currentState == State.INITIALIZING) {
+                        // Bootstrap extraction in progress: legitimate startup transition while within deadline
+                        if (elapsed < MAX_STARTUP_DEADLINE_MS) {
+                            return;
+                        }
+                    } else if (currentState == State.STARTING) {
+                        // Server process is starting up: legitimate if process is alive and within startup deadline, or log actively progressing
+                        if (processAlive && elapsed < MAX_STARTUP_DEADLINE_MS) {
+                            return; // Legitimate active startup transition
+                        }
+                        if (logActive) {
+                            return; // DB migration or heavy startup actively writing to disk logs
+                        }
+                    }
+
+                    appendLogLocked("reconcileStateAsync: Transitional state " + currentState + " stuck beyond deadline (" + (elapsed / 1000) + "s, logActive=" + logActive + "). Executing safe recovery.");
+                    if (!processAlive) {
+                        int code = -1;
+                        if (jellyfinProcess != null) {
+                            try { code = jellyfinProcess.exitValue(); } catch (Throwable ignored) {}
+                        }
+                        lastExitCode = code;
+                        jellyfinProcess = null;
+                        cancelHealthCheckLocked();
+                        setStateLocked(State.FAILED);
+                        return;
+                    } else {
+                        if (isReady()) {
+                            setStateLocked(State.RUNNING);
+                            cancelHealthCheckLocked();
+                            return;
+                        }
+                        // Hung process beyond deadline
+                        jellyfinProcess.destroyForcibly();
+                        jellyfinProcess = null;
+                        cancelHealthCheckLocked();
+                        lastError = "STARTUP TIMEOUT (Process hung in " + currentState + " for " + (elapsed / 1000) + "s)";
+                        setStateLocked(State.FAILED);
+                        return;
+                    }
+                } else if (currentState == State.STOPPING) {
+                    long elapsed = (stopStartTimeMs > 0) ? (System.currentTimeMillis() - stopStartTimeMs) : 0;
+                    if (elapsed < 15_000L && jellyfinProcess != null && jellyfinProcess.isAlive()) {
+                        return;
+                    }
+                    appendLogLocked("reconcileStateAsync: STOPPING stuck beyond deadline. Forcing STOPPED.");
+                    if (jellyfinProcess != null) {
+                        jellyfinProcess.destroyForcibly();
+                        jellyfinProcess = null;
+                    }
+                    setStateLocked(State.STOPPED);
+                    return;
                 }
             }
             if (!JellyfinBootstrapper.isInitialized(null)) {
@@ -458,28 +545,36 @@ public class JellyfinController {
 
     /** §1: Start with duplicate-process protection. Idempotent. */
     public void start(final Context context) {
+        setContext(context);
+        synchronized (this) {
+            if (currentState == State.RUNNING) {
+                appendLogLocked("SERVER ALREADY RUNNING — ignoring duplicate start");
+                return;
+            }
+            if (currentState == State.STARTING || currentState == State.INITIALIZING) {
+                appendLogLocked("Server is already starting — ignoring request");
+                return;
+            }
+            if (currentState == State.STOPPING) {
+                appendLogLocked("Server is stopping — ignoring start request");
+                return;
+            }
+            if (currentState == State.CRASH_LOOP) {
+                appendLogLocked("CRASH LOOP DETECTED — use RESET CRASH LOOP first");
+                return;
+            }
+            stopRequested = false;
+            lastError = null;
+            startupStartTimeMs = System.currentTimeMillis();
+            setStateLocked(State.INITIALIZING);
+            appendLogLocked("Initializing Jellyfin runtime");
+        }
+
         executor.execute(() -> {
             synchronized (JellyfinController.this) {
-                if (currentState == State.RUNNING) {
-                    appendLogLocked("SERVER ALREADY RUNNING — ignoring duplicate start");
+                if (stopRequested || currentState != State.INITIALIZING) {
                     return;
                 }
-                if (currentState == State.STARTING || currentState == State.INITIALIZING) {
-                    appendLogLocked("Server is already starting — ignoring request");
-                    return;
-                }
-                if (currentState == State.STOPPING) {
-                    appendLogLocked("Server is stopping — ignoring start request");
-                    return;
-                }
-                if (currentState == State.CRASH_LOOP) {
-                    appendLogLocked("CRASH LOOP DETECTED — use RESET CRASH LOOP first");
-                    return;
-                }
-                stopRequested = false;
-                lastError = null;
-                setStateLocked(State.INITIALIZING);
-                appendLogLocked("Initializing Jellyfin runtime");
             }
 
             // §11: Port conflict pre-check
@@ -492,8 +587,17 @@ public class JellyfinController {
                 return;
             }
 
-            final Context appContext = context.getApplicationContext();
-            boolean initialized = JellyfinBootstrapper.initializeIfNeeded(appContext, (msg, pct) -> {
+            final Context ctx = (context != null) ? context.getApplicationContext() : this.appContext;
+            if (ctx == null) {
+                synchronized (JellyfinController.this) {
+                    lastError = "Cannot initialize runtime without context";
+                    appendLogLocked("ERROR: " + lastError);
+                    setStateLocked(State.FAILED);
+                }
+                return;
+            }
+
+            boolean initialized = JellyfinBootstrapper.initializeIfNeeded(ctx, (msg, pct) -> {
                 synchronized (JellyfinController.this) {
                     bootstrapProgressMessage = msg;
                     bootstrapProgressPercent = pct;
@@ -519,11 +623,13 @@ public class JellyfinController {
 
     /** Reinstall Jellyfin runtime from scratch without losing media, database, or settings. */
     public void reinstallRuntime(final Context context) {
+        setContext(context);
         executor.execute(() -> {
             stopAndWait();
             waitForPortRelease();
             synchronized (JellyfinController.this) {
                 lastError = null;
+                startupStartTimeMs = System.currentTimeMillis();
                 setStateLocked(State.INITIALIZING);
                 appendLogLocked("Reinstalling Jellyfin runtime from bundled packages...");
             }
@@ -553,6 +659,7 @@ public class JellyfinController {
 
     /** §1: Restart is stop + start. Idempotent. Resets crash-loop. */
     public void restart(final Context context) {
+        setContext(context);
         executor.execute(() -> {
             synchronized (JellyfinController.this) {
                 if (currentState == State.CRASH_LOOP) {
@@ -578,6 +685,7 @@ public class JellyfinController {
 
     /** Reset crash-loop state and start. */
     public void resetCrashLoop(Context context) {
+        setContext(context);
         executor.execute(() -> {
             synchronized (JellyfinController.this) {
                 if (currentState == State.CRASH_LOOP) {
@@ -590,11 +698,45 @@ public class JellyfinController {
         });
     }
 
+    public void setStateForTest(State state) {
+        synchronized (this) {
+            setStateLocked(state);
+        }
+    }
+
+    public int getAutoRestartCount() {
+        return autoRestartCount.get();
+    }
+
+    public int incrementAutoRestartCountForTest() {
+        return autoRestartCount.incrementAndGet();
+    }
+
+    public void resetAutoRestartCountForTest() {
+        autoRestartCount.set(0);
+    }
+
+    public static int getMaxAutoRestarts() {
+        return MAX_AUTO_RESTARTS;
+    }
+
     // ── Launch ─────────────────────────────────────────────────────────────────
 
     private void launchServer(Context ctx) {
         synchronized (this) {
             if (stopRequested) { setStateLocked(State.STOPPED); return; }
+            if (jellyfinProcess != null && jellyfinProcess.isAlive()) {
+                if (isReady()) {
+                    appendLogLocked("launchServer: Process is already alive and HTTP ready — marking RUNNING");
+                    setStateLocked(State.RUNNING);
+                    return;
+                }
+                appendLogLocked("launchServer: Terminating previous deadlocked/stale Jellyfin process before launching new instance");
+                jellyfinProcess.destroyForcibly();
+                jellyfinProcess = null;
+            }
+            startupStartTimeMs = System.currentTimeMillis();
+            listeningStartTimeMs = 0;
             setStateLocked(State.STARTING);
             appendLogLocked("Launching Jellyfin server process");
         }
@@ -809,28 +951,90 @@ public class JellyfinController {
     private synchronized void startHealthCheck(final Process process) {
         cancelHealthCheckLocked();
         healthPollAttempt.set(0);
+        listeningStartTimeMs = 0;
         healthCheckExecutor = Executors.newSingleThreadScheduledExecutor();
+        final Context ctx = appContext;
         healthCheckFuture = healthCheckExecutor.scheduleAtFixedRate(() -> {
             boolean ready = isReady();
             boolean listening = isPortListening(8096);
             int attempt = healthPollAttempt.incrementAndGet();
             synchronized (JellyfinController.this) {
                 if (process != jellyfinProcess || stopRequested) return;
-                if (!process.isAlive()) return; // exit monitor handles
+
+                // 1. Process termination detection during startup sequence
+                if (!process.isAlive()) {
+                    int exitCode = -1;
+                    try { exitCode = process.exitValue(); } catch (Throwable ignored) {}
+                    lastExitCode = exitCode;
+                    jellyfinProcess = null;
+                    cancelHealthCheckLocked();
+                    appendLogLocked("Jellyfin process terminated unexpectedly during startup (exit " + exitCode + ")");
+                    if (exitCode == 137 || exitCode == 143) {
+                        lastError = "PROCESS KILLED BY OS (exit " + exitCode + " - LMK)";
+                        setStateLocked(State.CRASHED);
+                    } else {
+                        lastError = "JELLYFIN FAILED TO START (exit " + exitCode + ")";
+                        setStateLocked(State.FAILED);
+                    }
+                    recordKillEvent(ctx, "Startup Sequence Process Exit", exitCode, 0);
+                    handleCrashRecovery(ctx);
+                    return;
+                }
+
+                // 2. HTTP Readiness Confirmation (HTTP 200 on /system/info/public)
                 if (ready && currentState == State.STARTING) {
+                    lastSuccessfulHealthCheckMs = System.currentTimeMillis();
                     autoRestartCount.set(0); // successful start resets crash counter
                     appendLogLocked("Public System Info -> HTTP 200 JSON - server is RUNNING (READY)");
                     setStateLocked(State.RUNNING);
                     // §3/§12: Stop polling once healthy — avoid unnecessary background polling
                     cancelHealthCheckLocked();
+                    return;
                 } else if (currentState == State.STARTING) {
                     if (listening) {
+                        if (listeningStartTimeMs == 0) {
+                            listeningStartTimeMs = System.currentTimeMillis();
+                        }
                         currentStage = StartupStage.CHECKING_READINESS;
+                        long listeningElapsed = System.currentTimeMillis() - listeningStartTimeMs;
+                        boolean logProgressing = isDiskLogActivelyProgressing();
+
+                        // Bounded Health Response Deadline: Port listening but HTTP readiness unresponsive
+                        if (listeningElapsed > HEALTH_RESPONSE_DEADLINE_MS && !logProgressing) {
+                            appendLogLocked("HEALTH TIMEOUT: Port 8096 listening but /system/info/public unresponsive for "
+                                    + (listeningElapsed / 1000) + "s. No active log writes. Server hung.");
+                            cancelHealthCheckLocked();
+                            process.destroyForcibly();
+                            jellyfinProcess = null;
+                            lastError = "SERVER UNRESPONSIVE (Health check timed out after " + (listeningElapsed / 1000) + "s)";
+                            setStateLocked(State.FAILED);
+                            recordKillEvent(ctx, "HTTP Readiness Timeout (Hung Server)", -1, listeningElapsed / 1000);
+                            handleCrashRecovery(ctx);
+                            return;
+                        }
+
                         if (attempt % 4 == 0) {
-                            appendLogLocked("Port 8096 listening — database migration & startup in progress (attempt " + attempt + ")...");
+                            appendLogLocked("Port 8096 listening — database migration & startup in progress ("
+                                    + (listeningElapsed / 1000) + "s, log active: " + logProgressing + ")...");
                         }
                     } else {
                         currentStage = StartupStage.WAITING_FOR_SERVER;
+                        long totalElapsed = System.currentTimeMillis() - startupStartTimeMs;
+                        boolean logProgressing = isDiskLogActivelyProgressing();
+
+                        // Bounded Startup Deadline: Process did not open port within deadline
+                        if (totalElapsed > MAX_STARTUP_DEADLINE_MS && !logProgressing) {
+                            appendLogLocked("STARTUP TIMEOUT: Jellyfin process did not open port 8096 within "
+                                    + (totalElapsed / 1000) + "s. No active log writes.");
+                            cancelHealthCheckLocked();
+                            process.destroyForcibly();
+                            jellyfinProcess = null;
+                            lastError = "STARTUP TIMEOUT (Process did not open port within 90s)";
+                            setStateLocked(State.FAILED);
+                            recordKillEvent(ctx, "Startup Timeout (Port 8096 not opened)", -1, totalElapsed / 1000);
+                            handleCrashRecovery(ctx);
+                            return;
+                        }
                     }
                     notifyListeners();
                 }
@@ -844,6 +1048,7 @@ public class JellyfinController {
         Process process;
         synchronized (this) {
             stopRequested = true;
+            stopStartTimeMs = System.currentTimeMillis();
             cancelHealthCheckLocked();
             process = jellyfinProcess;
             if (process == null || !process.isAlive()) {
@@ -1120,6 +1325,12 @@ public class JellyfinController {
         }
         Log.i(TAG, "State → " + state + " (Stage: " + currentStage + ")");
         notifyListeners();
+        Context ctx = appContext;
+        if (ctx != null) {
+            try {
+                com.fishbowl.app.widget.FishbowlWidgetProvider.updateAllWidgets(ctx);
+            } catch (Throwable ignored) {}
+        }
     }
 
     private void notifyListeners() {

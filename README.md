@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/Suz41/Fishbowl/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/Suz41/Fishbowl/build.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="Build Status" /></a>
-  <a href="https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2"><img src="https://img.shields.io/badge/Release-v1.4.8--beta.2-00A4DC?style=flat-square" alt="Release" /></a>
+  <a href="https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8"><img src="https://img.shields.io/badge/Release-v1.4.8-00A4DC?style=flat-square" alt="Release" /></a>
   <a href="https://jellyfin.org"><img src="https://img.shields.io/badge/Jellyfin%20Core-12.1.0-9B59B6?style=flat-square&logo=jellyfin&logoColor=white" alt="Jellyfin" /></a>
   <a href="https://dotnet.microsoft.com"><img src="https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4?style=flat-square&logo=dotnet&logoColor=white" alt=".NET" /></a>
   <a href="https://android.com"><img src="https://img.shields.io/badge/Platform-Android%20ARM64-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android" /></a>
@@ -68,8 +68,8 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 ### Step 1: Download & Install
 
 1. Download the latest universal release package:
-   - [**Fishbowl v1.4.8-beta.2**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2) (`Fishbowl-v1.4.8-beta.2-release-universal.apk`)
-   - **SHA-256 Verification:** `8AC58D02E84BD53D2FF2F53E2CE39139BB42FEE7ED0AB9B5F66070B78E65AC4C`
+   - [**Fishbowl v1.4.8**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8) (`Fishbowl-v1.4.8-release-universal.apk`)
+   - **SHA-256 Verification:** `34B1DEB600961DCA19A3BF8B23F35ABF5B68DB2BB237D3F3D51BCAE05494298F`
 2. Install the APK on your ARM64 device.
 3. Grant required runtime permissions when prompted:
    - **All-Files Storage Access (`MANAGE_EXTERNAL_STORAGE`):** Allows Jellyfin and automation tools to index video and audio files across internal and external storage volumes.

@@ -22,8 +22,8 @@ Fishbowl hosts the full, native **Jellyfin Media Server (v12.1.0)** on your Andr
 ## Step-by-Step Setup
 
 ### Step 1: Download & Install
-1. Go to [Fishbowl Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8-beta.2).
-2. Download the latest `Fishbowl-v1.4.8-beta.2-release-universal.apk` (SHA-256: `8AC58D02E84BD53D2FF2F53E2CE39139BB42FEE7ED0AB9B5F66070B78E65AC4C`).
+1. Go to [Fishbowl Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8).
+2. Download the latest `Fishbowl-v1.4.8-release-universal.apk` (SHA-256: `34B1DEB600961DCA19A3BF8B23F35ABF5B68DB2BB237D3F3D51BCAE05494298F`).
 3. Open the downloaded file and install the app.
 4. Grant Notification, All-Files Storage Access, and Battery Optimization permissions when prompted.
 

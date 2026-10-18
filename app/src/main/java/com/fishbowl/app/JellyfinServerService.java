@@ -66,6 +66,18 @@ public class JellyfinServerService extends Service implements JellyfinController
         }
     };
     private boolean hasStarted = false;
+    private long serviceStartTimeMs = 0;
+
+    private static final String PREF_NAME = "fishbowl_service";
+    private static final String KEY_STACK_ACTIVE = "stack_active";
+
+    private boolean isStackActivePref() {
+        return getSharedPreferences(PREF_NAME, MODE_PRIVATE).getBoolean(KEY_STACK_ACTIVE, false);
+    }
+
+    private void setStackActivePref(boolean active) {
+        getSharedPreferences(PREF_NAME, MODE_PRIVATE).edit().putBoolean(KEY_STACK_ACTIVE, active).apply();
+    }
 
     // -- Lifecycle -------------------------------------------------------------
 
@@ -73,26 +85,27 @@ public class JellyfinServerService extends Service implements JellyfinController
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
-        acquireLocks();
         controller = JellyfinController.getInstance();
+        controller.setContext(getApplicationContext());
         controller.addListener(this);
         serviceManager = MediaServiceManager.getInstance(this);
         if (serviceManager != null) {
             serviceManager.addListener(this);
         }
+        acquireLocks();
         promoteToForeground(buildNotification("Fishbowl Media Stack", "Starting services...", false));
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        promoteToForeground(buildNotification("Fishbowl Media Stack", "Starting stack...", false));
-
         if (intent != null) {
             String action = intent.getAction();
             if (ACTION_START_JELLYFIN.equals(action) || ACTION_START.equals(action)) {
                 Log.i(TAG, "Service received START_JELLYFIN - launching Jellyfin server only");
+                setStackActivePref(true);
                 hasStarted = true;
                 acquireLocks();
+                promoteToForeground(buildNotification("Fishbowl Media Stack", "Starting Jellyfin...", false));
                 controller.start(getApplicationContext());
                 updateNotificationState();
             } else if (ACTION_STOP_JELLYFIN.equals(action)) {
@@ -101,8 +114,10 @@ public class JellyfinServerService extends Service implements JellyfinController
                 updateNotificationState();
             } else if (ACTION_START_ALL.equals(action)) {
                 Log.i(TAG, "Service received START_ALL - launching all media stack services");
+                setStackActivePref(true);
                 hasStarted = true;
                 acquireLocks();
+                promoteToForeground(buildNotification("Fishbowl Media Stack", "Starting stack...", false));
                 if (serviceManager != null) {
                     serviceManager.startAllServices();
                 } else {
@@ -111,17 +126,49 @@ public class JellyfinServerService extends Service implements JellyfinController
                 updateNotificationState();
             } else if (ACTION_STOP_ALL.equals(action) || ACTION_STOP.equals(action)) {
                 Log.i(TAG, "Service received STOP_ALL - stopping all media stack services");
+                setStackActivePref(false);
                 hasStarted = false;
                 releaseLocks();
                 if (serviceManager != null) {
                     serviceManager.stopAllServices();
                 }
                 controller.stop();
+                updateNotificationState();
                 stopSelf();
             } else if (ACTION_KEEP_ALIVE.equals(action)) {
                 hasStarted = true;
                 acquireLocks();
                 updateNotificationState();
+            }
+        } else {
+            // Intent is null: Restarted by Android OS after Low Memory Killer (START_STICKY)
+            boolean wasActive = isStackActivePref();
+            Log.i(TAG, "JellyfinServerService restarted by Android OS (intent=null, wasActive=" + wasActive + ")");
+            if (wasActive) {
+                hasStarted = true;
+                acquireLocks();
+                promoteToForeground(buildNotification("Fishbowl Media Stack", "Restoring services after OS kill...", false));
+                if (serviceManager != null) {
+                    serviceManager.startAllServices();
+                } else {
+                    controller.start(getApplicationContext());
+                }
+                updateNotificationState();
+            } else {
+                // User previously stopped services; dismiss any transient notification
+                releaseLocks();
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        stopForeground(STOP_FOREGROUND_REMOVE);
+                    } else {
+                        stopForeground(true);
+                    }
+                    NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                    if (nm != null) {
+                        nm.cancel(NOTIFICATION_ID);
+                    }
+                } catch (Throwable ignored) {}
+                stopSelf();
             }
         }
 
@@ -135,6 +182,17 @@ public class JellyfinServerService extends Service implements JellyfinController
             serviceManager.removeListener(this);
         }
         releaseLocks();
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE);
+            } else {
+                stopForeground(true);
+            }
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) {
+                nm.cancel(NOTIFICATION_ID);
+            }
+        } catch (Throwable ignored) {}
         super.onDestroy();
     }
 
@@ -152,6 +210,11 @@ public class JellyfinServerService extends Service implements JellyfinController
 
     @Override
     public void onServerChanged(final JellyfinController.State state) {
+        updateNotificationState();
+    }
+
+    @Override
+    public void onBootstrapProgress(final String message, final int percent) {
         updateNotificationState();
     }
 
@@ -176,26 +239,48 @@ public class JellyfinServerService extends Service implements JellyfinController
                 }
             }
 
-            boolean isStarting = (jfState == JellyfinController.State.STARTING || jfState == JellyfinController.State.INITIALIZING);
+            boolean isInitializing = (jfState == JellyfinController.State.INITIALIZING);
+            boolean isStarting = (jfState == JellyfinController.State.STARTING || isInitializing);
             boolean anyRunning = !activeServices.isEmpty();
+            boolean isFailed = (jfState == JellyfinController.State.FAILED || jfState == JellyfinController.State.CRASHED || jfState == JellyfinController.State.CRASH_LOOP);
+
+            if (anyRunning) {
+                if (serviceStartTimeMs == 0) {
+                    serviceStartTimeMs = System.currentTimeMillis();
+                }
+            } else if (!isStarting) {
+                serviceStartTimeMs = 0;
+            }
 
             if (anyRunning || isStarting) {
                 hasStarted = true;
                 acquireLocks();
 
                 String lan = getLanAddress();
-                String ep = (lan != null) ? lan : "127.0.0.1:8096";
+                String fullUrl = (lan != null) ? lan : "http://127.0.0.1:8096";
+                String cleanEp = fullUrl.replaceFirst("^https?://", "");
 
-                String title = "Fishbowl Media Server";
+                String title;
                 String shortText;
                 StringBuilder expanded = new StringBuilder();
 
-                if (isStarting && activeServices.isEmpty()) {
+                if (isInitializing) {
+                    int pct = controller != null ? controller.getBootstrapProgressPercent() : 0;
+                    String bMsg = controller != null ? controller.getBootstrapProgressMessage() : "Extracting runtime...";
+                    int displayPct = Math.max(5, pct);
+                    title = "Fishbowl • Setup (" + displayPct + "%)";
+                    shortText = (bMsg != null && !bMsg.isEmpty()) ? bMsg : "Configuring server environment...";
+                    expanded.append("Initial installation in progress (").append(displayPct).append("%)\n");
+                    expanded.append(shortText).append("\n\n");
+                    expanded.append("Please keep Fishbowl open while runtime setup completes.");
+                } else if (isStarting && activeServices.isEmpty()) {
+                    title = "Fishbowl Media Server";
                     shortText = "Starting media stack...";
                     expanded.append("Initializing server runtime and companion services...");
                 } else {
-                    shortText = activeServices.size() + " active • " + ep;
-                    expanded.append("Endpoint: http://").append(ep).append("\n\n");
+                    title = "Fishbowl Media Server";
+                    shortText = activeServices.size() + (activeServices.size() == 1 ? " service" : " services") + " active • " + cleanEp;
+                    expanded.append("Endpoint: ").append(fullUrl).append("\n\n");
                     expanded.append("Active Services (").append(activeServices.size()).append("):\n");
                     for (int i = 0; i < activeServices.size(); i++) {
                         expanded.append("• ").append(activeServices.get(i));
@@ -203,16 +288,35 @@ public class JellyfinServerService extends Service implements JellyfinController
                     }
                 }
 
-                Notification notification = buildNotification(title, shortText, expanded.toString(), anyRunning);
+                Notification notification = buildNotification(title, shortText, expanded.toString(), anyRunning, isInitializing, isFailed);
                 promoteToForeground(notification);
                 com.fishbowl.app.widget.FishbowlWidgetProvider.updateAllWidgets(getApplicationContext());
-            } else {
-                // If Jellyfin and all other services are stopped
-                if (!hasStarted) {
-                    return;
-                }
+            } else if (isFailed && hasStarted) {
+                // Failure occurred - report real error instead of leaving "Starting..." or stopping silently
+                serviceStartTimeMs = 0;
+                releaseLocks();
+                String err = (controller != null && controller.getLastError() != null) ? controller.getLastError() : "Server stopped unexpectedly";
+                String title = (jfState == JellyfinController.State.CRASH_LOOP) ? "Fishbowl: Crash Loop" : "Fishbowl: Server Error";
+                Notification failNotif = buildNotification(title, err, "Failure details: " + err + "\nTap to open Fishbowl dashboard.", false, false, true);
+                promoteToForeground(failNotif);
+                com.fishbowl.app.widget.FishbowlWidgetProvider.updateAllWidgets(getApplicationContext());
+            } else if (hasStarted) {
+                // Fully stopped cleanly after having been active
+                serviceStartTimeMs = 0;
+                hasStarted = false;
                 releaseLocks();
                 com.fishbowl.app.widget.FishbowlWidgetProvider.updateAllWidgets(getApplicationContext());
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        stopForeground(STOP_FOREGROUND_REMOVE);
+                    } else {
+                        stopForeground(true);
+                    }
+                    NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                    if (nm != null) {
+                        nm.cancel(NOTIFICATION_ID);
+                    }
+                } catch (Throwable ignored) {}
                 stopSelf();
             }
         });
@@ -221,12 +325,16 @@ public class JellyfinServerService extends Service implements JellyfinController
     private void promoteToForeground(Notification notification) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                int type = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
-                startForeground(NOTIFICATION_ID, notification, type);
-            } else {
-                startForeground(NOTIFICATION_ID, notification);
+                try {
+                    int type = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
+                    startForeground(NOTIFICATION_ID, notification, type);
+                    return;
+                } catch (Throwable t) {
+                    Log.w(TAG, "startForeground with mediaPlayback type failed, falling back: " + t.getMessage());
+                }
             }
-        } catch (Exception e) {
+            startForeground(NOTIFICATION_ID, notification);
+        } catch (Throwable e) {
             Log.e(TAG, "startForeground error: " + e.getMessage(), e);
         }
     }
@@ -294,10 +402,14 @@ public class JellyfinServerService extends Service implements JellyfinController
     // -- Notification helpers --------------------------------------------------
 
     private Notification buildNotification(String title, String text, boolean isRunning) {
-        return buildNotification(title, text, null, isRunning);
+        return buildNotification(title, text, null, isRunning, false, false);
     }
 
     private Notification buildNotification(String title, String shortText, String expandedText, boolean isRunning) {
+        return buildNotification(title, shortText, expandedText, isRunning, false, false);
+    }
+
+    private Notification buildNotification(String title, String shortText, String expandedText, boolean isRunning, boolean isInitializing, boolean isFailed) {
         Intent openIntent = new Intent(this, FishbowlActivity.class);
         openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent openPi = PendingIntent.getActivity(
@@ -314,11 +426,26 @@ public class JellyfinServerService extends Service implements JellyfinController
                 .setContentTitle(title)
                 .setContentText(shortText)
                 .setSmallIcon(R.drawable.ic_notification_jellyfin)
-                .setColor(Color.parseColor("#38BDF8"))
                 .setContentIntent(openPi)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW);
+
+        if (isRunning) {
+            builder.setColor(Color.parseColor("#10B981")); // Emerald green for active stack
+            if (serviceStartTimeMs > 0) {
+                builder.setWhen(serviceStartTimeMs);
+                builder.setUsesChronometer(true);
+            }
+        } else if (isInitializing) {
+            builder.setColor(Color.parseColor("#38BDF8")); // Electric sky blue for setup
+            int pct = controller != null ? controller.getBootstrapProgressPercent() : 0;
+            builder.setProgress(100, Math.max(5, pct), false);
+        } else if (isFailed) {
+            builder.setColor(Color.parseColor("#EF4444")); // Crimson for error
+        } else {
+            builder.setColor(Color.parseColor("#F59E0B")); // Amber for starting
+        }
 
         if (expandedText != null && !expandedText.isEmpty()) {
             builder.setStyle(new NotificationCompat.BigTextStyle()
@@ -333,10 +460,22 @@ public class JellyfinServerService extends Service implements JellyfinController
             PendingIntent webPi = PendingIntent.getActivity(
                     this, 2, webIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            builder.addAction(R.drawable.ic_notification_jellyfin, "OPEN WEB UI", webPi);
+            builder.addAction(R.drawable.ic_open_in_browser, "OPEN WEB UI", webPi);
+            builder.addAction(R.drawable.ic_fishbowl_logo, "DASHBOARD", openPi);
+            builder.addAction(R.drawable.ic_stop, "STOP ALL", stopPi);
+        } else if (isFailed) {
+            Intent retryIntent = new Intent(this, JellyfinServerService.class);
+            retryIntent.setAction(ACTION_START);
+            PendingIntent retryPi = PendingIntent.getService(
+                    this, 3, retryIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            builder.addAction(R.drawable.ic_restart, "RETRY START", retryPi);
+            builder.addAction(R.drawable.ic_fishbowl_logo, "DASHBOARD", openPi);
+        } else {
+            builder.addAction(R.drawable.ic_fishbowl_logo, "DASHBOARD", openPi);
+            builder.addAction(R.drawable.ic_stop, "STOP", stopPi);
         }
 
-        builder.addAction(R.drawable.ic_restart, "STOP ALL", stopPi);
         return builder.build();
     }
 

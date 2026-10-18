@@ -2,11 +2,13 @@ package com.fishbowl.app.services;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -112,8 +114,8 @@ public final class NativeFlareSolver {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private WebView createConfiguredWebView(Activity activity) {
-        WebView wv = new WebView(activity);
+    private WebView createConfiguredWebView(Context context) {
+        WebView wv = new WebView(context);
         WebSettings s = wv.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -375,6 +377,15 @@ public final class NativeFlareSolver {
 
         mainHandler.post(() -> {
             try {
+                if (activeWebView == null && containerLayout != null && containerLayout.getContext() != null) {
+                    try {
+                        activeWebView = createConfiguredWebView(containerLayout.getContext());
+                        containerLayout.addView(activeWebView);
+                        Log.i(TAG, "[NativeFlareSolver] Recreated WebView runtime after render process recovery");
+                    } catch (Throwable t) {
+                        Log.e(TAG, "[NativeFlareSolver] Failed to recreate WebView: " + t.getMessage());
+                    }
+                }
                 if (activeWebView == null) {
                     res.errorMessage = "WebView runtime is not initialized";
                     latch.countDown();
@@ -385,6 +396,26 @@ public final class NativeFlareSolver {
                 activeWebView.stopLoading();
 
                 activeWebView.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                        Log.w(TAG, "[NativeFlareSolver] WebView render process killed by OS (crashed=" + (detail != null && detail.didCrash()) + ")");
+                        if (view != null) {
+                            if (view.getParent() instanceof ViewGroup) {
+                                ((ViewGroup) view.getParent()).removeView(view);
+                            }
+                            try {
+                                view.destroy();
+                            } catch (Throwable ignored) {}
+                        }
+                        activeWebView = null;
+                        res.success = false;
+                        res.errorMessage = "WebView render process killed by OS in background";
+                        if (completed.compareAndSet(false, true)) {
+                            latch.countDown();
+                        }
+                        return true; // Crucial: prevents Android OS from terminating host application process
+                    }
+
                     @Override
                     public void onPageFinished(WebView view, String url) {
                         super.onPageFinished(view, url);

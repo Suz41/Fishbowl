@@ -281,10 +281,19 @@ public class MediaServiceManager {
     }
 
     public synchronized void deploySeerrServiceIfNeeded() {
+        deploySeerrService(false);
+    }
+
+    public synchronized void deploySeerrService(boolean forceInstall) {
         try {
             File home = TermuxConstants.TERMUX_HOME_DIR;
             File seerrDist = new File(home, "services/seerr/dist");
             File targetJs = new File(seerrDist, "index.js");
+
+            // Never auto-deploy on fresh launch unless explicitly requested or already installed
+            if (!forceInstall && !targetJs.exists()) {
+                return;
+            }
 
             byte[] assetBytes = null;
             try (java.io.InputStream in = appContext.getAssets().open("seerr/index.js")) {
@@ -299,7 +308,7 @@ public class MediaServiceManager {
                 Log.w(TAG, "Could not read seerr/index.js asset: " + t.getMessage());
             }
 
-            if (assetBytes != null && (!targetJs.exists() || targetJs.length() != assetBytes.length)) {
+            if (assetBytes != null && (forceInstall || !targetJs.exists() || targetJs.length() != assetBytes.length)) {
                 seerrDist.mkdirs();
                 File configDir = new File(home, ".config/seerr");
                 configDir.mkdirs();
@@ -437,21 +446,30 @@ public class MediaServiceManager {
 
                 int port = ms.getManifest().getDefaultPort();
                 if (isPortOccupied(port)) {
-                    // Service is alive and port is bound!
-                    ms.setState(ServiceState.RUNNING);
-                    ms.setHealthy(true);
-                    if (ms.getProcessPid() == 0) {
-                        String exePath = ms.getManifest().getExecutableOrDllPath();
-                        if (exePath != null && !exePath.isEmpty()) {
-                            String execTarget = "bazarr".equalsIgnoreCase(ms.getManifest().getId()) ? "bazarr" : new File(exePath).getName();
-                            long discoveredPid = findPidByPattern(execTarget);
-                            if (discoveredPid > 0) {
-                                ms.setProcessPid(discoveredPid);
+                    // Confirm actual HTTP readiness rather than treating port socket binding alone as running
+                    if (checkApiReadiness(ms)) {
+                        ms.setState(ServiceState.RUNNING);
+                        ms.setHealthy(true);
+                        if (ms.getProcessPid() == 0) {
+                            String exePath = ms.getManifest().getExecutableOrDllPath();
+                            if (exePath != null && !exePath.isEmpty()) {
+                                String execTarget = "bazarr".equalsIgnoreCase(ms.getManifest().getId()) ? "bazarr" : new File(exePath).getName();
+                                long discoveredPid = findPidByPattern(execTarget);
+                                if (discoveredPid > 0) {
+                                    ms.setProcessPid(discoveredPid);
+                                }
                             }
                         }
+                        notifyListeners(ms.getManifest().getId(), ServiceState.RUNNING);
+                    } else {
+                        // Port is bound but HTTP API is not responding/ready
+                        if (ms.getState() == ServiceState.RUNNING) {
+                            ms.setState(ServiceState.UNHEALTHY);
+                            ms.setHealthy(false);
+                            notifyListeners(ms.getManifest().getId(), ServiceState.UNHEALTHY);
+                        }
                     }
-                    notifyListeners(ms.getManifest().getId(), ServiceState.RUNNING);
-                } else if (ms.getState() == ServiceState.RUNNING) {
+                } else if (ms.getState() == ServiceState.RUNNING || ms.getState() == ServiceState.API_READY) {
                     ms.setState(ServiceState.STOPPED);
                     ms.setHealthy(false);
                     notifyListeners(ms.getManifest().getId(), ServiceState.STOPPED);
@@ -524,17 +542,34 @@ public class MediaServiceManager {
             return;
         }
 
-        if (ms.isRunning() || ms.isStarting()) {
-            Log.d(TAG, "Service " + id + " is already running or starting. Ignoring redundant start.");
-            return;
-        }
-
-        serviceExecutor.execute(() -> {
+        synchronized (ms) {
+            if (ms.isRunning() || ms.isStarting()) {
+                Log.d(TAG, "Service " + id + " is already running or starting. Ignoring redundant start.");
+                return;
+            }
             ms.setUserStopped(false);
             ms.setState(ServiceState.STARTING);
-            notifyListeners(id, ServiceState.STARTING);
-            Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STARTING");
-            ms.appendLog("Starting " + ms.getManifest().getDisplayName() + "...");
+        }
+
+        notifyListeners(id, ServiceState.STARTING);
+        Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STARTING");
+        ms.appendLog("Starting " + ms.getManifest().getDisplayName() + "...");
+
+        serviceExecutor.execute(() -> {
+            // Check storage pre-flight
+            long freeStorageMb = 0;
+            try {
+                android.os.StatFs stat = new android.os.StatFs(TermuxConstants.TERMUX_FILES_DIR.getAbsolutePath());
+                freeStorageMb = stat.getAvailableBytes() / (1024 * 1024);
+            } catch (Throwable ignored) {}
+
+            if (freeStorageMb < 50) {
+                ms.setLastError("STORAGE_IS_FULL: Free internal storage is " + freeStorageMb + " MB (<50 MB required).");
+                ms.setState(ServiceState.ERROR);
+                notifyListeners(id, ServiceState.ERROR);
+                Log.e(TAG, "[ServiceManager] Cannot start " + ms.getDisplayName() + ": storage full (" + freeStorageMb + " MB free)");
+                return;
+            }
 
             // 1. Verify installation
             if (!ms.isInstalled()) {
@@ -752,6 +787,23 @@ public class MediaServiceManager {
                             notifyListeners(id, ServiceState.STOPPED);
                             Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STOPPED (intentional)");
                         } else {
+                            // Check storage before auto-restart to prevent endless crash loops on low storage
+                            long exitStorageMb = 0;
+                            try {
+                                android.os.StatFs stat = new android.os.StatFs(TermuxConstants.TERMUX_FILES_DIR.getAbsolutePath());
+                                exitStorageMb = stat.getAvailableBytes() / (1024 * 1024);
+                            } catch (Throwable ignored) {}
+
+                            if (exitStorageMb < 50) {
+                                ms.setLastError("STORAGE_IS_FULL: Device storage is full (" + exitStorageMb + " MB free). Halting auto-restart.");
+                                ms.setState(ServiceState.ERROR);
+                                ms.setHealthy(false);
+                                ms.setProcessPid(0);
+                                notifyListeners(id, ServiceState.ERROR);
+                                Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " STORAGE_IS_FULL. Auto-restart halted.");
+                                return;
+                            }
+
                             ms.recordCrash();
                             int crashes = ms.getCrashCount();
                             if (crashes > 5) {
@@ -968,6 +1020,21 @@ public class MediaServiceManager {
 
     public static boolean deleteRecursive(File f) {
         if (f == null || !f.exists()) return true;
+        try {
+            String canonical = f.getCanonicalPath();
+            File home = TermuxConstants.TERMUX_HOME_DIR.getCanonicalFile();
+            File filesDir = TermuxConstants.TERMUX_FILES_DIR.getCanonicalFile();
+            boolean isAllowed = canonical.startsWith(home.getPath() + File.separator) ||
+                                canonical.startsWith(filesDir.getPath() + File.separator);
+            if (!isAllowed) {
+                Log.e(TAG, "Refusing recursive deletion outside permitted app directories: " + canonical);
+                return false;
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "Cannot canonicalize path for deletion check: " + f.getAbsolutePath());
+            return false;
+        }
+
         if (f.isDirectory()) {
             File[] children = f.listFiles();
             if (children != null) {
@@ -977,13 +1044,7 @@ public class MediaServiceManager {
             }
         }
         f.setWritable(true, false);
-        boolean deleted = f.delete();
-        if (!deleted && f.exists()) {
-            try {
-                Runtime.getRuntime().exec(new String[]{"rm", "-rf", f.getAbsolutePath()}).waitFor();
-            } catch (Throwable ignored) {}
-        }
-        return !f.exists();
+        return f.delete();
     }
 
     public void uninstallService(String id, Runnable onComplete) {
