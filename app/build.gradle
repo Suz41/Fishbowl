@@ -38,7 +38,7 @@ android {
         implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
 
         implementation "org.apache.commons:commons-compress:1.26.0"
-        implementation "org.tukaani:xz:1.9"
+        implementation "org.tukaani:xz:1.12"
         implementation project(":terminal-view")
         implementation project(":termux-shared")
     }
