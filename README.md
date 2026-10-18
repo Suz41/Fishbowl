@@ -30,6 +30,7 @@
 
 <p align="center">
   <a href="#quick-start"><b>Quick Start</b></a> •
+  <a href="#release-v148-stable-highlights--fixes"><b>Release Notes</b></a> •
   <a href="#system-architecture"><b>Architecture</b></a> •
   <a href="#key-features"><b>Features</b></a> •
   <a href="#service-endpoint--network-port-matrix"><b>Ports & Endpoints</b></a> •
@@ -68,8 +69,9 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 ### Step 1: Download & Install
 
 1. Download the latest universal release package:
-   - [**Fishbowl v1.4.8**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8) (`Fishbowl-v1.4.8-release-universal.apk`)
+   - [**Fishbowl v1.4.8 (Stable)**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8) (`Fishbowl-v1.4.8-release-universal.apk`)
    - **SHA-256 Verification:** `91A424E63C6AC400C1C85134470CF96EE13F46996AB05668F70DC9447ED76F6F`
+   - **Package Size:** 338,869,921 bytes (~323.17 MiB)
 2. Install the APK on your ARM64 device.
 3. Grant required runtime permissions when prompted:
    - **All-Files Storage Access (`MANAGE_EXTERNAL_STORAGE`):** Allows Jellyfin and automation tools to index video and audio files across internal and external storage volumes.
@@ -115,6 +117,58 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 
 ---
 
+## Release v1.4.8 (Stable) Highlights & Fixes
+
+Release v1.4.8 is a major production stabilization update focusing on setup progression isolation, foreground notification responsiveness, process supervision, companion service efficiency, and security safeguards.
+
+### Key Fixes and Improvements
+
+#### 1. Setup Screen Isolation and 0% Extraction Resolution
+- **Full Chrome Isolation:** Decoupled and isolated the initial setup runtime extraction screen (`setChromeVisibilityForSetup(true)`). Header navigation tabs and dividing chrome are suppressed until bootstrapping finishes.
+- **High-Refresh Display Fix:** Resolved race conditions on 120Hz and variable refresh rate OEM devices (Samsung Galaxy S21/S22/S23 Ultra, Vivo) where the extraction view could remain visually stalled at 0%.
+- **Idempotent Recovery:** Guarantees that if setup is interrupted or backgrounded, reopening the application cleanly resumes extraction without state corruption.
+
+#### 2. Dynamic Foreground Notification and Status Reporting
+- **Live Setup Percentage:** Re-engineered `JellyfinServerService` foreground notifications to stream real-time runtime extraction percentages (`Fishbowl • Setup (X%)`).
+- **Chronometer Uptime:** Integrated dynamic elapsed-time tracking directly within the notification panel.
+- **Color-Coded Status Indication:** Contextual status signaling for running (green), booting/starting (amber), initial setup (blue), and error (crimson) states.
+- **URL Protocol Fix:** Corrected an issue causing double-protocol formatting (`http://http://`) in client URL shortcuts.
+- **Quick Actions:** Added direct notification action buttons for Open Web UI, Dashboard, Stop All, and Retry.
+
+#### 3. System Console and Log Deduplication
+- **Duplicate Chip Removal:** Core service manifestations are excluded during companion service discovery, eliminating redundant `[ JELLYFIN ]` filter chips in the System Console.
+- **Unified Log Feed:** Fixed duplicate log emissions so that streaming under `ALL` shows a clean, single-pass consolidated timeline across all daemons.
+
+#### 4. Lazy Companion Service Deployment
+- **On-Demand Seerr Provisioning:** Refactored `deploySeerrService(boolean forceInstall)` so companion tools like Seerr are no longer automatically extracted to flash storage on first launch.
+- **Resource Conservation:** Companion stacks deploy strictly when explicitly installed from the Services tab, reducing initial disk usage and eliminating unnecessary background daemon overhead.
+
+#### 5. Storage Deduplication and Directory Routing
+- **Dedicated Staging Paths:** Configured isolated download target folders for Radarr (`FishbowlMedia/Downloads/radarr`) and Sonarr (`FishbowlMedia/Downloads/sonarr`), resolving Transmission label-drop conflicts.
+- **Automated Deduplication Watcher:** Added background storage monitoring in `MediaStorageManager` to detect when files are moved to final library destinations and purge completed staging duplicates to preserve internal storage.
+
+#### 6. Disaster Recovery and Security Hardening
+- **ZipSlip Protection:** Enforced canonical path boundary validation in `BackupRestoreManager` to prevent path traversal vulnerabilities during archive restoration.
+- **Pre-Restore Rollback Snapshots:** Automated safety rollback creation prior to restoring archives, allowing clean recovery if a user-supplied archive is corrupt or invalid.
+- **Cryptographic Update Verification:** Enforced SHA-256 checksum verification in `UpdateManager` before invoking package installations.
+- **WebView Renderer Stability:** Implemented `onRenderProcessGone` lifecycle recovery in `JellyfinWebActivity` and `NativeFlareSolver` to prevent WebView terminations from crashing the host server process.
+- **Process Supervision:** Implemented synchronous state gating in `JellyfinController` to guarantee idempotent start, stop, and restart operations under memory pressure.
+- **Test Suite Coverage:** Added 4 comprehensive unit test suites covering backup security, storage cleanup, update verification, and process lifecycle management (18 tests passing).
+
+### Release Package Verification
+
+| Parameter | Detail |
+| :--- | :--- |
+| **Release Tag** | `v1.4.8` |
+| **Release Type** | Stable Production Release |
+| **Package Name** | `Fishbowl-v1.4.8-release-universal.apk` |
+| **Target Architecture** | ARM64 (`aarch64`, Bionic libc) |
+| **File Size** | 338,869,921 bytes (323.17 MiB) |
+| **SHA-256 Checksum** | `91A424E63C6AC400C1C85134470CF96EE13F46996AB05668F70DC9447ED76F6F` |
+| **Direct Download** | [Download APK](https://github.com/Suz41/Fishbowl/releases/download/v1.4.8/Fishbowl-v1.4.8-release-universal.apk) |
+
+---
+
 ## Preview & Interface
 
 <p align="center">
@@ -130,6 +184,7 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Release v1.4.8 (Stable) Highlights & Fixes](#release-v148-stable-highlights--fixes)
 - [System Architecture](#system-architecture)
 - [Key Features](#key-features)
 - [Bundled Packages & System Components](#bundled-packages--system-components)
