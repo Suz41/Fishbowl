@@ -220,16 +220,23 @@ flowchart TD
 - **Embedded .NET 10 Host:** High-performance JIT execution powered by Microsoft .NET 10.0.12 (Linux Bionic ARM64).
 - **Embedded FFmpeg Engine:** Bundled mobile FFmpeg binary supporting media streaming, audio remuxing, and HLS playback.
 - **Local SQLite3 Database:** Embedded SQLite engine (`libe_sqlite3.so`) managing media libraries, user playback states, and metadata locally.
+- **Isolated Initial Setup Wizard:** Full edge-to-edge runtime bootstrapping overlay with dynamic percentage tracking and complete chrome suppression (navigation tabs and header bars hidden), ensuring reliable extraction across Samsung Galaxy S21/S22/S23 Ultra, Pixel, and Vivo devices.
+- **Crash-Resilient WebViews & Memory Supervision:** Proactive memory pressure monitoring, synchronous process state gating, and Android `onRenderProcessGone` lifecycle recovery in both `JellyfinWebActivity` and `NativeFlareSolver` preventing background renderer kills from terminating the server host process.
+- **Cryptographic Package Verification:** Automatic SHA-256 integrity validation prior to applying APK updates.
 - **Port Conflict & Health Guard:** Active socket loopback probing and HTTP readiness polling (`/system/info/public` and `/health`) to verify genuine server readiness and prevent collisions.
 
 ### Media Automation & Management Suite
 - **1-Tap Configuration Backup & Restore:** Package all Jellyfin, Sonarr, Radarr, Prowlarr, and Transmission configs, credentials, and databases into a single timestamped `.tar.gz` archive with seamless 1-tap restore.
+- **ZipSlip & Rollback Disaster Recovery:** Canonical path boundary validation against ZipSlip directory traversal attacks, paired with automatic pre-restore safety rollback snapshots to preserve working server configurations if an imported archive is damaged.
 - **Dedicated Download Directory Routing:** Dedicated download staging paths for Radarr (`Downloads/radarr`) and Sonarr (`Downloads/sonarr`) to bypass label-drop issues and ensure zero import collisions.
 - **Automated Deduplication Watcher:** Background storage guardian that auto-detects and purges completed staging duplicates once media is successfully imported into library folders, conserving critical flash storage.
+- **Lazy On-Demand Companion Deployment:** Non-core companion services (such as Seerr media discovery engine) deploy strictly on-demand when the user chooses to install them, eliminating storage bloat and unnecessary background daemon overhead on initial launch.
 - **Integrated Companion Orchestration:** Native support and health monitoring for Radarr, Sonarr, Prowlarr, Transmission daemon, Seerr (media requests), and Lidarr.
 - **Home Screen Supervision Widgets:** Glanceable service state tiles and quick-toggle controls directly from the Android home launcher.
 
 ### User Interface & Diagnostics
+- **Modernized Dynamic Foreground Notification:** Live bootstrap progress indicator (`Fishbowl • Setup (X%)`), real-time chronometer uptime counter, color-coded status badges (Emerald Green for running, Amber for starting, Sky Blue for setup, Crimson for errors), and quick action controls (Open Web UI, Dashboard, Stop All, Retry).
+- **Unified Monospace Console with Multi-Daemon Filtering:** Live multi-daemon log terminal with dynamic service filter chips (`ALL`, `JELLYFIN`, `RADARR`, etc.), zero log duplication, and log level filtering (`ALL`, `ERR`, `WRN`, `INF`).
 - **Comprehensive Error Diagnoser:** Automatically analyzes startup and runtime failures (port conflicts, SELinux blocks, database stalls, or corrupted files) and displays clear recovery instructions.
 - **Network Hub:** Live display of local loopback (`127.0.0.1`), local Wi-Fi LAN IP, and Tailscale VPN CGNAT (`100.x.x.x`) addresses with 1-tap copy buttons.
 - **Button Rate Limiting & Touch Feedback:** Prevents duplicate service invocations with debounced actions and immediate visual state transitions (`STARTING...`, `RUNNING`, `STOPPING...`).
@@ -377,7 +384,7 @@ Under **Settings → 6. Backup & Restore System**, Fishbowl provides complete di
   - Radarr, Sonarr, Prowlarr, and Lidarr configurations and SQLite catalogs (`~/.config/Radarr`, `~/.config/Sonarr`, etc.)
   - Transmission daemon settings and torrent resume state (`~/.config/transmission-daemon`)
   - Seerr preferences and database (`~/.config/seerr`)
-- **Restore:** Select any previous `.tar.gz` archive with 1-tap restoration, automated service restart, and database integrity verification.
+- **Restore & Rollback Protection:** Select any previous `.tar.gz` archive with 1-tap atomic restoration, automated service restart, and database integrity verification. All extracted entry paths are rigorously verified against ZipSlip directory traversal attacks, and Fishbowl automatically generates a pre-restore safety snapshot to roll back cleanly if an imported archive is corrupted.
 
 ---
 
@@ -438,6 +445,9 @@ Generated APKs are located at `app/build/outputs/apk/release/Fishbowl-*-release-
 ---
 
 ## Troubleshooting
+
+### Initial setup shows 0% or runtime extraction is taking time
+On fresh installation, Fishbowl extracts over 5,600 native POSIX binaries, libraries, and the .NET runtime. The setup overlay runs in complete edge-to-edge isolation to prevent UI race conditions on high-refresh Android devices. Please keep the app open for 30–60 seconds while extraction finishes. If interrupted, simply reopen the app; Fishbowl resumes automatically and idempotently.
 
 ### The server stops when I lock the screen or switch apps
 Set Fishbowl's battery setting to **Unrestricted**. Some OEM skins (MIUI, OriginOS, ColorOS) require enabling "Autostart" and setting background limits to "No Restrictions" in system app management.
