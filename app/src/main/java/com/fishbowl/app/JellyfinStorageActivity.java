@@ -1338,22 +1338,35 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             String entered = input.getText().toString().trim();
             if (!entered.isEmpty()) {
                 String path = StorageDriveHelper.normalizeStoragePath(entered);
-                boolean isAllowedPrefix = path.startsWith("/storage/") ||
-                        path.startsWith("/sdcard") ||
-                        path.startsWith("/data/data/com.fishbowl.app") ||
-                        path.startsWith("/data/user/0/com.fishbowl.app");
-                if (path.contains("..") || path.contains("\0") || !isAllowedPrefix) {
+                if (path.contains("..") || path.contains("\0") || !path.startsWith("/")) {
                     Toast.makeText(this, "Invalid storage path. Must be an absolute path under /storage/ without '..'", Toast.LENGTH_SHORT).show();
                     return;
                 }
-                File dir = new File(path);
+                File rawDir = new File(path);
+                File dir;
+                String canonicalPath;
+                try {
+                    dir = rawDir.getCanonicalFile();
+                    canonicalPath = dir.getCanonicalPath();
+                } catch (Throwable t) {
+                    Toast.makeText(this, "Invalid storage path resolution", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                boolean isAllowedCanonical = canonicalPath.startsWith("/storage/") ||
+                        canonicalPath.startsWith("/sdcard") ||
+                        canonicalPath.startsWith("/data/data/com.fishbowl.app") ||
+                        canonicalPath.startsWith("/data/user/0/com.fishbowl.app");
+                if (!isAllowedCanonical || canonicalPath.contains("\0") || path.contains("..")) {
+                    Toast.makeText(this, "Invalid storage path. Must be an absolute path under /storage/ without '..'", Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 if (!dir.exists()) {
                     try {
                         dir.mkdirs();
                     } catch (Throwable ignored) {}
                 }
-                setActivePath(path, true);
-                StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, path);
+                setActivePath(canonicalPath, true);
+                StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, canonicalPath);
                 if (!ver.exists) {
                     Toast.makeText(this, "Notice: Directory does not exist on disk.", Toast.LENGTH_SHORT).show();
                 } else if (ver.hasPermissionError || !ver.canRead) {

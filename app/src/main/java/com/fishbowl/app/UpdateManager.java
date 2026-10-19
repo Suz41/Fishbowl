@@ -399,7 +399,11 @@ public final class UpdateManager {
 
     public static int parseVersionCodeFromTag(String tagName) {
         if (tagName == null) return -1;
-        String lower = tagName.toLowerCase(Locale.ROOT);
+        String lower = tagName.toLowerCase(Locale.ROOT).trim();
+        if (lower.contains("1.4.8-beta.2")) return 101413;
+        if (lower.contains("1.4.8-beta.1")) return 101412;
+        if (lower.contains("1.4.8")) return 101414;
+        if (lower.contains("1.4.7-beta.3")) return 101411;
         if (lower.contains("1.4.7-beta.2")) return 101410;
         if (lower.contains("1.4.7-beta.1")) return 101409;
         if (lower.contains("1.4.6")) return 101408;
@@ -410,26 +414,55 @@ public final class UpdateManager {
         if (lower.contains("1.4.0")) return 101402;
 
         try {
-            Pattern betaPattern = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)-beta\\.?(\\d+)?");
-            Matcher bm = betaPattern.matcher(lower);
-            if (bm.find()) {
-                int maj = Integer.parseInt(bm.group(1));
-                int min = Integer.parseInt(bm.group(2));
-                int pat = Integer.parseInt(bm.group(3));
-                int beta = bm.group(4) != null ? Integer.parseInt(bm.group(4)) : 1;
-                return 100000 + (maj * 1000) + (min * 100) + (pat * 2) + beta;
+            int betaIdx = lower.indexOf("-beta");
+            int betaNum = 0;
+            String verPart = lower;
+            if (betaIdx != -1) {
+                verPart = lower.substring(0, betaIdx);
+                String rest = lower.substring(betaIdx + 5);
+                if (rest.startsWith(".")) rest = rest.substring(1);
+                int b = 0;
+                while (b < rest.length() && Character.isDigit(rest.charAt(b))) {
+                    b++;
+                }
+                betaNum = b > 0 ? Integer.parseInt(rest.substring(0, b)) : 1;
             }
 
-            String cleanTag = tagName.replaceAll("[^0-9.]", "");
-            String[] parts = cleanTag.split("\\.");
-            if (parts.length >= 3) {
-                int major = Integer.parseInt(parts[0]);
-                int minor = Integer.parseInt(parts[1]);
-                int patch = Integer.parseInt(parts[2]);
-                return 100000 + (major * 1000) + (minor * 100) + patch;
+            int p1 = verPart.indexOf('.');
+            if (p1 != -1) {
+                int p2 = verPart.indexOf('.', p1 + 1);
+                if (p2 != -1) {
+                    int p3 = p2 + 1;
+                    while (p3 < verPart.length() && Character.isDigit(verPart.charAt(p3))) {
+                        p3++;
+                    }
+                    String majStr = extractDigits(verPart.substring(0, p1));
+                    String minStr = extractDigits(verPart.substring(p1 + 1, p2));
+                    String patStr = extractDigits(verPart.substring(p2 + 1, p3));
+                    if (!majStr.isEmpty() && !minStr.isEmpty() && !patStr.isEmpty()) {
+                        int major = Integer.parseInt(majStr);
+                        int minor = Integer.parseInt(minStr);
+                        int patch = Integer.parseInt(patStr);
+                        if (betaIdx != -1) {
+                            return 100000 + (major * 1000) + (minor * 100) + (patch * 2) + betaNum;
+                        } else {
+                            return 100000 + (major * 1000) + (minor * 100) + patch;
+                        }
+                    }
+                }
             }
         } catch (Exception ignored) {}
         return -1;
+    }
+
+    private static String extractDigits(String s) {
+        if (s == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isDigit(c)) sb.append(c);
+        }
+        return sb.toString();
     }
 
     private String cleanReleaseNotes(String body) {
