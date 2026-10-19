@@ -552,9 +552,21 @@ Fishbowl is engineered exclusively as a **personal homelab server hosting and me
 
 In the spirit of complete engineering honesty and transparency:
 
-- **AI-Assisted Engineering:** The Fishbowl application codebase, build automation scripts, and packaging routines were developed utilizing conversational agentic AI coding assistants (including Google Antigravity and Gemini models), directed, reviewed, and iteratively validated by human developers on physical ARM64 Android hardware.
-- **100% Offline Runtime & Zero AI Telemetry:** While AI tools assisted in code authoring and refactoring, the compiled Fishbowl runtime application is **completely offline and contains zero AI models, zero cloud LLM connections, zero analytics SDKs, and zero telemetry**. All experimental in-app AI features (such as earlier Copilot and AI Fix prototypes) have been completely decommissioned and removed from the codebase to ensure an isolated, secure, and privacy-first local server.
-- **Open Code Auditing & Reproducibility:** Because this project uses an AI-assisted development workflow, we place paramount importance on open scrutiny. Every line of source code, patch, and build script is openly published in this repository. Users are actively encouraged to inspect the code, decompile the APK, monitor background sockets, and verify builds independently by compiling from source via `./gradlew assembleRelease`.
+- **How AI Was Utilized in Development:**
+  The Fishbowl project codebase, build infrastructure, and technical documentation were developed utilizing conversational agentic AI coding assistants (specifically Google Antigravity and Gemini models) in collaboration with human developers. Specific areas where AI was employed include:
+  - **Application Architecture & Component Logic:** Assisting in the authoring, refactoring, and modularization of native Android Java components (including `JellyfinController`, `JellyfinServerService`, `FishbowlActivity`, `MediaStorageManager`, and home screen supervision widgets).
+  - **CI/CD & Build Automation:** Generating and maintaining Gradle build configurations, ABI-specific packaging rules, and GitHub Actions automation workflows (`build.yml`, `release.yml`, `lint.yml`).
+  - **Defensive Engineering & Security Hardening:** Identifying potential edge cases, path traversal risks (such as ZipSlip vulnerability analysis in archive extraction), and authoring robust unit test suites (`BackupRestoreSecurityTest`, `MediaStorageCleanupTest`, `ProcessSupervisionTest`, `UpdateManagerSecurityTest`).
+  - **Documentation & Technical Schematics:** Drafting architectural documentation, port matrix tables, hardware codec capability guides, and Mermaid system workflow diagrams.
+
+- **Human Architectural Direction & Physical Device Validation:**
+  All AI-generated code, patches, and configurations were strictly reviewed, directed, and verified by human maintainers. Crucially, all builds undergo manual empirical testing on physical ARM64 Android devices (including Samsung Galaxy smartphones, tablets, and Android TV hardware) to ensure real-world stability, thermal safety, and functional accuracy.
+
+- **100% Offline Application Runtime & Zero AI Telemetry:**
+  While AI tools were utilized in the development and authoring phase, the compiled Fishbowl application runtime is **completely offline and contains zero AI models, zero cloud LLM connections, zero analytics SDKs, and zero telemetry**. All experimental in-app AI features (such as earlier Copilot and AI Fix prototypes) have been completely decommissioned and removed from the codebase to ensure an isolated, secure, and privacy-first local server.
+
+- **Open Code Auditing & Reproducibility:**
+  Because this project uses an AI-assisted development workflow, we place paramount importance on open scrutiny. Every line of source code, patch, and build script is openly published in this repository. Users are actively encouraged to inspect the code, decompile the APK, monitor background sockets, and verify builds independently by compiling from source via `./gradlew assembleRelease`.
 
 ### Project License & Disclosures
 
