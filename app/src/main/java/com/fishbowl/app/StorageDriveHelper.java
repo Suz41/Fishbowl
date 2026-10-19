@@ -523,18 +523,27 @@ public final class StorageDriveHelper {
         if (cleanPath.contains("..") || cleanPath.contains("\0") || !cleanPath.startsWith("/")) {
             return new PathVerification(false, false, false, 0, 0, false, false, false, "Invalid path format");
         }
-        boolean isAllowedPrefix = cleanPath.startsWith("/storage/") ||
-                                  cleanPath.startsWith("/sdcard") ||
-                                  cleanPath.startsWith("/data/data/com.fishbowl.app") ||
-                                  cleanPath.startsWith("/data/user/0/com.fishbowl.app");
-        if (!isAllowedPrefix) {
+        File rawFile = new File(cleanPath);
+        File f;
+        String canonicalPath;
+        try {
+            f = rawFile.getCanonicalFile();
+            canonicalPath = f.getCanonicalPath();
+        } catch (Throwable t) {
+            return new PathVerification(false, false, false, 0, 0, false, false, false, "Invalid path resolution");
+        }
+
+        boolean isAllowedCanonical = canonicalPath.startsWith("/storage/") ||
+                                     canonicalPath.startsWith("/sdcard") ||
+                                     canonicalPath.startsWith("/data/data/com.fishbowl.app") ||
+                                     canonicalPath.startsWith("/data/user/0/com.fishbowl.app");
+        if (!isAllowedCanonical || canonicalPath.contains("\0") || cleanPath.contains("..")) {
             return new PathVerification(false, false, false, 0, 0, false, false, false, "Path prefix not allowed");
         }
 
-        boolean isAppSpecific = cleanPath.contains("/Android/data/com.fishbowl.app/");
+        boolean isAppSpecific = canonicalPath.contains("/Android/data/com.fishbowl.app/");
 
         // 1. Direct POSIX check
-        File f = new File(cleanPath);
         boolean posixExists = false;
         try {
             posixExists = f.exists();

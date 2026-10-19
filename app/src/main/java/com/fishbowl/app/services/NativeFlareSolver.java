@@ -326,14 +326,18 @@ public final class NativeFlareSolver {
      * using the official 30-minute seeded algorithm from 52btbt.icu.
      */
     private String resolveDynamicSubdomains(String url) {
-        if (url == null) return "";
+        if (url == null || url.isEmpty()) return "";
         try {
-            if (url.contains("529075.xyz")) {
-                String sub = compute52BtSubdomain("529075.xyz", 0);
-                return url.replaceAll("[a-zA-Z0-9]+\\.529075\\.xyz", sub + ".529075.xyz");
-            } else if (url.contains("529076.xyz")) {
-                String sub = compute52BtSubdomain("529076.xyz", 1);
-                return url.replaceAll("[a-zA-Z0-9]+\\.529076\\.xyz", sub + ".529076.xyz");
+            java.net.URI uri = java.net.URI.create(url);
+            String host = uri.getHost();
+            if (host != null) {
+                if (host.endsWith(".529075.xyz")) {
+                    String sub = compute52BtSubdomain("529075.xyz", 0);
+                    return url.replace(host, sub + ".529075.xyz");
+                } else if (host.endsWith(".529076.xyz")) {
+                    String sub = compute52BtSubdomain("529076.xyz", 1);
+                    return url.replace(host, sub + ".529076.xyz");
+                }
             }
         } catch (Throwable ignored) {}
         return url;

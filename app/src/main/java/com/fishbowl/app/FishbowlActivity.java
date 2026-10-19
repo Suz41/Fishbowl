@@ -4822,13 +4822,22 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private static void extractTarGzArchive(File archiveFile, File targetDir) throws Exception {
         if (!targetDir.exists()) targetDir.mkdirs();
+        String canonicalTarget = targetDir.getCanonicalPath();
         try (InputStream fi = new FileInputStream(archiveFile);
              InputStream bi = new BufferedInputStream(fi);
              InputStream gzi = new GzipCompressorInputStream(bi);
              TarArchiveInputStream ti = new TarArchiveInputStream(gzi)) {
             TarArchiveEntry entry;
             while ((entry = ti.getNextTarEntry()) != null) {
-                File curfile = new File(targetDir, entry.getName());
+                String entryName = entry.getName();
+                if (entryName == null || entryName.contains("..")) {
+                    continue;
+                }
+                File curfile = new File(targetDir, entryName);
+                String canonicalCurfile = curfile.getCanonicalPath();
+                if (!canonicalCurfile.startsWith(canonicalTarget + File.separator) && !canonicalCurfile.equals(canonicalTarget)) {
+                    throw new SecurityException("Archive entry is outside target directory: " + entryName);
+                }
                 if (entry.isDirectory()) {
                     curfile.mkdirs();
                 } else {
@@ -4851,11 +4860,20 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private static void extractZipArchive(File zipFile, File targetDir) throws Exception {
         if (!targetDir.exists()) targetDir.mkdirs();
+        String canonicalTarget = targetDir.getCanonicalPath();
         try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)))) {
             ZipEntry ze;
             byte[] buffer = new byte[32768];
             while ((ze = zis.getNextEntry()) != null) {
-                File curfile = new File(targetDir, ze.getName());
+                String entryName = ze.getName();
+                if (entryName == null || entryName.contains("..")) {
+                    continue;
+                }
+                File curfile = new File(targetDir, entryName);
+                String canonicalCurfile = curfile.getCanonicalPath();
+                if (!canonicalCurfile.startsWith(canonicalTarget + File.separator) && !canonicalCurfile.equals(canonicalTarget)) {
+                    throw new SecurityException("Zip entry is outside target directory: " + entryName);
+                }
                 if (ze.isDirectory()) {
                     curfile.mkdirs();
                 } else {
@@ -4875,6 +4893,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private static void extractDebPackage(File debFile, File prefixDir) throws Exception {
         if (!prefixDir.exists()) prefixDir.mkdirs();
+        String canonicalPrefix = prefixDir.getCanonicalPath();
         try (InputStream fis = new FileInputStream(debFile);
              InputStream bis = new BufferedInputStream(fis);
              ArArchiveInputStream ais = new ArArchiveInputStream(bis)) {
@@ -4902,9 +4921,13 @@ public final class FishbowlActivity extends AppCompatActivity
                             } else if (cleanPath.startsWith("usr/")) {
                                 cleanPath = cleanPath.substring(4);
                             }
-                            if (cleanPath.isEmpty()) continue;
+                            if (cleanPath.isEmpty() || cleanPath.contains("..")) continue;
 
                             File outFile = new File(prefixDir, cleanPath);
+                            String canonicalOut = outFile.getCanonicalPath();
+                            if (!canonicalOut.startsWith(canonicalPrefix + File.separator) && !canonicalOut.equals(canonicalPrefix)) {
+                                throw new SecurityException("Archive entry is outside prefix directory: " + entryName);
+                            }
                             if (te.isSymbolicLink()) {
                                 try {
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
