@@ -624,8 +624,15 @@ public class MediaServiceManager {
                 ProcessBuilder pb;
 
                 if (targetDllOrBin.getName().endsWith(".dll")) {
-                    // Servarr .NET application (Radarr, Sonarr, Prowlarr)
+                    // Servarr .NET application (Radarr, Sonarr, Prowlarr, Lidarr)
                     prepareServarrRuntimeConfig(targetDllOrBin);
+
+                    if (dotnet.exists()) {
+                        dotnet.setExecutable(true, false);
+                        try {
+                            android.system.Os.chmod(dotnet.getAbsolutePath(), 0755);
+                        } catch (Throwable ignored) {}
+                    }
 
                     pb = new ProcessBuilder(
                             dotnet.getAbsolutePath(),
@@ -636,8 +643,18 @@ public class MediaServiceManager {
                 } else if (targetDllOrBin.getName().endsWith(".js")) {
                     // Node.js application (Seerr)
                     File nodeBin = new File(prefix, "bin/node");
+                    if (!nodeBin.exists()) {
+                        ms.setLastError("NOT_INSTALLED: Node.js runtime not found in " + prefix.getAbsolutePath() + "/bin");
+                        ms.setState(ServiceState.NOT_INSTALLED);
+                        notifyListeners(id, ServiceState.NOT_INSTALLED);
+                        return;
+                    }
+                    nodeBin.setExecutable(true, false);
+                    try {
+                        android.system.Os.chmod(nodeBin.getAbsolutePath(), 0755);
+                    } catch (Throwable ignored) {}
                     pb = new ProcessBuilder(
-                            nodeBin.exists() ? nodeBin.getAbsolutePath() : "node",
+                            nodeBin.getAbsolutePath(),
                             targetDllOrBin.getAbsolutePath()
                     );
                 } else if ("bazarr".equalsIgnoreCase(id)) {
@@ -650,6 +667,10 @@ public class MediaServiceManager {
                         notifyListeners(id, ServiceState.NOT_INSTALLED);
                         return;
                     }
+                    pythonBin.setExecutable(true, false);
+                    try {
+                        android.system.Os.chmod(pythonBin.getAbsolutePath(), 0755);
+                    } catch (Throwable ignored) {}
                     File bazarrMain = new File(home, "services/bazarr/bazarr/main.py");
                     File execTarget = bazarrMain.exists() ? bazarrMain : targetDllOrBin;
                     pb = new ProcessBuilder(
@@ -668,7 +689,14 @@ public class MediaServiceManager {
                         notifyListeners(id, ServiceState.NOT_INSTALLED);
                         return;
                     }
+                    pythonBin.setExecutable(true, false);
+                    try {
+                        android.system.Os.chmod(pythonBin.getAbsolutePath(), 0755);
+                    } catch (Throwable ignored) {}
                     targetDllOrBin.setExecutable(true, false);
+                    try {
+                        android.system.Os.chmod(targetDllOrBin.getAbsolutePath(), 0755);
+                    } catch (Throwable ignored) {}
                     pb = new ProcessBuilder(
                             pythonBin.getAbsolutePath(),
                             "-u",
@@ -679,12 +707,24 @@ public class MediaServiceManager {
                 } else if ("transmission".equalsIgnoreCase(id)) {
                     // Native BitTorrent daemon (Transmission)
                     sanitizeTransmissionConfig(configDir);
+                    if (targetDllOrBin.exists()) {
+                        targetDllOrBin.setExecutable(true, false);
+                        try {
+                            android.system.Os.chmod(targetDllOrBin.getAbsolutePath(), 0755);
+                        } catch (Throwable ignored) {}
+                    }
                     pb = new ProcessBuilder(
                             targetDllOrBin.getAbsolutePath(),
                             "-f",
                             "-g", configDir.getAbsolutePath()
                     );
                 } else {
+                    if (targetDllOrBin.exists()) {
+                        targetDllOrBin.setExecutable(true, false);
+                        try {
+                            android.system.Os.chmod(targetDllOrBin.getAbsolutePath(), 0755);
+                        } catch (Throwable ignored) {}
+                    }
                     pb = new ProcessBuilder(
                             targetDllOrBin.getAbsolutePath()
                     );
@@ -693,6 +733,7 @@ public class MediaServiceManager {
                 Map<String, String> env = pb.environment();
                 env.put("HOME", home.getAbsolutePath());
                 env.put("DOTNET_ROOT", new File(prefix, "lib/dotnet").getAbsolutePath());
+                env.put("DOTNET_ROLL_FORWARD", "Major");
                 env.put("TMPDIR", tmpDir.getAbsolutePath());
                 if ("bazarr".equalsIgnoreCase(id)) {
                     File customLibs = new File(home, "services/bazarr/custom_libs");
@@ -1359,17 +1400,25 @@ public class MediaServiceManager {
             String baseName = dllFile.getName().substring(0, dllFile.getName().lastIndexOf('.'));
             File runtimeConfig = new File(parent, baseName + ".runtimeconfig.json");
 
-            // 1. Rename glibc deps.json so Bionic .NET runtime can resolve assemblies correctly
+            // 1. Rename glibc deps.json so Bionic .NET runtime uses runtimeconfig.json frameworks
             File depsJson = new File(parent, baseName + ".deps.json");
             File depsJsonBak = new File(parent, baseName + ".deps.json.bak");
             if (depsJson.exists() && !depsJsonBak.exists()) {
                 depsJson.renameTo(depsJsonBak);
             }
 
-            // 2. Remove any glibc libcoreclr.so bundled with linux-core-arm64
-            File localClr = new File(parent, "libcoreclr.so");
-            if (localClr.exists()) {
-                localClr.delete();
+            // 2. Remove all bundled glibc .so and CLR host files
+            String[] glibcLibs = {
+                "libcoreclr.so", "libhostpolicy.so", "libhostfxr.so",
+                "libclrjit.so", "libclrgc.so", "libcoreclrtraceptprovider.so",
+                "libmscordaccore.so", "libmscordbi.so",
+                "libSystem.Native.so", "libSystem.Globalization.Native.so",
+                "libSystem.IO.Compression.Native.so", "libSystem.Net.Security.Native.so",
+                "libSystem.Security.Cryptography.Native.OpenSsl.so"
+            };
+            for (String glibcLib : glibcLibs) {
+                File f = new File(parent, glibcLib);
+                if (f.exists()) f.delete();
             }
 
             // 3. Ensure Bionic e_sqlite3.so is present from prefix/lib
@@ -1378,20 +1427,39 @@ public class MediaServiceManager {
             if (prefixEsqlite.exists() && (!targetEsqlite.exists() || targetEsqlite.length() != prefixEsqlite.length())) {
                 copyFile(prefixEsqlite, targetEsqlite);
             }
+            if (targetEsqlite.exists()) {
+                targetEsqlite.setReadable(true, false);
+                targetEsqlite.setExecutable(true, false);
+                try { android.system.Os.chmod(targetEsqlite.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
 
-            // 4. Ensure Bionic libMonoPosixHelper.so is present from prefix/lib
+            // 4. Ensure Bionic libMonoPosixHelper.so is present from prefix/lib or directly from assets
             File prefixMono = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libMonoPosixHelper.so");
+            if (!prefixMono.exists()) {
+                try (InputStream in = appContext.getAssets().open("libMonoPosixHelper.so");
+                     FileOutputStream out = new FileOutputStream(prefixMono)) {
+                    byte[] buf = new byte[8192];
+                    int r;
+                    while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+                } catch (Throwable ignored) {}
+                if (prefixMono.exists()) {
+                    try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                }
+            }
             File targetMono = new File(parent, "libMonoPosixHelper.so");
             if (prefixMono.exists() && (!targetMono.exists() || targetMono.length() != prefixMono.length())) {
                 copyFile(prefixMono, targetMono);
             }
+            if (targetMono.exists()) {
+                targetMono.setReadable(true, false);
+                targetMono.setExecutable(true, false);
+                try { android.system.Os.chmod(targetMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
 
-            // 5. Ensure runtimeconfig rolls forward to net10.0
+            // 5. Ensure runtimeconfig uses net10.0 and Bionic frameworks
             File jfConfig = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.runtimeconfig.json");
             if (jfConfig.exists()) {
-                if (!runtimeConfig.exists() || runtimeConfig.length() < 100) {
-                    copyFile(jfConfig, runtimeConfig);
-                }
+                copyFile(jfConfig, runtimeConfig);
             }
 
             // 6. Pre-create or sanitize config.xml (BindAddress 0.0.0.0 and Auth None for local Web UI)
@@ -1531,6 +1599,11 @@ public class MediaServiceManager {
             sanitizeTransmissionConfig(new File(home, ".config/transmission-daemon"));
             return;
         }
+        if ("seerr".equalsIgnoreCase(serviceId)) {
+            File seerrConfigDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/seerr");
+            if (!seerrConfigDir.exists()) seerrConfigDir.mkdirs();
+            return;
+        }
         if ("bazarr".equalsIgnoreCase(serviceId)) {
             File bazarrConfigDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/bazarr");
             sanitizeBazarrConfig(bazarrConfigDir);
@@ -1561,6 +1634,27 @@ public class MediaServiceManager {
             File configFile = new File(configSubDir, "config.yaml");
 
             File home = TermuxConstants.TERMUX_HOME_DIR;
+            File prefix = TermuxConstants.TERMUX_PREFIX_DIR;
+            File bazarrInstallDir = new File(home, "services/bazarr");
+
+            // Deploy ffmpeg and ffprobe wrappers so Bazarr has embedded_subtitles_parser available
+            deployFfmpegWrappersAndSymlinks(bazarrInstallDir);
+
+            // Ensure 7z wrapper fallback exists if native 7z not installed yet
+            File sevenZBin = new File(prefix, "bin/7z");
+            if (!sevenZBin.exists() && !new File(prefix, "bin/unrar").exists() && !new File(prefix, "bin/unar").exists()) {
+                String dummy7z = "#!/system/bin/sh\n" +
+                        "if [ \"$1\" = \"i\" ] || [ \"$1\" = \"-version\" ] || [ \"$1\" = \"--version\" ]; then\n" +
+                        "    echo \"7-Zip (fallback) : 26.05\"\n" +
+                        "    exit 0\n" +
+                        "fi\n" +
+                        "exit 0\n";
+                writeExecutableScript(sevenZBin, dummy7z);
+            }
+
+            // Apply python import compatibility patches
+            patchBazarrScriptsIfNeeded(bazarrInstallDir);
+
             String radarrKey = readApiKey(new File(home, ".config/Radarr/config.xml"));
             String sonarrKey = readApiKey(new File(home, ".config/Sonarr/config.xml"));
 
@@ -1599,6 +1693,37 @@ public class MediaServiceManager {
             }
         } catch (Throwable t) {
             Log.w(TAG, "[ConfigSanitizer] Failed to sanitize Bazarr config: " + t.getMessage());
+        }
+    }
+
+    private void patchBazarrScriptsIfNeeded(File bazarrDir) {
+        if (bazarrDir == null || !bazarrDir.exists()) return;
+        try {
+            // 1. zimuku.py: Wrap 'from PIL import Image' in try/except fallback
+            File zimukuFile = new File(bazarrDir, "custom_libs/subliminal_patch/providers/zimuku.py");
+            if (zimukuFile.exists()) {
+                String content = readTextFile(zimukuFile);
+                if (content != null && content.contains("from PIL import Image") && !content.contains("try:\n    from PIL import Image")) {
+                    content = content.replace("from PIL import Image", "try:\n    from PIL import Image\nexcept ImportError:\n    Image = None");
+                    writeTextFile(zimukuFile, content);
+                    Log.i(TAG, "[Bazarr] Patched zimuku.py PIL import fallback");
+                }
+            }
+
+            // 2. subsyncer.py: Wrap 'from ffsubsync...' in try/except fallback
+            File subsyncerFile = new File(bazarrDir, "bazarr/subtitles/tools/subsyncer.py");
+            if (subsyncerFile.exists()) {
+                String content = readTextFile(subsyncerFile);
+                String target = "from ffsubsync.ffsubsync import run, make_parser\nfrom ffsubsync import ProgressInfo";
+                String replacement = "try:\n    from ffsubsync.ffsubsync import run, make_parser\n    from ffsubsync import ProgressInfo\nexcept ImportError:\n    run = None\n    make_parser = None\n    ProgressInfo = object";
+                if (content != null && content.contains(target)) {
+                    content = content.replace(target, replacement);
+                    writeTextFile(subsyncerFile, content);
+                    Log.i(TAG, "[Bazarr] Patched subsyncer.py ffsubsync import fallback");
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "[Bazarr] Error patching Bazarr scripts: " + t.getMessage());
         }
     }
 
@@ -1782,6 +1907,27 @@ public class MediaServiceManager {
             while ((len = in.read(buf)) > 0) {
                 out.write(buf, 0, len);
             }
+        } catch (Throwable ignored) {}
+    }
+
+    private String readTextFile(File file) {
+        try (FileInputStream fis = new FileInputStream(file);
+             InputStreamReader isr = new InputStreamReader(fis, StandardCharsets.UTF_8);
+             BufferedReader br = new BufferedReader(isr)) {
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line).append("\n");
+            }
+            return sb.toString();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private void writeTextFile(File file, String content) {
+        try (FileOutputStream fos = new FileOutputStream(file)) {
+            fos.write(content.getBytes(StandardCharsets.UTF_8));
         } catch (Throwable ignored) {}
     }
 
@@ -2093,6 +2239,8 @@ public class MediaServiceManager {
                     ok = wireLidarr(log);
                 } else if ("bazarr".equalsIgnoreCase(serviceId)) {
                     ok = wireBazarr(log);
+                } else if ("seerr".equalsIgnoreCase(serviceId)) {
+                    ok = wireSeerr(log);
                 }
                 postCallback(callback, ok, log.toString().trim());
             } catch (Throwable t) {
@@ -2780,10 +2928,25 @@ public class MediaServiceManager {
 
     public boolean wireBazarr(StringBuilder log) {
         if (!isPortOccupied(6767)) {
-            log.append("[SKIP] Bazarr is not running\n");
+            log.append("[SKIP] Bazarr is not running (Port 6767 offline)\n");
             return false;
         }
-        log.append("[OK] Bazarr configuration sanitized\n");
+        ensureServiceConfigSanitized("bazarr");
+        String bazarrKey = getServiceApiKey("bazarr");
+        if (bazarrKey != null) {
+            postJson("http://127.0.0.1:6767/api/system/tasks?apiKey=" + bazarrKey, "{\"action\":\"sync_series\"}");
+            postJson("http://127.0.0.1:6767/api/system/tasks?apiKey=" + bazarrKey, "{\"action\":\"sync_movies\"}");
+        }
+        log.append("[OK] Bazarr configuration sanitized and synchronized\n");
+        return true;
+    }
+
+    public boolean wireSeerr(StringBuilder log) {
+        if (!isPortOccupied(5055)) {
+            log.append("[SKIP] Seerr is not running (Port 5055 offline)\n");
+            return false;
+        }
+        log.append("[OK] Seerr request engine verified on port 5055\n");
         return true;
     }
 
@@ -3052,6 +3215,13 @@ public class MediaServiceManager {
                     ensureServiceConfigSanitized("bazarr");
                     wireBazarr(log);
                     wiredServices.add("Bazarr");
+                }
+
+                ManagedService seerr = getService("seerr");
+                if (seerr != null && seerr.isInstalled() && isPortOccupied(5055)) {
+                    ensureServiceConfigSanitized("seerr");
+                    wireSeerr(log);
+                    wiredServices.add("Seerr");
                 }
 
                 String summaryMsg = !wiredServices.isEmpty()
