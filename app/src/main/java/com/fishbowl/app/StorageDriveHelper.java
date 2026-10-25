@@ -100,11 +100,13 @@ public final class StorageDriveHelper {
         public final boolean hasPermissionError;
         public final boolean isSafVerified;
         public final boolean isAppSpecific;
+        public final boolean posixAccessible;
+        public final boolean isUsbStorage;
         public final String note;
 
         public PathVerification(boolean exists, boolean canRead, boolean isDirectory, int itemCount,
                                 int mediaFileCount, boolean hasPermissionError, boolean isSafVerified,
-                                boolean isAppSpecific, String note) {
+                                boolean isAppSpecific, boolean posixAccessible, boolean isUsbStorage, String note) {
             this.exists = exists;
             this.canRead = canRead;
             this.isDirectory = isDirectory;
@@ -113,12 +115,22 @@ public final class StorageDriveHelper {
             this.hasPermissionError = hasPermissionError;
             this.isSafVerified = isSafVerified;
             this.isAppSpecific = isAppSpecific;
+            this.posixAccessible = posixAccessible;
+            this.isUsbStorage = isUsbStorage;
             this.note = note != null ? note : "";
         }
 
         public PathVerification(boolean exists, boolean canRead, boolean isDirectory, int itemCount,
+                                int mediaFileCount, boolean hasPermissionError, boolean isSafVerified,
+                                boolean isAppSpecific, String note) {
+            this(exists, canRead, isDirectory, itemCount, mediaFileCount, hasPermissionError, isSafVerified,
+                 isAppSpecific, canRead && !hasPermissionError, false, note);
+        }
+
+        public PathVerification(boolean exists, boolean canRead, boolean isDirectory, int itemCount,
                                 int mediaFileCount, boolean hasPermissionError) {
-            this(exists, canRead, isDirectory, itemCount, mediaFileCount, hasPermissionError, false, false, "");
+            this(exists, canRead, isDirectory, itemCount, mediaFileCount, hasPermissionError, false, false,
+                 canRead && !hasPermissionError, false, "");
         }
     }
 
@@ -334,6 +346,48 @@ public final class StorageDriveHelper {
         return provisionAppDataMediaFolders(context, driveRootPath);
     }
 
+    public static DocumentFile getTreeDocumentForPath(Context context, String driveRootPath) {
+        if (context == null || driveRootPath == null) return null;
+        String clean = normalizeStoragePath(driveRootPath);
+        if (!clean.startsWith("/storage/")) return null;
+        String after = clean.substring("/storage/".length());
+        int slash = after.indexOf('/');
+        String uuid = (slash != -1) ? after.substring(0, slash) : after;
+        if ("emulated".equalsIgnoreCase(uuid) || uuid.isEmpty()) return null;
+
+        try {
+            List<UriPermission> perms = context.getContentResolver().getPersistedUriPermissions();
+            for (UriPermission perm : perms) {
+                if (!perm.isReadPermission()) continue;
+                Uri uri = perm.getUri();
+                if ("com.android.externalstorage.documents".equals(uri.getAuthority())) {
+                    String docId = DocumentsContract.getTreeDocumentId(uri);
+                    if (docId != null) {
+                        String[] parts = docId.split(":");
+                        if (parts.length > 0 && parts[0].equalsIgnoreCase(uuid)) {
+                            DocumentFile treeDoc = DocumentFile.fromTreeUri(context, uri);
+                            if (treeDoc != null && treeDoc.exists()) {
+                                return treeDoc;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static DocumentFile getOrCreateSubDir(DocumentFile parent, String name) {
+        if (parent == null || name == null || name.isEmpty()) return null;
+        DocumentFile found = parent.findFile(name);
+        if (found != null && found.isDirectory()) return found;
+        try {
+            return parent.createDirectory(name);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     public static List<String> provisionAppDataMediaFolders(Context context, String driveRootPath) {
         List<String> created = new ArrayList<>();
         if (driveRootPath == null || driveRootPath.trim().isEmpty()) return created;
@@ -349,6 +403,30 @@ public final class StorageDriveHelper {
         File baseAppDir = new File(cleanRoot, "Android/data/com.fishbowl.app/files");
         if (!baseAppDir.exists()) {
             baseAppDir.mkdirs();
+        }
+
+        // If standard POSIX mkdirs() failed on an external USB volume, attempt creation via SAF DocumentFile
+        if (!baseAppDir.exists() && context != null && !cleanRoot.startsWith("/storage/emulated/")) {
+            try {
+                DocumentFile treeDoc = getTreeDocumentForPath(context, cleanRoot);
+                if (treeDoc != null) {
+                    DocumentFile androidDir = getOrCreateSubDir(treeDoc, "Android");
+                    if (androidDir != null) {
+                        DocumentFile dataDir = getOrCreateSubDir(androidDir, "data");
+                        if (dataDir != null) {
+                            DocumentFile appDir = getOrCreateSubDir(dataDir, context.getPackageName());
+                            if (appDir != null) {
+                                DocumentFile filesDir = getOrCreateSubDir(appDir, "files");
+                                if (filesDir != null) {
+                                    for (String sub : new String[]{"Movies", "Music", "Shows", "Downloads"}) {
+                                        getOrCreateSubDir(filesDir, sub);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
         }
 
         String[] subDirs = {"Movies", "Music", "Shows", "Downloads"};
@@ -517,11 +595,11 @@ public final class StorageDriveHelper {
 
     public static PathVerification verifyPath(Context context, String path) {
         if (path == null || path.trim().isEmpty()) {
-            return new PathVerification(false, false, false, 0, 0, false, false, false, "Path is empty");
+            return new PathVerification(false, false, false, 0, 0, false, false, false, false, false, "Path is empty");
         }
         String cleanPath = normalizeStoragePath(path);
         if (cleanPath.contains("..") || cleanPath.contains("\0") || !cleanPath.startsWith("/")) {
-            return new PathVerification(false, false, false, 0, 0, false, false, false, "Invalid path format");
+            return new PathVerification(false, false, false, 0, 0, false, false, false, false, false, "Invalid path format");
         }
         File rawFile = new File(cleanPath);
         File f;
@@ -530,7 +608,7 @@ public final class StorageDriveHelper {
             f = rawFile.getCanonicalFile();
             canonicalPath = f.getCanonicalPath();
         } catch (Throwable t) {
-            return new PathVerification(false, false, false, 0, 0, false, false, false, "Invalid path resolution");
+            return new PathVerification(false, false, false, 0, 0, false, false, false, false, false, "Invalid path resolution");
         }
 
         boolean isAllowedCanonical = canonicalPath.startsWith("/storage/") ||
@@ -538,9 +616,10 @@ public final class StorageDriveHelper {
                                      canonicalPath.startsWith("/data/data/com.fishbowl.app") ||
                                      canonicalPath.startsWith("/data/user/0/com.fishbowl.app");
         if (!isAllowedCanonical || canonicalPath.contains("\0") || cleanPath.contains("..")) {
-            return new PathVerification(false, false, false, 0, 0, false, false, false, "Path prefix not allowed");
+            return new PathVerification(false, false, false, 0, 0, false, false, false, false, false, "Path prefix not allowed");
         }
 
+        boolean isUsb = cleanPath.startsWith("/storage/") && !cleanPath.startsWith("/storage/emulated/");
         boolean isAppSpecific = canonicalPath.contains("/Android/data/com.fishbowl.app/");
 
         // 1. Direct POSIX check
@@ -572,8 +651,8 @@ public final class StorageDriveHelper {
             }
 
             if (canRead && !permissionError) {
-                String note = isAppSpecific ? "App-specific directory (Native POSIX Jellyfin ready)" : "Verified via direct filesystem";
-                return new PathVerification(true, canRead, isDir, itemCount, mediaCount, false, false, isAppSpecific, note);
+                String note = isAppSpecific ? "App-specific directory (Native POSIX Jellyfin ready)" : "Verified via direct filesystem (Native POSIX ready)";
+                return new PathVerification(true, canRead, isDir, itemCount, mediaCount, false, false, isAppSpecific, true, isUsb, note);
             }
         }
 
@@ -626,8 +705,9 @@ public final class StorageDriveHelper {
                                             } else {
                                                 if (isMediaFile(target.getName())) mediaCount = 1;
                                             }
-                                            return new PathVerification(true, true, isDir, itemCount, mediaCount, false, true, false,
-                                                    "Verified via Storage Access Framework (SAF)");
+                                            // SAF granted in Java framework, but native POSIX access is blocked by Android Scoped Storage
+                                            return new PathVerification(true, false, isDir, itemCount, mediaCount, true, true, false, false, isUsb,
+                                                    "Verified via SAF (Android framework only). Native POSIX access is blocked by Android Scoped Storage; Jellyfin cannot read this path directly.");
                                         }
                                     }
                                 }
@@ -638,7 +718,12 @@ public final class StorageDriveHelper {
             }
         }
 
-        return new PathVerification(false, false, false, 0, 0, false, false, false, "Directory not detected on disk");
+        if (posixExists) {
+            return new PathVerification(true, false, f.isDirectory(), 0, 0, true, false, isAppSpecific, false, isUsb,
+                    "Permission blocked by Android SELinux / Scoped Storage (Native Jellyfin cannot read this path)");
+        }
+
+        return new PathVerification(false, false, false, 0, 0, false, false, false, false, isUsb, "Directory not detected on disk");
     }
 
     private static DocumentFile findDocumentFileByPath(DocumentFile root, String relPath) {
