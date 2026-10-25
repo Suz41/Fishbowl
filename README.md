@@ -193,8 +193,10 @@ flowchart TD
     subgraph Automation["Media Automation Stack"]
         RADARR["Radarr (Movies :7878)"]
         SONARR["Sonarr (TV Shows :8989)"]
+        LIDARR["Lidarr (Music :8686)"]
+        BAZARR["Bazarr (Subtitles :6767)"]
         PROWLARR["Prowlarr (Indexers :9696)"]
-        TRANS["Transmission 4.1.3 (:9091)"]
+        TRANS["Transmission 4.1.4 (:9091)"]
         SEERR["Seerr Discovery (:5055)"]
         SOLVER["Native FlareSolver (:8191)"]
     end
@@ -258,8 +260,10 @@ Fishbowl integrates tested native binaries and runtimes compiled for the Android
 | **Jellyfin FFmpeg Transcoder** | `7.1.4-Jellyfin` | Native ARM64 binary located in `opt/jellyfin/bin/ffmpeg` for media remuxing, thumbnail generation, and audio transcoding | [GPLv3 / LGPLv3](https://www.ffmpeg.org/legal.html) |
 | **Radarr** | `6.4.4` (ARM64) | Automated movie collection manager and metadata grabber | [GPLv3](https://github.com/Radarr/Radarr) |
 | **Sonarr** | `4.0.9` (ARM64) | Smart TV series collection manager and automated indexer coordinator | [GPLv3](https://github.com/Sonarr/Sonarr) |
-| **Prowlarr** | `1.21.2` (ARM64) | Unified torrent indexer proxy manager integrating with Radarr and Sonarr | [GPLv3](https://github.com/Prowlarr/Prowlarr) |
-| **Transmission Daemon** | `4.1.3` (ARM64 Bionic) | Headless native BitTorrent download client with RPC management | [GPLv2 / GPLv3](https://github.com/transmission/transmission) |
+| **Lidarr** | `2.9.6` (ARM64) | Music collection manager and automated audio grabber | [GPLv3](https://github.com/Lidarr/Lidarr) |
+| **Bazarr** | `1.4.5` (Python / Waitress) | Automated subtitle synchronization and multi-provider downloader | [GPLv3](https://github.com/morpheus65535/bazarr) |
+| **Prowlarr** | `1.21.2` (ARM64) | Unified torrent indexer proxy manager integrating with Radarr, Sonarr, and Lidarr | [GPLv3](https://github.com/Prowlarr/Prowlarr) |
+| **Transmission Daemon** | `4.1.4` (ARM64 Bionic) | Headless native BitTorrent download client with RPC management | [GPLv2 / GPLv3](https://github.com/transmission/transmission) |
 | **Seerr** | `2.2.0` (Node.js) | Media discovery, request management, and user voting portal for Jellyfin | [MIT](https://github.com/fallenbagel/jellyseerr) |
 | **SQLite3 Database Driver** | `3.46.1` (`libe_sqlite3.so`) | Embedded relational database engine storing user library catalogs, metadata, and watch progress | [Public Domain](https://sqlite.org) |
 | **Fontconfig & FreeType Engines** | `libfontconfig.so` / `libfreetype.so` | Native C libraries used by FFmpeg for video subtitle burn-in and font shaping | [FTL / GPLv2](https://freetype.org) |
@@ -276,7 +280,9 @@ Fishbowl coordinates and monitors the complete self-hosted media lifecycle throu
 | **Jellyfin Core** | `8096` | HTTP / WebSocket | .NET 10 (ARM64) | Primary media streaming, library catalog indexing, and user playback reporting |
 | **Radarr** | `7878` | HTTP / REST API | .NET 10 (ARM64) | Automated movie library management, metadata gathering, and folder organization |
 | **Sonarr** | `8989` | HTTP / REST API | .NET 10 (ARM64) | Television series tracking, episode monitor, and series renaming |
-| **Prowlarr** | `9696` | HTTP / REST API | .NET 10 (ARM64) | Centralized torrent indexer proxy manager syncing with Radarr and Sonarr |
+| **Lidarr** | `8686` | HTTP / REST API | .NET 10 (ARM64) | Music track and album management, metadata retrieval, and organization |
+| **Bazarr** | `6767` | HTTP / REST API | Python 3 (Waitress) | Subtitle synchronization engine and multi-provider subtitle downloader |
+| **Prowlarr** | `9696` | HTTP / REST API | .NET 10 (ARM64) | Centralized torrent indexer proxy manager syncing with Radarr, Sonarr, and Lidarr |
 | **Transmission** | `9091` | HTTP / RPC | Native C (Bionic) | Headless BitTorrent download engine with dedicated staging directory routing |
 | **Seerr** | `5055` | HTTP / WebSocket | Node.js Runtime | Media discovery, user request voting, and Jellyfin library sync |
 | **Native FlareSolver** | `8191` | HTTP (Headless) | Android Chromium Engine | In-app headless challenge solver for Prowlarr indexer queries |
@@ -292,7 +298,7 @@ All server state is strictly contained inside Fishbowl's private application pac
 | **Config (`--configdir`)** | `/data/data/com.fishbowl.app/files/home/.config/jellyfin` | Server XML configuration files (`system.xml`, `network.xml`) |
 | **Cache (`--cachedir`)** | `/data/data/com.fishbowl.app/files/home/.cache/jellyfin` | Image thumbnail caches, fanart, and temporary transcode chunks |
 | **Logs (`--logdir`)** | `/data/data/com.fishbowl.app/files/home/.local/share/jellyfin/log` | On-disk Serilog log files accessible via the in-app Disk Log viewer |
-| **Services Directory** | `/data/data/com.fishbowl.app/files/home/services` | Companion binaries and managed modules (`radarr`, `sonarr`, `prowlarr`, `seerr`) |
+| **Services Directory** | `/data/data/com.fishbowl.app/files/home/services` | Companion binaries and managed modules (`radarr`, `sonarr`, `lidarr`, `prowlarr`, `transmission`, `bazarr`, `seerr`) |
 
 ---
 
@@ -340,9 +346,9 @@ Fishbowl automatically provisions a clean media scaffolding under `/storage/emul
 ```text
 /storage/emulated/0/FishbowlMedia/
 ├── Movies/                    # Radarr movie library root
-├── TV Shows/                  # Sonarr TV series library root
+├── TV/                        # Sonarr TV series library root
 ├── Music/                     # Lidarr & user music library root
-├── Downloads/                 # Dedicated download staging
+├── Downloads/                 # Dedicated download staging (Transmission)
 │   ├── radarr/                # Radarr movie download target
 │   └── sonarr/                # Sonarr episode download target
 └── Backups/                   # 1-Tap disaster recovery archives
@@ -352,8 +358,9 @@ Fishbowl automatically provisions a clean media scaffolding under `/storage/emul
 ### Internal Storage
 Grant the All-Files Storage Access permission when prompted, then select your media directory, such as:
 - `/storage/emulated/0/FishbowlMedia/Movies`
-- `/storage/emulated/0/FishbowlMedia/TV Shows`
+- `/storage/emulated/0/FishbowlMedia/TV`
 - `/storage/emulated/0/FishbowlMedia/Music`
+- `/storage/emulated/0/FishbowlMedia/Downloads`
 
 ### USB OTG & External MicroSD Storage
 Android 11+ OEM security restricts untrusted application UIDs from traversing raw kernel mount points (`/mnt/media_rw/`). Fishbowl resolves this through two accessible methods:
@@ -576,9 +583,12 @@ This project is licensed under the [GNU General Public License v3.0](LICENSE). F
 
 - **Jellyfin:** Licensed under GNU General Public License v3.0.
 - **Radarr / Sonarr / Prowlarr / Lidarr:** Licensed under GNU General Public License v3.0.
+- **Bazarr:** Licensed under GNU General Public License v3.0.
 - **Transmission:** Licensed under GNU General Public License v2.0 / v3.0.
 - **Seerr (Jellyseerr):** Licensed under the MIT License.
 - **Termux Components:** Licensed under GNU General Public License v3.0 / Apache 2.0 / MIT.
+- **Node.js LTS:** Licensed under the MIT License.
+- **Python Runtime:** Python Software Foundation License (PSFL).
 - **.NET Runtime:** Licensed under the MIT License.
 - **FFmpeg Engine:** Licensed under GNU General Public License v3.0 / LGPL v3.0 (built without `--enable-nonfree`).
 - **SQLite:** Public Domain.

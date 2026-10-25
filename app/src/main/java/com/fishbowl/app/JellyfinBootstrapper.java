@@ -442,6 +442,21 @@ public class JellyfinBootstrapper {
                 Os.chmod(ffmpegBin.getAbsolutePath(), 0755);
             }
 
+            File libDir = new File(prefixDir, "lib");
+            if (!libDir.exists()) libDir.mkdirs();
+            File prefixMono = new File(libDir, "libMonoPosixHelper.so");
+            if (!prefixMono.exists()) {
+                try (InputStream in = context.getAssets().open("libMonoPosixHelper.so");
+                     OutputStream out = new FileOutputStream(prefixMono)) {
+                    byte[] buf = new byte[8192];
+                    int r;
+                    while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+                } catch (Throwable ignored) {}
+            }
+            if (prefixMono.exists()) {
+                try { Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
+
             File jellyfinDll = new File(prefixDir, "lib/jellyfin/jellyfin.dll");
             Log.i(TAG, "Post-extraction check: dotnetBin=" + dotnetBin.getAbsolutePath() + " exists=" + dotnetBin.exists() + ", jellyfinDll=" + jellyfinDll.getAbsolutePath() + " exists=" + jellyfinDll.exists());
 

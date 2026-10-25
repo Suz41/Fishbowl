@@ -59,6 +59,8 @@ import android.widget.Toast;
 import java.net.Inet4Address;
 import java.net.NetworkInterface;
 import java.util.Date;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.ArrayList;
@@ -100,6 +102,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.Inet4Address;
 import java.net.NetworkInterface;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Enumeration;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -299,6 +303,7 @@ public final class FishbowlActivity extends AppCompatActivity
     private Button setupRetryBtn;
     private Button setupDismissBtn;
     private TextView setupLogSummaryText;
+    private boolean isSetupOverlayManuallyOpened = false;
 
     // Throttled Log Handler (Section 4 UI Thread Protection)
     private final android.os.Handler logUpdateHandler = new android.os.Handler(android.os.Looper.getMainLooper());
@@ -575,6 +580,14 @@ public final class FishbowlActivity extends AppCompatActivity
             return;
         }
         if (setupOverlayView != null && setupOverlayView.getVisibility() == View.VISIBLE) {
+            if (isSetupOverlayManuallyOpened || JellyfinBootstrapper.isInitialized(this)) {
+                isSetupOverlayManuallyOpened = false;
+                setupOverlayView.setVisibility(View.GONE);
+                setChromeVisibilityForSetup(false);
+                if (setupDismissBtn != null) setupDismissBtn.setVisibility(View.GONE);
+                renderActiveTab();
+                return;
+            }
             Toast.makeText(this, "Setup in progress. Please keep Fishbowl open.", Toast.LENGTH_SHORT).show();
             moveTaskToBack(true);
             return;
@@ -1078,6 +1091,10 @@ public final class FishbowlActivity extends AppCompatActivity
         // Continue to FishBowl button (Shown when setup is completed or previewed)
         setupDismissBtn = createPixelButton("CONTINUE TO FISHBOWL", getAccentColor(), Color.WHITE);
         setupDismissBtn.setOnClickListener(v -> {
+            isSetupOverlayManuallyOpened = false;
+            if (setupDismissBtn != null) {
+                setupDismissBtn.setVisibility(View.GONE);
+            }
             setupOverlayView.setVisibility(View.GONE);
             setChromeVisibilityForSetup(false);
             renderActiveTab();
@@ -1138,13 +1155,14 @@ public final class FishbowlActivity extends AppCompatActivity
 
     public void showSetupOverlay(boolean allowDismiss) {
         if (setupOverlayView == null) return;
+        isSetupOverlayManuallyOpened = allowDismiss;
         setChromeVisibilityForSetup(true);
-        renderSetupOverlayState();
         if (setupDismissBtn != null) {
             setupDismissBtn.setVisibility(allowDismiss || JellyfinBootstrapper.isInitialized(this) ? View.VISIBLE : View.GONE);
         }
         setupOverlayView.setVisibility(View.VISIBLE);
         setupOverlayView.bringToFront();
+        renderSetupOverlayState();
     }
 
     private void renderSetupOverlayState() {
@@ -1157,16 +1175,19 @@ public final class FishbowlActivity extends AppCompatActivity
         boolean isRunning = (state == JellyfinController.State.RUNNING);
         boolean isFailed = (state == JellyfinController.State.FAILED || state == JellyfinController.State.CRASHED);
 
-        // Overlay is visible when explicitly INITIALIZING or not yet initialized
-        boolean showOverlay = isInitializing || (!initialized && !isRunning);
+        // Overlay is visible when explicitly INITIALIZING, or not yet initialized (and not running), or manually opened from settings
+        boolean showOverlay = isInitializing || (!initialized && !isRunning) || isSetupOverlayManuallyOpened;
 
         if (!initialized && !isFailed && !isInitializing && !isStarting && !isRunning) {
             ensureBootstrapStartedIfNeeded();
         }
 
-        if (!showOverlay && (setupDismissBtn == null || setupDismissBtn.getVisibility() != View.VISIBLE)) {
+        if (!showOverlay) {
             setupOverlayView.setVisibility(View.GONE);
             setChromeVisibilityForSetup(false);
+            if (setupDismissBtn != null) {
+                setupDismissBtn.setVisibility(View.GONE);
+            }
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             return;
         }
@@ -1238,7 +1259,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 reinstallBtn.setVisibility(View.GONE);
             }
             if (setupDismissBtn != null) {
-                setupDismissBtn.setVisibility(initialized ? View.VISIBLE : View.GONE);
+                setupDismissBtn.setVisibility((initialized || isSetupOverlayManuallyOpened) ? View.VISIBLE : View.GONE);
             }
 
             // Update stage rows
@@ -4759,6 +4780,8 @@ public final class FishbowlActivity extends AppCompatActivity
                 conn.setReadTimeout(35000);
                 conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
                 conn.setRequestProperty("Accept", "*/*");
+                conn.setRequestProperty("Accept-Encoding", "identity");
+                conn.setRequestProperty("Connection", "keep-alive");
                 conn.setInstanceFollowRedirects(false);
                 conn.connect();
 
@@ -4792,15 +4815,18 @@ public final class FishbowlActivity extends AppCompatActivity
                     destFile.getParentFile().mkdirs();
                 }
 
-                try (InputStream in = new BufferedInputStream(conn.getInputStream());
-                     OutputStream out = new BufferedOutputStream(new FileOutputStream(destFile))) {
-                    byte[] buf = new byte[65536];
+                try (InputStream in = new BufferedInputStream(conn.getInputStream(), 131072);
+                     OutputStream out = new BufferedOutputStream(new FileOutputStream(destFile), 131072)) {
+                    byte[] buf = new byte[131072];
                     int len;
                     long downloaded = 0;
+                    long lastReportTime = 0;
                     while ((len = in.read(buf)) > 0) {
                         out.write(buf, 0, len);
                         downloaded += len;
-                        if (cb != null) {
+                        long now = SystemClock.uptimeMillis();
+                        if (cb != null && (now - lastReportTime >= 180 || downloaded == totalLength)) {
+                            lastReportTime = now;
                             cb.onProgress(downloaded, totalLength);
                         }
                     }
@@ -4961,6 +4987,86 @@ public final class FishbowlActivity extends AppCompatActivity
         }
     }
 
+    private static final Map<String, String> TERMUX_POOL_MAP = new HashMap<>();
+    static {
+        TERMUX_POOL_MAP.put("transmission", "pool/main/t/transmission/transmission_4.1.4_aarch64.deb");
+        TERMUX_POOL_MAP.put("libpsl", "pool/main/libp/libpsl/libpsl_0.23.3_aarch64.deb");
+        TERMUX_POOL_MAP.put("libidn2", "pool/main/libi/libidn2/libidn2_2.3.8-1_aarch64.deb");
+        TERMUX_POOL_MAP.put("miniupnpc", "pool/main/m/miniupnpc/miniupnpc_2.3.3-1_aarch64.deb");
+        TERMUX_POOL_MAP.put("natpmpc", "pool/main/n/natpmpc/natpmpc_20230423-2_aarch64.deb");
+        TERMUX_POOL_MAP.put("libc++", "pool/main/libc/libc++/libc++_30_aarch64.deb");
+        TERMUX_POOL_MAP.put("7zip", "pool/main/7/7zip/7zip_26.05_aarch64.deb");
+        TERMUX_POOL_MAP.put("nodejs-lts", "pool/main/n/nodejs-lts/nodejs-lts_24.22.1_aarch64.deb");
+        TERMUX_POOL_MAP.put("c-ares", "pool/main/c/c-ares/c-ares_1.34.9_aarch64.deb");
+        TERMUX_POOL_MAP.put("python", "pool/main/p/python/python_3.14.8_aarch64.deb");
+        TERMUX_POOL_MAP.put("libbz2", "pool/main/libb/libbz2/libbz2_1.0.8-8_aarch64.deb");
+        TERMUX_POOL_MAP.put("libexpat", "pool/main/libe/libexpat/libexpat_2.9.0_aarch64.deb");
+        TERMUX_POOL_MAP.put("libffi", "pool/main/libf/libffi/libffi_3.8.0_aarch64.deb");
+        TERMUX_POOL_MAP.put("liblzma", "pool/main/libl/liblzma/liblzma_5.8.4_aarch64.deb");
+        TERMUX_POOL_MAP.put("libsqlite", "pool/main/libs/libsqlite/libsqlite_3.54.1_aarch64.deb");
+        TERMUX_POOL_MAP.put("libandroid-support", "pool/main/liba/libandroid-support/libandroid-support_29-1_aarch64.deb");
+        TERMUX_POOL_MAP.put("ncurses", "pool/main/n/ncurses/ncurses_6.6.20260307+really6.5.20250830_aarch64.deb");
+        TERMUX_POOL_MAP.put("readline", "pool/main/r/readline/readline_8.3.6_aarch64.deb");
+    }
+
+    private static final Map<String, String> sDynamicDebUrlCache = new HashMap<>();
+
+    private static String resolveTermuxDebUrl(Context context, String pkgName) {
+        synchronized (sDynamicDebUrlCache) {
+            if (sDynamicDebUrlCache.containsKey(pkgName)) {
+                return sDynamicDebUrlCache.get(pkgName);
+            }
+        }
+        File localPkgList = new File(TermuxConstants.TERMUX_PREFIX_DIR, "var/lib/apt/lists/packages-cf.termux.dev_apt_termux-main_dists_stable_main_binary-aarch64_Packages");
+        if (localPkgList.exists()) {
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(localPkgList), java.nio.charset.StandardCharsets.UTF_8))) {
+                String line;
+                String currentPkg = null;
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (line.startsWith("Package: ")) {
+                        currentPkg = line.substring(9).trim();
+                    } else if (line.startsWith("Filename: ") && pkgName.equalsIgnoreCase(currentPkg)) {
+                        String fn = line.substring(10).trim();
+                        String resolved = "https://packages-cf.termux.dev/apt/termux-main/" + fn;
+                        synchronized (sDynamicDebUrlCache) {
+                            sDynamicDebUrlCache.put(pkgName, resolved);
+                        }
+                        return resolved;
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+        String relPath = TERMUX_POOL_MAP.get(pkgName);
+        if (relPath != null) {
+            return "https://packages-cf.termux.dev/apt/termux-main/" + relPath;
+        }
+        return null;
+    }
+
+    private void downloadAndInstallDebPackage(String pkgName, File prefixDir, OledProgressDialog progress, String stepDescription) throws Exception {
+        String debUrl = resolveTermuxDebUrl(this, pkgName);
+        if (debUrl == null) {
+            throw new IOException("Unable to resolve debian package URL for: " + pkgName);
+        }
+        if (progress != null) {
+            runOnUiThread(() -> progress.setMessage(stepDescription));
+        }
+        File cacheDeb = new File(getCacheDir(), pkgName + ".deb");
+        final int[] lastReported = new int[]{-1};
+        downloadWithRedirects(debUrl, cacheDeb, (current, total) -> {
+            if (total > 0 && progress != null) {
+                int pct = (int) ((current * 100) / total);
+                if (pct != lastReported[0]) {
+                    lastReported[0] = pct;
+                    runOnUiThread(() -> progress.setProgress(pct));
+                }
+            }
+        });
+        extractDebPackage(cacheDeb, prefixDir);
+        cacheDeb.delete();
+    }
+
     private void installServiceAutomatically(ManagedService svc) {
         OledProgressDialog progress = showOledProgressDialog("INSTALLING " + svc.getDisplayName().toUpperCase(Locale.ROOT), "Preparing runtime environment...");
 
@@ -4974,6 +5080,18 @@ public final class FishbowlActivity extends AppCompatActivity
                 String id = svc.getId().toLowerCase(Locale.ROOT);
 
                 if ("seerr".equalsIgnoreCase(id)) {
+                    File nodeBin = new File(prefix, "bin/node");
+                    if (!nodeBin.exists()) {
+                        String[] nodeDeps = {"libc++", "c-ares", "nodejs-lts"};
+                        for (String dep : nodeDeps) {
+                            downloadAndInstallDebPackage(dep, prefix, progress, "Installing Node.js runtime (" + dep + ")...");
+                        }
+                        if (nodeBin.exists()) {
+                            nodeBin.setExecutable(true, false);
+                            try { android.system.Os.chmod(nodeBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                        }
+                    }
+
                     runOnUiThread(() -> progress.setMessage("Deploying Seerr Request Engine..."));
                     MediaServiceManager.getInstance(this).deploySeerrService(true);
                     MediaServiceManager.getInstance(this).autoWireStack(null);
@@ -4988,13 +5106,37 @@ public final class FishbowlActivity extends AppCompatActivity
                 }
 
                 if ("bazarr".equalsIgnoreCase(id)) {
+                    File pythonBin = new File(prefix, "bin/python3");
+                    if (!pythonBin.exists()) {
+                        String[] pyDeps = {
+                            "libc++", "libbz2", "libexpat", "libffi", "liblzma", "libsqlite",
+                            "libandroid-support", "ncurses", "readline", "python"
+                        };
+                        for (String dep : pyDeps) {
+                            downloadAndInstallDebPackage(dep, prefix, progress, "Setting up Python 3 runtime (" + dep + ")...");
+                        }
+                        if (pythonBin.exists()) {
+                            pythonBin.setExecutable(true, false);
+                            try { android.system.Os.chmod(pythonBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                        }
+                    }
+
+                    File sevenZipBin = new File(prefix, "bin/7z");
+                    if (!sevenZipBin.exists()) {
+                        downloadAndInstallDebPackage("7zip", prefix, progress, "Setting up 7-Zip archiver utility...");
+                    }
+
                     runOnUiThread(() -> progress.setMessage("Downloading Bazarr release..."));
                     File cacheZip = new File(getCacheDir(), "bazarr.zip");
                     String bzUrl = "https://github.com/morpheus65535/bazarr/releases/latest/download/bazarr.zip";
+                    final int[] lastReportedBz = new int[]{-1};
                     downloadWithRedirects(bzUrl, cacheZip, (current, total) -> {
                         if (total > 0) {
                             int pct = (int) ((current * 100) / total);
-                            runOnUiThread(() -> progress.setProgress(pct));
+                            if (pct != lastReportedBz[0]) {
+                                lastReportedBz[0] = pct;
+                                runOnUiThread(() -> progress.setProgress(pct));
+                            }
                         }
                     });
 
@@ -5018,22 +5160,18 @@ public final class FishbowlActivity extends AppCompatActivity
                 }
 
                 if ("transmission".equalsIgnoreCase(id)) {
-                    runOnUiThread(() -> progress.setMessage("Downloading Transmission daemon..."));
-                    File cacheDeb = new File(getCacheDir(), "transmission.deb");
-                    String trUrl = "https://packages-cf.termux.dev/apt/termux-main/pool/main/t/transmission/transmission_4.1.3_aarch64.deb";
-                    downloadWithRedirects(trUrl, cacheDeb, (current, total) -> {
-                        if (total > 0) {
-                            int pct = (int) ((current * 100) / total);
-                            runOnUiThread(() -> progress.setProgress(pct));
-                        }
-                    });
-
-                    runOnUiThread(() -> progress.setMessage("Extracting & configuring Transmission..."));
-                    extractDebPackage(cacheDeb, prefix);
-                    cacheDeb.delete();
+                    String[] trDeps = {"libc++", "libpsl", "libidn2", "miniupnpc", "natpmpc", "transmission"};
+                    for (String dep : trDeps) {
+                        downloadAndInstallDebPackage(dep, prefix, progress, "Installing Transmission (" + dep + ")...");
+                    }
 
                     File daemon = new File(prefix, "bin/transmission-daemon");
-                    if (daemon.exists()) daemon.setExecutable(true, false);
+                    if (daemon.exists()) {
+                        daemon.setExecutable(true, false);
+                        try {
+                            android.system.Os.chmod(daemon.getAbsolutePath(), 0755);
+                        } catch (Throwable ignored) {}
+                    }
 
                     MediaServiceManager.getInstance(this).ensureServiceConfigSanitized("transmission");
                     MediaServiceManager.getInstance(this).autoWireStack(null);
@@ -5048,12 +5186,12 @@ public final class FishbowlActivity extends AppCompatActivity
                     return;
                 }
 
-                // Servarr applications (.NET 10.0 ARM64): Radarr, Sonarr, Prowlarr, Lidarr
+                                // Servarr applications (.NET 10.0 ARM64): Radarr, Sonarr, Prowlarr, Lidarr
                 String downloadUrl;
                 if ("sonarr".equalsIgnoreCase(id)) {
                     downloadUrl = "https://services.sonarr.tv/v1/download/main/latest?version=4&os=linux&arch=arm64";
                 } else if ("prowlarr".equalsIgnoreCase(id)) {
-                    downloadUrl = "http://prowlarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
+                    downloadUrl = "https://prowlarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
                 } else if ("radarr".equalsIgnoreCase(id)) {
                     downloadUrl = "https://radarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
                 } else if ("lidarr".equalsIgnoreCase(id)) {
@@ -5065,10 +5203,14 @@ public final class FishbowlActivity extends AppCompatActivity
 
                 runOnUiThread(() -> progress.setMessage("Downloading " + svc.getDisplayName() + "..."));
                 File cacheTar = new File(getCacheDir(), id + ".tar.gz");
+                final int[] lastReportedSv = new int[]{-1};
                 downloadWithRedirects(downloadUrl, cacheTar, (current, total) -> {
                     if (total > 0) {
                         int pct = (int) ((current * 100) / total);
-                        runOnUiThread(() -> progress.setProgress(pct));
+                        if (pct != lastReportedSv[0]) {
+                            lastReportedSv[0] = pct;
+                            runOnUiThread(() -> progress.setProgress(pct));
+                        }
                     }
                 });
 
@@ -5094,16 +5236,48 @@ public final class FishbowlActivity extends AppCompatActivity
                     File depsJson = new File(parent, baseName + ".deps.json");
                     File depsJsonBak = new File(parent, baseName + ".deps.json.bak");
                     if (depsJson.exists() && !depsJsonBak.exists()) depsJson.renameTo(depsJsonBak);
-                    File localClr = new File(parent, "libcoreclr.so");
-                    if (localClr.exists()) localClr.delete();
+
+                    String[] glibcLibs = {
+                        "libcoreclr.so", "libhostpolicy.so", "libhostfxr.so",
+                        "libclrjit.so", "libclrgc.so", "libcoreclrtraceptprovider.so",
+                        "libmscordaccore.so", "libmscordbi.so",
+                        "libSystem.Native.so", "libSystem.Globalization.Native.so",
+                        "libSystem.IO.Compression.Native.so", "libSystem.Net.Security.Native.so",
+                        "libSystem.Security.Cryptography.Native.OpenSsl.so"
+                    };
+                    for (String glibcLib : glibcLibs) {
+                        File f = new File(parent, glibcLib);
+                        if (f.exists()) f.delete();
+                    }
 
                     File prefixEsqlite = new File(prefix, "lib/libe_sqlite3.so");
                     File targetEsqlite = new File(parent, "libe_sqlite3.so");
                     if (prefixEsqlite.exists()) copyFile(prefixEsqlite, targetEsqlite);
+                    if (targetEsqlite.exists()) {
+                        targetEsqlite.setReadable(true, false);
+                        targetEsqlite.setExecutable(true, false);
+                        try { android.system.Os.chmod(targetEsqlite.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                    }
 
                     File prefixMono = new File(prefix, "lib/libMonoPosixHelper.so");
+                    if (!prefixMono.exists()) {
+                        try (InputStream in = getAssets().open("libMonoPosixHelper.so");
+                             OutputStream out = new FileOutputStream(prefixMono)) {
+                            byte[] buf = new byte[8192];
+                            int r;
+                            while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+                        } catch (Throwable ignored) {}
+                        if (prefixMono.exists()) {
+                            try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                        }
+                    }
                     File targetMono = new File(parent, "libMonoPosixHelper.so");
                     if (prefixMono.exists()) copyFile(prefixMono, targetMono);
+                    if (targetMono.exists()) {
+                        targetMono.setReadable(true, false);
+                        targetMono.setExecutable(true, false);
+                        try { android.system.Os.chmod(targetMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                    }
 
                     File jfConfig = new File(prefix, "lib/jellyfin/jellyfin.runtimeconfig.json");
                     File targetCfg = new File(parent, baseName + ".runtimeconfig.json");
@@ -5200,6 +5374,27 @@ public final class FishbowlActivity extends AppCompatActivity
             while ((len = in.read(buf)) > 0) {
                 out.write(buf, 0, len);
             }
+        } catch (Throwable ignored) {}
+    }
+
+    private static String readTextFile(File file) {
+        try (java.io.FileInputStream fis = new java.io.FileInputStream(file);
+             java.io.InputStreamReader isr = new java.io.InputStreamReader(fis, java.nio.charset.StandardCharsets.UTF_8);
+             java.io.BufferedReader br = new java.io.BufferedReader(isr)) {
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line).append("\n");
+            }
+            return sb.toString();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static void writeTextFile(File file, String content) {
+        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
+            fos.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         } catch (Throwable ignored) {}
     }
 
@@ -8195,6 +8390,10 @@ public final class FishbowlActivity extends AppCompatActivity
         if (percent >= 100) {
             setupOverlayView.postDelayed(() -> {
                 if (setupOverlayView != null && JellyfinBootstrapper.isInitialized(this)) {
+                    isSetupOverlayManuallyOpened = false;
+                    if (setupDismissBtn != null) {
+                        setupDismissBtn.setVisibility(View.GONE);
+                    }
                     setupOverlayView.setVisibility(View.GONE);
                     setChromeVisibilityForSetup(false);
                     renderActiveTab();
