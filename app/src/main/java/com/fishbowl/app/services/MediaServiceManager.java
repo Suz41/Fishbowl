@@ -2374,7 +2374,7 @@ public class MediaServiceManager {
     }
 
     public void configureRadarrQualityProfilesAndFormats(String apiKey, StringBuilder log) {
-        log.append("[CONFIG] Enforcing Radarr Quality: 720p/1080p Only, Max < 20GB, Custom Formats\n");
+        log.append("[CONFIG] Enforcing Radarr Quality: Strictly 720p/1080p Only, NO 4K, Max < 15GB, Custom Formats\n");
 
         // 1. Direct SQLite safety guard for size limit & 4K removal
         try {
@@ -2384,7 +2384,8 @@ public class MediaServiceManager {
                         radarrDb.getAbsolutePath(), null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE);
                 if (db != null) {
                     try {
-                        db.execSQL("UPDATE QualityDefinitions SET MaxSize = 160.0 WHERE MaxSize > 160.0 OR MaxSize IS NULL;");
+                        db.execSQL("UPDATE QualityDefinitions SET MaxSize = 100.0 WHERE MaxSize > 100.0 OR MaxSize IS NULL;");
+                        db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
                         db.execSQL("DELETE FROM QualityProfiles WHERE Name LIKE '%4K%' OR Name LIKE '%Ultra%' OR Name LIKE '%2160%';");
                     } finally {
                         db.close();
@@ -2395,7 +2396,7 @@ public class MediaServiceManager {
             Log.w(TAG, "Radarr direct SQLite update notice: " + t.getMessage());
         }
 
-        // 2. Size limit via API: Cap all quality definition max sizes at 160 MB/min (<20 GB for 2-hour movie)
+        // 2. Size limit via API: Cap all quality definition max sizes at 100 MB/min (<15 GB limit for movies)
         try {
             String qdResp = httpGet("http://127.0.0.1:7878/api/v3/qualitydefinition?apiKey=" + apiKey);
             if (qdResp != null && qdResp.startsWith("[")) {
@@ -2403,15 +2404,22 @@ public class MediaServiceManager {
                 boolean qdModified = false;
                 for (int i = 0; i < qdArr.length(); i++) {
                     JSONObject qd = qdArr.getJSONObject(i);
-                    double max = qd.optDouble("maxSize", 0);
-                    if (max > 160.0 || max <= 0 || qd.isNull("maxSize")) {
-                        qd.put("maxSize", 160.0);
+                    String title = qd.optString("title", "");
+                    if (title.contains("2160") || title.contains("4K") || title.contains("Ultra")) {
+                        qd.put("maxSize", 0.0);
+                        qd.put("minSize", 0.0);
                         qdModified = true;
+                    } else {
+                        double max = qd.optDouble("maxSize", 0);
+                        if (max > 100.0 || max <= 0 || qd.isNull("maxSize")) {
+                            qd.put("maxSize", 100.0);
+                            qdModified = true;
+                        }
                     }
                 }
                 if (qdModified) {
                     putJson("http://127.0.0.1:7878/api/v3/qualitydefinition/update?apiKey=" + apiKey, qdArr.toString());
-                    log.append("[OK] Radarr quality definitions capped at 160 MB/min (<20 GB limit)\n");
+                    log.append("[OK] Radarr quality definitions capped at 100 MB/min (<15 GB limit, 0 for 4K)\n");
                 }
             }
         } catch (Throwable t) {
@@ -2421,13 +2429,15 @@ public class MediaServiceManager {
         // 3. Ensure Custom Formats exist and collect format IDs
         Map<String, Integer> formatIds = new java.util.HashMap<>();
         try {
+            ensureRadarrCustomFormat(apiKey, "Reject 4K", "(?i)\\b(2160p|4k|uhd|ultra[ ._-]?hd)\\b", formatIds);
+            ensureRadarrSizeLimitCustomFormat(apiKey, "Reject Over 15GB", 15.0, formatIds);
             ensureRadarrCustomFormat(apiKey, "IMAX Enhanced", "(?i)\\b(IMAX|IMAX[ ._-]?ENHANCED)\\b", formatIds);
             ensureRadarrCustomFormat(apiKey, "IMAX with HDR", "(?i)\\bIMAX\\b.*?(HDR|HDR10|HDR10\\+|DOVI|DV)\\b", formatIds);
             ensureRadarrCustomFormat(apiKey, "HDR / Dolby Vision", "(?i)\\b(HDR|HDR10|HDR10\\+|HDR10PLUS|DV|DOVI|DOLBY[ ._-]?VISION)\\b", formatIds);
             ensureRadarrCustomFormat(apiKey, "x265 / HEVC", "(?i)\\b(HEVC|H[ ._-]?265|X265)\\b", formatIds);
             ensureRadarrCustomFormat(apiKey, "x264 / AVC", "(?i)\\b(AVC|H[ ._-]?264|X264)\\b", formatIds);
             ensureRadarrCustomFormat(apiKey, "Hindi - English Dual Audio", "(?i)(DUAL[ ._-]?AUDIO|MULTI[ ._-]?AUDIO|HIN[ ._-]?ENG|ENG[ ._-]?HIN|HINDI.*ENGLISH|ENGLISH.*HINDI|\\bHINDI\\b)", formatIds);
-            log.append("[OK] Radarr Custom Formats registered (IMAX, HDR, x265, x264, Hindi-English)\n");
+            log.append("[OK] Radarr Custom Formats registered (Reject 4K, Reject >15GB, IMAX, HDR, x265, x264, Hindi-English)\n");
         } catch (Throwable t) {
             Log.w(TAG, "Radarr custom format registration error: " + t.getMessage());
         }
@@ -2451,11 +2461,28 @@ public class MediaServiceManager {
 
                     // Enforce allowed qualities: Only 720p & 1080p allowed, no 4K, no SD
                     JSONArray items = prof.optJSONArray("items");
+                    int firstAllowedId = -1;
+                    boolean cutoffAllowed = false;
+                    int currentCutoff = prof.optInt("cutoff", -1);
                     if (items != null) {
                         for (int j = 0; j < items.length(); j++) {
                             JSONObject it = items.getJSONObject(j);
                             filterQualityItem(it);
+                            boolean isAllowed = it.optBoolean("allowed", false);
+                            int itId = it.optInt("id", -1);
+                            JSONObject q = it.optJSONObject("quality");
+                            int qId = (q != null) ? q.optInt("id", -1) : -1;
+                            if (isAllowed) {
+                                int candidate = (qId > 0) ? qId : itId;
+                                if (firstAllowedId == -1 && candidate > 0) firstAllowedId = candidate;
+                                if (currentCutoff == itId || currentCutoff == qId) {
+                                    cutoffAllowed = true;
+                                }
+                            }
                         }
+                    }
+                    if (!cutoffAllowed && firstAllowedId > 0) {
+                        prof.put("cutoff", firstAllowedId);
                     }
 
                     // Enforce Custom Format scores
@@ -2463,6 +2490,8 @@ public class MediaServiceManager {
                     if (formatItems == null) {
                         formatItems = new JSONArray();
                     }
+                    applyFormatScore(formatItems, formatIds.get("Reject 4K"), -10000);
+                    applyFormatScore(formatItems, formatIds.get("Reject Over 15GB"), -10000);
                     applyFormatScore(formatItems, formatIds.get("IMAX with HDR"), 150);
                     applyFormatScore(formatItems, formatIds.get("IMAX Enhanced"), 120);
                     applyFormatScore(formatItems, formatIds.get("HDR / Dolby Vision"), 100);
@@ -2474,7 +2503,7 @@ public class MediaServiceManager {
                     prof.put("cutoffFormatScore", 250);
 
                     putJson("http://127.0.0.1:7878/api/v3/qualityprofile/" + profId + "?apiKey=" + apiKey, prof.toString());
-                    log.append("[OK] Profile '").append(profName).append("' configured: Strictly 720p/1080p, Max <20GB, scored formats\n");
+                    log.append("[OK] Profile '").append(profName).append("' configured: Strictly 720p/1080p, Max <15GB, scored formats\n");
                 }
             }
         } catch (Throwable t) {
@@ -2483,7 +2512,7 @@ public class MediaServiceManager {
     }
 
     public void configureSonarrQualityProfilesAndFormats(String apiKey, StringBuilder log) {
-        log.append("[CONFIG] Enforcing Sonarr Quality: 720p/1080p Only, Max < 20GB, Custom Formats\n");
+        log.append("[CONFIG] Enforcing Sonarr Quality: Strictly 720p/1080p Only, NO 4K, Max < 15GB, Custom Formats\n");
 
         // 1. Direct SQLite safety guard for size limit & 4K removal
         try {
@@ -2493,7 +2522,8 @@ public class MediaServiceManager {
                         sonarrDb.getAbsolutePath(), null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE);
                 if (db != null) {
                     try {
-                        db.execSQL("UPDATE QualityDefinitions SET MaxSize = 160.0 WHERE MaxSize > 160.0 OR MaxSize IS NULL;");
+                        db.execSQL("UPDATE QualityDefinitions SET MaxSize = 100.0 WHERE MaxSize > 100.0 OR MaxSize IS NULL;");
+                        db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
                         db.execSQL("DELETE FROM QualityProfiles WHERE Name LIKE '%4K%' OR Name LIKE '%Ultra%' OR Name LIKE '%2160%';");
                     } finally {
                         db.close();
@@ -2504,7 +2534,7 @@ public class MediaServiceManager {
             Log.w(TAG, "Sonarr direct SQLite update notice: " + t.getMessage());
         }
 
-        // 2. Size limit via API: Cap all quality definition max sizes at 160 MB/min
+        // 2. Size limit via API: Cap all quality definition max sizes at 100 MB/min
         try {
             String qdResp = httpGet("http://127.0.0.1:8989/api/v3/qualitydefinition?apiKey=" + apiKey);
             if (qdResp != null && qdResp.startsWith("[")) {
@@ -2512,15 +2542,22 @@ public class MediaServiceManager {
                 boolean qdModified = false;
                 for (int i = 0; i < qdArr.length(); i++) {
                     JSONObject qd = qdArr.getJSONObject(i);
-                    double max = qd.optDouble("maxSize", 0);
-                    if (max > 160.0 || max <= 0 || qd.isNull("maxSize")) {
-                        qd.put("maxSize", 160.0);
+                    String title = qd.optString("title", "");
+                    if (title.contains("2160") || title.contains("4K") || title.contains("Ultra")) {
+                        qd.put("maxSize", 0.0);
+                        qd.put("minSize", 0.0);
                         qdModified = true;
+                    } else {
+                        double max = qd.optDouble("maxSize", 0);
+                        if (max > 100.0 || max <= 0 || qd.isNull("maxSize")) {
+                            qd.put("maxSize", 100.0);
+                            qdModified = true;
+                        }
                     }
                 }
                 if (qdModified) {
                     putJson("http://127.0.0.1:8989/api/v3/qualitydefinition/update?apiKey=" + apiKey, qdArr.toString());
-                    log.append("[OK] Sonarr quality definitions capped at 160 MB/min (<20 GB limit)\n");
+                    log.append("[OK] Sonarr quality definitions capped at 100 MB/min (<15 GB limit, 0 for 4K)\n");
                 }
             }
         } catch (Throwable t) {
@@ -2530,13 +2567,15 @@ public class MediaServiceManager {
         // 3. Ensure Custom Formats exist in Sonarr
         Map<String, Integer> formatIds = new java.util.HashMap<>();
         try {
+            ensureSonarrCustomFormat(apiKey, "Reject 4K", "(?i)\\b(2160p|4k|uhd|ultra[ ._-]?hd)\\b", formatIds);
+            ensureSonarrSizeLimitCustomFormat(apiKey, "Reject Over 15GB", 15.0, formatIds);
             ensureSonarrCustomFormat(apiKey, "IMAX Enhanced", "(?i)\\b(IMAX|IMAX[ ._-]?ENHANCED)\\b", formatIds);
             ensureSonarrCustomFormat(apiKey, "IMAX with HDR", "(?i)\\bIMAX\\b.*?(HDR|HDR10|HDR10\\+|DOVI|DV)\\b", formatIds);
             ensureSonarrCustomFormat(apiKey, "HDR / Dolby Vision", "(?i)\\b(HDR|HDR10|HDR10\\+|HDR10PLUS|DV|DOVI|DOLBY[ ._-]?VISION)\\b", formatIds);
             ensureSonarrCustomFormat(apiKey, "x265 / HEVC", "(?i)\\b(HEVC|H[ ._-]?265|X265)\\b", formatIds);
             ensureSonarrCustomFormat(apiKey, "x264 / AVC", "(?i)\\b(AVC|H[ ._-]?264|X264)\\b", formatIds);
             ensureSonarrCustomFormat(apiKey, "Hindi - English Dual Audio", "(?i)(DUAL[ ._-]?AUDIO|MULTI[ ._-]?AUDIO|HIN[ ._-]?ENG|ENG[ ._-]?HIN|HINDI.*ENGLISH|ENGLISH.*HINDI|\\bHINDI\\b)", formatIds);
-            log.append("[OK] Sonarr Custom Formats registered (IMAX, HDR, x265, x264, Hindi-English)\n");
+            log.append("[OK] Sonarr Custom Formats registered (Reject 4K, Reject >15GB, IMAX, HDR, x265, x264, Hindi-English)\n");
         } catch (Throwable t) {
             Log.w(TAG, "Sonarr custom format registration error: " + t.getMessage());
         }
@@ -2570,6 +2609,8 @@ public class MediaServiceManager {
                     if (formatItems == null) {
                         formatItems = new JSONArray();
                     }
+                    applyFormatScore(formatItems, formatIds.get("Reject 4K"), -10000);
+                    applyFormatScore(formatItems, formatIds.get("Reject Over 15GB"), -10000);
                     applyFormatScore(formatItems, formatIds.get("IMAX with HDR"), 150);
                     applyFormatScore(formatItems, formatIds.get("IMAX Enhanced"), 120);
                     applyFormatScore(formatItems, formatIds.get("HDR / Dolby Vision"), 100);
@@ -2581,7 +2622,7 @@ public class MediaServiceManager {
                     prof.put("cutoffFormatScore", 250);
 
                     putJson("http://127.0.0.1:8989/api/v3/qualityprofile/" + profId + "?apiKey=" + apiKey, prof.toString());
-                    log.append("[OK] Profile '").append(profName).append("' configured: Strictly 720p/1080p, Max <20GB, scored formats\n");
+                    log.append("[OK] Profile '").append(profName).append("' configured: Strictly 720p/1080p, Max <15GB, scored formats\n");
                 }
             }
         } catch (Throwable t) {
@@ -2599,8 +2640,10 @@ public class MediaServiceManager {
                     JSONObject sq = sub.optJSONObject("quality");
                     int sRes = (sq != null) ? sq.optInt("resolution", 0) : 0;
                     int sId = (sq != null) ? sq.optInt("id", -1) : sub.optInt("quality", -1);
+                    String sName = (sq != null) ? sq.optString("name", "") : sub.optString("name", "");
                     boolean allow = (sRes == 720 || sRes == 1080);
-                    if (sRes == 2160 || sId == 16 || sId == 17 || sId == 18 || sId == 19 || sId == 21 || sId == 31) {
+                    if (sRes == 2160 || sId == 16 || sId == 17 || sId == 18 || sId == 19 || sId == 21 || sId == 31
+                            || sName.contains("2160") || sName.contains("4K") || sName.contains("Ultra") || sName.contains("UHD")) {
                         allow = false;
                     }
                     if (sRes > 0 && sRes < 720) {
@@ -2619,7 +2662,8 @@ public class MediaServiceManager {
             String qName = (qObj != null) ? qObj.optString("name", "") : it.optString("name", "");
 
             boolean allow = (res == 720 || res == 1080);
-            if (res == 2160 || qId == 16 || qId == 17 || qId == 18 || qId == 19 || qId == 21 || qId == 31 || qName.contains("2160") || qName.contains("4K") || qName.contains("Ultra")) {
+            if (res == 2160 || qId == 16 || qId == 17 || qId == 18 || qId == 19 || qId == 21 || qId == 31
+                    || qName.contains("2160") || qName.contains("4K") || qName.contains("Ultra") || qName.contains("UHD")) {
                 allow = false;
             }
             if (res > 0 && res < 720) {
@@ -2722,6 +2766,108 @@ public class MediaServiceManager {
             }
         } catch (Throwable t) {
             Log.w(TAG, "ensureSonarrCustomFormat " + name + " error: " + t.getMessage());
+        }
+    }
+
+    private void ensureRadarrSizeLimitCustomFormat(String apiKey, String name, double minGb, Map<String, Integer> formatIds) {
+        try {
+            String cfResp = httpGet("http://127.0.0.1:7878/api/v3/customformat?apiKey=" + apiKey);
+            if (cfResp != null && cfResp.startsWith("[")) {
+                JSONArray arr = new JSONArray(cfResp);
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject cf = arr.getJSONObject(i);
+                    if (name.equalsIgnoreCase(cf.optString("name", ""))) {
+                        formatIds.put(name, cf.getInt("id"));
+                        return;
+                    }
+                }
+            }
+
+            JSONObject cfObj = new JSONObject();
+            cfObj.put("name", name);
+            cfObj.put("includeCustomFormatWhenRenaming", false);
+
+            JSONArray specs = new JSONArray();
+            JSONObject spec = new JSONObject();
+            spec.put("name", name);
+            spec.put("implementation", "SizeSpecification");
+            spec.put("negate", false);
+            spec.put("required", true);
+
+            JSONArray fields = new JSONArray();
+            JSONObject fMin = new JSONObject();
+            fMin.put("name", "min");
+            fMin.put("value", minGb);
+            fields.put(fMin);
+
+            JSONObject fMax = new JSONObject();
+            fMax.put("name", "max");
+            fMax.put("value", 1000.0);
+            fields.put(fMax);
+
+            spec.put("fields", fields);
+            specs.put(spec);
+
+            cfObj.put("specifications", specs);
+
+            String postResp = postJsonWithResponse("http://127.0.0.1:7878/api/v3/customformat?apiKey=" + apiKey, cfObj.toString());
+            if (postResp != null && postResp.startsWith("{")) {
+                JSONObject created = new JSONObject(postResp);
+                formatIds.put(name, created.getInt("id"));
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "ensureRadarrSizeLimitCustomFormat " + name + " error: " + t.getMessage());
+        }
+    }
+
+    private void ensureSonarrSizeLimitCustomFormat(String apiKey, String name, double minGb, Map<String, Integer> formatIds) {
+        try {
+            String cfResp = httpGet("http://127.0.0.1:8989/api/v3/customformat?apiKey=" + apiKey);
+            if (cfResp != null && cfResp.startsWith("[")) {
+                JSONArray arr = new JSONArray(cfResp);
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject cf = arr.getJSONObject(i);
+                    if (name.equalsIgnoreCase(cf.optString("name", ""))) {
+                        formatIds.put(name, cf.getInt("id"));
+                        return;
+                    }
+                }
+            }
+
+            JSONObject cfObj = new JSONObject();
+            cfObj.put("name", name);
+            cfObj.put("includeCustomFormatWhenRenaming", false);
+
+            JSONArray specs = new JSONArray();
+            JSONObject spec = new JSONObject();
+            spec.put("name", name);
+            spec.put("implementation", "SizeSpecification");
+            spec.put("negate", false);
+            spec.put("required", true);
+
+            JSONArray fields = new JSONArray();
+            JSONObject fMin = new JSONObject();
+            fMin.put("name", "min");
+            fMin.put("value", minGb);
+            fields.put(fMin);
+
+            JSONObject fMax = new JSONObject();
+            fMax.put("name", "max");
+            fMax.put("value", 1000.0);
+            fields.put(fMax);
+
+            spec.put("fields", fields);
+            specs.put(spec);
+
+            cfObj.put("specifications", specs);
+
+            String postResp = postJsonWithResponse("http://127.0.0.1:8989/api/v3/customformat?apiKey=" + apiKey, cfObj.toString());
+            if (postResp != null && postResp.startsWith("{")) {
+                JSONObject created = new JSONObject(postResp);
+                formatIds.put(name, created.getInt("id"));
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "ensureSonarrSizeLimitCustomFormat " + name + " error: " + t.getMessage());
         }
     }
 
