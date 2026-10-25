@@ -89,7 +89,22 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                             resolved = StorageDriveHelper.normalizeStoragePath(resolved);
                             setActivePath(resolved, true);
                             refreshUI();
-                            Toast.makeText(this, "SAF Granted: " + resolved, Toast.LENGTH_SHORT).show();
+                            StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, resolved);
+                            if (ver.isUsbStorage && !ver.posixAccessible) {
+                                new androidx.appcompat.app.AlertDialog.Builder(this)
+                                        .setTitle("External USB Storage Notice")
+                                        .setMessage("Storage Access Framework (SAF) permission granted for:\n\n" + resolved +
+                                                "\n\nImportant: On standard Android 11+ devices, Android's security sandbox (SELinux/Scoped Storage) allows Java apps to view external USB drives via SAF, but blocks native Linux processes like Jellyfin and FFmpeg from accessing USB paths directly via POSIX.\n\nRecommended: For seamless playback, store media in Internal Storage (/storage/emulated/0/FishbowlMedia/Movies).")
+                                        .setPositiveButton("SWITCH TO INTERNAL", (d, w) -> {
+                                            String internalPath = "/storage/emulated/0/FishbowlMedia/Movies";
+                                            setActivePath(internalPath, true);
+                                            refreshUI();
+                                        })
+                                        .setNegativeButton("KEEP USB PATH", null)
+                                        .show();
+                            } else {
+                                Toast.makeText(this, "SAF Granted: " + resolved, Toast.LENGTH_SHORT).show();
+                            }
                         } else {
                             new androidx.appcompat.app.AlertDialog.Builder(this)
                                     .setTitle("Virtual Cloud Storage (On Hold)")
@@ -922,17 +937,18 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
         if (activePathStatus != null) {
             StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, activeSelectedPath);
-            if (ver.isSafVerified) {
-                activePathStatus.setText("VERIFIED VIA STORAGE ACCESS FRAMEWORK (SAF) (" + ver.mediaFileCount + " media files detected, " + ver.itemCount + " items)");
-                activePathStatus.setTextColor(COLOR_SUCCESS);
-            } else if (ver.isAppSpecific) {
+            if (ver.isSafVerified && !ver.posixAccessible) {
+                activePathStatus.setText("SAF GRANTED BUT POSIX BLOCKED (" + ver.mediaFileCount + " media files detected via SAF)\n" +
+                        "Warning: Android Scoped Storage blocks native Jellyfin from reading external USB paths directly. Media library will fail to scan.");
+                activePathStatus.setTextColor(Color.parseColor("#E06C75"));
+            } else if (ver.isAppSpecific && ver.posixAccessible) {
                 activePathStatus.setText("VERIFIED APP DATA STORAGE (" + ver.mediaFileCount + " media files, " + ver.itemCount + " items) - 100% Native Jellyfin Access");
                 activePathStatus.setTextColor(COLOR_SUCCESS);
             } else if (!ver.exists) {
-                activePathStatus.setText("FOLDER NOT DETECTED (Directory not found on disk. Grant access via BROWSE SAF or use App Data folder)");
+                activePathStatus.setText("FOLDER NOT DETECTED (Directory not found on disk. Grant access via BROWSE SAF or use Internal Storage)");
                 activePathStatus.setTextColor(COLOR_WARNING);
-            } else if (ver.hasPermissionError || !ver.canRead) {
-                activePathStatus.setText("SELINUX PERMISSION BLOCKED (Jellyfin cannot read this path directly. Use App Data folder or grant SAF permissions)");
+            } else if (ver.hasPermissionError || !ver.canRead || !ver.posixAccessible) {
+                activePathStatus.setText("SELINUX PERMISSION BLOCKED (Android blocks native Jellyfin from reading this path. Use Internal Storage /storage/emulated/0/FishbowlMedia/)");
                 activePathStatus.setTextColor(Color.parseColor("#E06C75"));
             } else if (ver.mediaFileCount == 0 && ver.itemCount == 0) {
                 activePathStatus.setText("EMPTY FOLDER DETECTED (0 media files found - Jellyfin library will be empty)");
@@ -941,7 +957,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 activePathStatus.setText("NO MEDIA FILES DETECTED (" + ver.itemCount + " items inside, but no video/audio files found)");
                 activePathStatus.setTextColor(COLOR_WARNING);
             } else {
-                activePathStatus.setText("VERIFIED FOR JELLYFIN (" + ver.mediaFileCount + " media files detected, " + ver.itemCount + " items)");
+                activePathStatus.setText("VERIFIED FOR JELLYFIN (" + ver.mediaFileCount + " media files detected, " + ver.itemCount + " items - Native POSIX Ready)");
                 activePathStatus.setTextColor(COLOR_SUCCESS);
             }
         }
@@ -981,7 +997,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             topRow.addView(spacer, new LinearLayout.LayoutParams(dp(6), 1));
 
             if (!drive.isPrimary) {
-                topRow.addView(createBadge("BETA TESTING", Color.parseColor("#3A2E1A"), COLOR_WARNING));
+                topRow.addView(createBadge("USB / SAF ONLY", Color.parseColor("#3A2E1A"), COLOR_WARNING));
                 View spacerBeta = new View(this);
                 topRow.addView(spacerBeta, new LinearLayout.LayoutParams(dp(6), 1));
             }
@@ -1000,7 +1016,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
             if (!drive.isPrimary) {
                 TextView betaNotice = new TextView(this);
-                betaNotice.setText("Notice: External and OTG storage integration is currently in beta testing mode.");
+                betaNotice.setText("Notice: External USB drives are restricted to Java SAF on standard Android 11+. Jellyfin requires direct POSIX access; recommend Internal Storage (/storage/emulated/0/FishbowlMedia/).");
                 betaNotice.setTextSize(11);
                 betaNotice.setTextColor(COLOR_WARNING);
                 betaNotice.setPadding(0, 0, 0, dp(6));
@@ -1082,9 +1098,27 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 btnProvision.setOnClickListener(v -> {
                     List<String> created = StorageDriveHelper.provisionAppDataMediaFolders(this, drive.rootPath);
                     String primaryTarget = drive.rootPath + "/Android/data/" + getPackageName() + "/files/Movies";
-                    setActivePath(primaryTarget, true);
-                    copyPathToClipboard(primaryTarget);
-                    Toast.makeText(this, "External Storage Ready! Media folders provisioned same as internal. Path copied.", Toast.LENGTH_LONG).show();
+                    StorageDriveHelper.PathVerification pVer = StorageDriveHelper.verifyPath(this, primaryTarget);
+                    if (pVer.posixAccessible) {
+                        setActivePath(primaryTarget, true);
+                        copyPathToClipboard(primaryTarget);
+                        Toast.makeText(this, "External Storage Ready! Media folders provisioned same as internal. Path copied.", Toast.LENGTH_LONG).show();
+                    } else {
+                        new androidx.appcompat.app.AlertDialog.Builder(this)
+                                .setTitle("External USB Storage Limitation")
+                                .setMessage("Fishbowl attempted to provision media directories on " + drive.name + ".\n\nHowever, Android Scoped Storage blocks native Linux processes (including Jellyfin) from reading secondary USB media directly via POSIX.\n\nTo ensure Jellyfin can read your media, please use Internal Storage (/storage/emulated/0/FishbowlMedia/Movies) or format this drive as Adopted Storage.")
+                                .setPositiveButton("USE INTERNAL STORAGE", (d, w) -> {
+                                    String internalMovies = "/storage/emulated/0/FishbowlMedia/Movies";
+                                    setActivePath(internalMovies, true);
+                                    copyPathToClipboard(internalMovies);
+                                    refreshUI();
+                                })
+                                .setNegativeButton("KEEP EXTERNAL PATH", (d, w) -> {
+                                    setActivePath(primaryTarget, true);
+                                    refreshUI();
+                                })
+                                .show();
+                    }
                     refreshUI();
                 });
                 actionsRow2.addView(btnProvision, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
@@ -1149,17 +1183,17 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             StorageDriveHelper.PathVerification vCheck = StorageDriveHelper.verifyPath(this, path);
             TextView statusTv = new TextView(this);
             statusTv.setTextSize(10);
-            if (vCheck.isSafVerified) {
-                statusTv.setText(vCheck.mediaFileCount + " media files (Verified via SAF)");
-                statusTv.setTextColor(COLOR_SUCCESS);
-            } else if (vCheck.isAppSpecific) {
+            if (vCheck.isSafVerified && !vCheck.posixAccessible) {
+                statusTv.setText(vCheck.mediaFileCount + " media files (SAF only - POSIX blocked for Jellyfin)");
+                statusTv.setTextColor(Color.parseColor("#E06C75"));
+            } else if (vCheck.isAppSpecific && vCheck.posixAccessible) {
                 statusTv.setText(vCheck.mediaFileCount + " media files (App Data - Native Access)");
                 statusTv.setTextColor(COLOR_SUCCESS);
             } else if (!vCheck.exists) {
                 statusTv.setText("Not detected on disk (Grant SAF or verify path)");
                 statusTv.setTextColor(COLOR_WARNING);
-            } else if (vCheck.hasPermissionError || !vCheck.canRead) {
-                statusTv.setText("Permission blocked by SELinux");
+            } else if (vCheck.hasPermissionError || !vCheck.canRead || !vCheck.posixAccessible) {
+                statusTv.setText("Permission blocked by SELinux / Scoped Storage");
                 statusTv.setTextColor(Color.parseColor("#E06C75"));
             } else if (vCheck.mediaFileCount == 0) {
                 statusTv.setText("0 media files detected");
@@ -1236,28 +1270,34 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             return;
         }
 
-        if (ver.hasPermissionError || !ver.canRead) {
-            List<StorageDriveHelper.DriveInfo> drives = StorageDriveHelper.getMountedDrives(this);
-            String suggestedAppPath = null;
-            for (StorageDriveHelper.DriveInfo drive : drives) {
-                if (!drive.isPrimary && normalizedPath.startsWith(drive.rootPath)) {
-                    suggestedAppPath = drive.rootPath + "/Android/data/" + getPackageName() + "/files";
-                    break;
-                }
-            }
+        if (ver.isSafVerified && !ver.posixAccessible) {
+            new androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("External USB Storage - POSIX Blocked")
+                    .setMessage("This folder is verified via Android Storage Access Framework (SAF), but Android Scoped Storage blocks native Linux processes like Jellyfin from reading files directly at:\n\n" + normalizedPath +
+                            "\n\nIf you paste this path into Jellyfin, Jellyfin will report:\n'Could not find a part of the path'.\n\nRecommended: Use Internal Storage (/storage/emulated/0/FishbowlMedia/Movies) for full native POSIX compatibility.")
+                    .setNeutralButton("SWITCH TO INTERNAL", (d, w) -> {
+                        String internalPath = "/storage/emulated/0/FishbowlMedia/Movies";
+                        setActivePath(internalPath, true);
+                        doCopy(internalPath);
+                        refreshUI();
+                    })
+                    .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath))
+                    .setNegativeButton("CANCEL", null)
+                    .show();
+            return;
+        }
 
-            final String finalAppPath = suggestedAppPath;
+        if (ver.hasPermissionError || !ver.canRead || !ver.posixAccessible) {
             androidx.appcompat.app.AlertDialog.Builder b = new androidx.appcompat.app.AlertDialog.Builder(this);
             b.setTitle("SELinux Permission Warning");
-            String msg = "Android security (SELinux) blocks native processes like Jellyfin from reading files at this path:\n\n" + normalizedPath + "\n\nIf you add this path to Jellyfin, your library will be EMPTY.";
-            if (finalAppPath != null) {
-                msg += "\n\nRecommended: Use the guaranteed App Data folder on external storage:\n" + finalAppPath;
-                b.setNeutralButton("SWITCH & COPY APP DATA", (d, w) -> {
-                    setActivePath(finalAppPath, true);
-                    doCopy(finalAppPath);
-                });
-            }
+            String msg = "Android security (SELinux / Scoped Storage) blocks native processes like Jellyfin from reading files at this path:\n\n" + normalizedPath + "\n\nIf you add this path to Jellyfin, your library will be EMPTY.\n\nRecommended: Use Internal Storage (/storage/emulated/0/FishbowlMedia/Movies).";
             b.setMessage(msg);
+            b.setNeutralButton("SWITCH TO INTERNAL", (d, w) -> {
+                String internalPath = "/storage/emulated/0/FishbowlMedia/Movies";
+                setActivePath(internalPath, true);
+                doCopy(internalPath);
+                refreshUI();
+            });
             b.setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath));
             b.setNegativeButton("CANCEL", null);
             b.show();
@@ -1366,15 +1406,18 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                     } catch (Throwable ignored) {}
                 }
                 setActivePath(canonicalPath, true);
+                refreshUI();
                 StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, canonicalPath);
                 if (!ver.exists) {
                     Toast.makeText(this, "Notice: Directory does not exist on disk.", Toast.LENGTH_SHORT).show();
-                } else if (ver.hasPermissionError || !ver.canRead) {
-                    Toast.makeText(this, "Notice: Android SELinux may block Jellyfin from reading this path.", Toast.LENGTH_LONG).show();
+                } else if (ver.isSafVerified && !ver.posixAccessible) {
+                    Toast.makeText(this, "Notice: SAF granted, but Android Scoped Storage blocks native Jellyfin from reading external USB paths.", Toast.LENGTH_LONG).show();
+                } else if (ver.hasPermissionError || !ver.canRead || !ver.posixAccessible) {
+                    Toast.makeText(this, "Notice: Android SELinux blocks native Jellyfin from reading this path.", Toast.LENGTH_LONG).show();
                 } else if (ver.mediaFileCount == 0) {
                     Toast.makeText(this, "Path selected: 0 media files detected in this folder.", Toast.LENGTH_SHORT).show();
                 } else {
-                    Toast.makeText(this, "Path selected (" + ver.mediaFileCount + " media files detected)", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Path selected (" + ver.mediaFileCount + " media files detected - Native POSIX Ready)", Toast.LENGTH_SHORT).show();
                 }
             }
         });

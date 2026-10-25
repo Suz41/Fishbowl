@@ -953,6 +953,7 @@ public final class FishbowlActivity extends AppCompatActivity
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(getBgColor());
+        scroll.setVisibility(JellyfinBootstrapper.isInitialized(this) ? View.GONE : View.VISIBLE);
 
         setupOverlayContainer = new LinearLayout(this);
         setupOverlayContainer.setOrientation(LinearLayout.VERTICAL);
@@ -1090,6 +1091,8 @@ public final class FishbowlActivity extends AppCompatActivity
 
         // Continue to FishBowl button (Shown when setup is completed or previewed)
         setupDismissBtn = createPixelButton("CONTINUE TO FISHBOWL", getAccentColor(), Color.WHITE);
+        setupDismissBtn.setFocusable(true);
+        setupDismissBtn.setFocusableInTouchMode(true);
         setupDismissBtn.setOnClickListener(v -> {
             isSetupOverlayManuallyOpened = false;
             if (setupDismissBtn != null) {
@@ -1158,7 +1161,11 @@ public final class FishbowlActivity extends AppCompatActivity
         isSetupOverlayManuallyOpened = allowDismiss;
         setChromeVisibilityForSetup(true);
         if (setupDismissBtn != null) {
-            setupDismissBtn.setVisibility(allowDismiss || JellyfinBootstrapper.isInitialized(this) ? View.VISIBLE : View.GONE);
+            boolean showDismiss = (allowDismiss || JellyfinBootstrapper.isInitialized(this));
+            setupDismissBtn.setVisibility(showDismiss ? View.VISIBLE : View.GONE);
+            if (showDismiss) {
+                setupDismissBtn.post(() -> setupDismissBtn.requestFocus());
+            }
         }
         setupOverlayView.setVisibility(View.VISIBLE);
         setupOverlayView.bringToFront();
@@ -1259,7 +1266,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 reinstallBtn.setVisibility(View.GONE);
             }
             if (setupDismissBtn != null) {
-                setupDismissBtn.setVisibility((initialized || isSetupOverlayManuallyOpened) ? View.VISIBLE : View.GONE);
+                boolean showDismiss = (initialized || isSetupOverlayManuallyOpened);
+                setupDismissBtn.setVisibility(showDismiss ? View.VISIBLE : View.GONE);
+                if (showDismiss) {
+                    setupDismissBtn.post(() -> setupDismissBtn.requestFocus());
+                }
             }
 
             // Update stage rows
