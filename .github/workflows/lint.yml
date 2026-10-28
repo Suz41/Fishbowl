@@ -38,7 +38,7 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Cache Termux Bootstrap Archives
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: cache-bootstraps
         with:
           path: app/src/main/cpp/bootstrap-*.zip
