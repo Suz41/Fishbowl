@@ -27,6 +27,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -57,6 +58,93 @@ public class MediaServiceManager {
     private final ExecutorService serviceExecutor = Executors.newCachedThreadPool();
     private final java.util.concurrent.ScheduledExecutorService dedupScheduler = Executors.newSingleThreadScheduledExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private volatile boolean isBridgeInitialized = false;
+
+    private static final String PREF_ACTIVE_STACK = "fishbowl_active_stack";
+    private static final String KEY_ACTIVE_SERVICE_IDS = "active_service_ids";
+
+    /**
+     * Persists the exact set of user-intended active services to survive Low Memory Killer kills.
+     */
+    public synchronized void recordServiceActive(String id, boolean active) {
+        if (id == null || appContext == null) return;
+        try {
+            android.content.SharedPreferences prefs = appContext.getSharedPreferences(PREF_ACTIVE_STACK, Context.MODE_PRIVATE);
+            Set<String> current = prefs.getStringSet(KEY_ACTIVE_SERVICE_IDS, null);
+            Set<String> set = new HashSet<>(current != null ? current : Collections.emptySet());
+            String normId = id.trim().toLowerCase(Locale.ROOT);
+            if (active) {
+                set.add(normId);
+            } else {
+                set.remove(normId);
+            }
+            prefs.edit().putStringSet(KEY_ACTIVE_SERVICE_IDS, set).apply();
+
+            // Synchronize legacy stack_active boolean in fishbowl_service for backwards compatibility
+            appContext.getSharedPreferences("fishbowl_service", Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("stack_active", !set.isEmpty())
+                    .apply();
+
+            Log.i(TAG, "[StackPersistence] Active services set updated (id=" + normId + ", active=" + active + "): " + set);
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to persist active service state: " + t.getMessage());
+        }
+    }
+
+    public synchronized Set<String> getPersistedActiveServices() {
+        if (appContext == null) return new HashSet<>();
+        try {
+            android.content.SharedPreferences prefs = appContext.getSharedPreferences(PREF_ACTIVE_STACK, Context.MODE_PRIVATE);
+            Set<String> set = prefs.getStringSet(KEY_ACTIVE_SERVICE_IDS, null);
+            if (set != null && !set.isEmpty()) {
+                return new HashSet<>(set);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to load active services set: " + t.getMessage());
+        }
+        return new HashSet<>();
+    }
+
+    public synchronized void clearPersistedActiveServices() {
+        if (appContext == null) return;
+        try {
+            appContext.getSharedPreferences(PREF_ACTIVE_STACK, Context.MODE_PRIVATE)
+                    .edit()
+                    .clear()
+                    .apply();
+            appContext.getSharedPreferences("fishbowl_service", Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("stack_active", false)
+                    .apply();
+            Log.i(TAG, "[StackPersistence] Cleared all persisted active services");
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to clear persisted active services: " + t.getMessage());
+        }
+    }
+
+    /**
+     * Resets the persisted active services set to only Jellyfin core server.
+     * Used on OS Low Memory Killer (LMK) revival to guarantee companion services are never revived automatically.
+     */
+    public synchronized void resetPersistedActiveServicesToCoreOnly() {
+        if (appContext == null) return;
+        try {
+            Set<String> coreSet = new HashSet<>();
+            coreSet.add("jellyfin");
+            appContext.getSharedPreferences(PREF_ACTIVE_STACK, Context.MODE_PRIVATE)
+                    .edit()
+                    .putStringSet(KEY_ACTIVE_SERVICE_IDS, coreSet)
+                    .apply();
+            appContext.getSharedPreferences("fishbowl_service", Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("stack_active", true)
+                    .apply();
+            Log.i(TAG, "[StackPersistence] Reset active services to Jellyfin core only after LMK resurrection");
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to reset active services: " + t.getMessage());
+        }
+    }
 
     public interface ServiceListener {
         void onServiceStateChanged(String serviceId, ServiceState state);
@@ -108,7 +196,7 @@ public class MediaServiceManager {
                 "jellyfin",
                 "Jellyfin Media Server",
                 "Media Server",
-                "12.1.0",
+                "12.4.0",
                 "High-performance media streaming, transcoding, and library engine.",
                 8096,
                 "/health",
@@ -196,7 +284,7 @@ public class MediaServiceManager {
                 "transmission",
                 "Transmission",
                 "Downloads",
-                "4.1.3",
+                "4.1.4",
                 "Lightweight, headless native BitTorrent download daemon.",
                 9091,
                 "/transmission/web/",
@@ -278,10 +366,46 @@ public class MediaServiceManager {
                 24
         );
         services.put(lidarr.getId(), new ManagedService(lidarr));
+
+        // 9. Indexers: Jackett (Torrent Tracker Proxy)
+        ServiceManifest jackett = new ServiceManifest(
+                "jackett",
+                "Jackett",
+                "Indexers",
+                "0.24.2932",
+                "Torrent tracker proxy providing Torznab feeds across hundreds of public and private indexers.",
+                9117,
+                "/UI/Dashboard",
+                "/UI/Dashboard",
+                new File(home, "services/jackett").getAbsolutePath(),
+                new File(home, "services/jackett/jackett.dll").getAbsolutePath(),
+                new File(home, ".config/Jackett").getAbsolutePath(),
+                new File(home, ".config/Jackett").getAbsolutePath(),
+                new File(home, ".config/Jackett/log.txt").getAbsolutePath(),
+                ".NET 10.0 ARM64",
+                false,
+                140,
+                24
+        );
+        services.put(jackett.getId(), new ManagedService(jackett));
     }
 
     public synchronized void deploySeerrServiceIfNeeded() {
         deploySeerrService(false);
+    }
+
+    private byte[] readAssetQuietly(String assetPath) {
+        try (java.io.InputStream in = appContext.getAssets().open(assetPath)) {
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int r;
+            while ((r = in.read(buf)) != -1) {
+                baos.write(buf, 0, r);
+            }
+            return baos.toByteArray();
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     public synchronized void deploySeerrService(boolean forceInstall) {
@@ -289,34 +413,35 @@ public class MediaServiceManager {
             File home = TermuxConstants.TERMUX_HOME_DIR;
             File seerrDist = new File(home, "services/seerr/dist");
             File targetJs = new File(seerrDist, "index.js");
+            File targetHtml = new File(seerrDist, "index.html");
 
             // Never auto-deploy on fresh launch unless explicitly requested or already installed
             if (!forceInstall && !targetJs.exists()) {
                 return;
             }
 
-            byte[] assetBytes = null;
-            try (java.io.InputStream in = appContext.getAssets().open("seerr/index.js")) {
-                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                byte[] buf = new byte[8192];
-                int r;
-                while ((r = in.read(buf)) != -1) {
-                    baos.write(buf, 0, r);
-                }
-                assetBytes = baos.toByteArray();
-            } catch (Throwable t) {
-                Log.w(TAG, "Could not read seerr/index.js asset: " + t.getMessage());
-            }
+            byte[] assetJs = readAssetQuietly("seerr/index.js");
+            byte[] assetHtml = readAssetQuietly("seerr/index.html");
 
-            if (assetBytes != null && (forceInstall || !targetJs.exists() || targetJs.length() != assetBytes.length)) {
+            boolean jsNeedsUpdate = assetJs != null && (forceInstall || !targetJs.exists() || targetJs.length() != assetJs.length);
+            boolean htmlNeedsUpdate = assetHtml != null && (forceInstall || !targetHtml.exists() || targetHtml.length() != assetHtml.length);
+
+            if (jsNeedsUpdate || htmlNeedsUpdate) {
                 seerrDist.mkdirs();
                 File configDir = new File(home, ".config/seerr");
                 configDir.mkdirs();
 
-                try (java.io.FileOutputStream out = new java.io.FileOutputStream(targetJs)) {
-                    out.write(assetBytes);
+                if (assetJs != null) {
+                    try (java.io.FileOutputStream out = new java.io.FileOutputStream(targetJs)) {
+                        out.write(assetJs);
+                    }
                 }
-                Log.d(TAG, "Seerr Node.js service successfully deployed (" + assetBytes.length + " bytes) to: " + targetJs.getAbsolutePath());
+                if (assetHtml != null) {
+                    try (java.io.FileOutputStream out = new java.io.FileOutputStream(targetHtml)) {
+                        out.write(assetHtml);
+                    }
+                }
+                Log.d(TAG, "Seerr service & modern UI assets successfully deployed to: " + seerrDist.getAbsolutePath());
                 ManagedService seerr = services.get("seerr");
                 if (seerr != null && seerr.isRunning()) {
                     stopService("seerr");
@@ -395,6 +520,7 @@ public class MediaServiceManager {
             updateJellyfinState(jc.getState());
             jc.addListener(this::updateJellyfinState);
         }
+        isBridgeInitialized = true;
     }
 
     private void updateJellyfinState(JellyfinController.State state) {
@@ -406,16 +532,21 @@ public class MediaServiceManager {
             case RUNNING:
                 ss = ServiceState.RUNNING;
                 jf.setHealthy(true);
+                recordServiceActive("jellyfin", true);
                 break;
             case STARTING:
             case INITIALIZING:
                 ss = ServiceState.STARTING;
+                recordServiceActive("jellyfin", true);
                 break;
             case STOPPING:
                 ss = ServiceState.STOPPING;
                 break;
             case STOPPED:
                 ss = ServiceState.STOPPED;
+                if (isBridgeInitialized) {
+                    recordServiceActive("jellyfin", false);
+                }
                 break;
             case FAILED:
             case CRASHED:
@@ -522,6 +653,7 @@ public class MediaServiceManager {
         ensureForegroundServiceActive();
 
         if ("jellyfin".equalsIgnoreCase(id)) {
+            recordServiceActive("jellyfin", true);
             JellyfinController.getInstance().start(ctx != null ? ctx : appContext);
             return;
         }
@@ -541,6 +673,8 @@ public class MediaServiceManager {
             Log.w(TAG, "[ServiceManager] Cannot start " + ms.getDisplayName() + ": service is disabled");
             return;
         }
+
+        recordServiceActive(id, true);
 
         synchronized (ms) {
             if (ms.isRunning() || ms.isStarting()) {
@@ -594,11 +728,34 @@ public class MediaServiceManager {
                     Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " RUNNING (port already active & healthy)");
                     return;
                 } else {
-                    ms.setLastError("PORT_CONFLICT: Port " + port + " is occupied by an unrecognized process.");
-                    ms.setState(ServiceState.ERROR);
-                    notifyListeners(id, ServiceState.ERROR);
-                    Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " PORT_CONFLICT on " + port);
-                    return;
+                    // Port is occupied but unresponsive: kill stale process on this port to recover
+                    Log.w(TAG, "[ServiceManager] Port " + port + " is occupied by unresponsive process. Reclaiming port for " + ms.getDisplayName() + "...");
+                    if ("bazarr".equalsIgnoreCase(id)) {
+                        killProcessByPattern("bazarr");
+                        killProcessByPattern("main.py");
+                    } else if ("seerr".equalsIgnoreCase(id)) {
+                        killProcessByPattern("seerr");
+                    } else if ("jackett".equalsIgnoreCase(id)) {
+                        killProcessByPattern("jackett");
+                        killProcessByPattern("Jackett.dll");
+                        killProcessByPattern("jackett.dll");
+                    } else {
+                        String execPath = ms.getManifest().getExecutableOrDllPath();
+                        if (execPath != null && !execPath.trim().isEmpty()) {
+                            killProcessByPattern(new File(execPath).getName());
+                        }
+                    }
+                    try {
+                        Thread.sleep(600);
+                    } catch (InterruptedException ignored) {}
+
+                    if (isPortOccupied(port)) {
+                        ms.setLastError("PORT_CONFLICT: Port " + port + " is occupied by an external process.");
+                        ms.setState(ServiceState.ERROR);
+                        notifyListeners(id, ServiceState.ERROR);
+                        Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " PORT_CONFLICT on " + port);
+                        return;
+                    }
                 }
             }
 
@@ -623,7 +780,31 @@ public class MediaServiceManager {
                 File targetDllOrBin = new File(ms.getManifest().getExecutableOrDllPath());
                 ProcessBuilder pb;
 
-                if (targetDllOrBin.getName().endsWith(".dll")) {
+                if ("jackett".equalsIgnoreCase(id)) {
+                    // Jackett Indexer Proxy (.NET 10.0 ARM64 on Android Bionic)
+                    File jackettDll = new File(ms.getManifest().getInstallDir(), "jackett.dll");
+                    if (!jackettDll.exists()) {
+                        jackettDll = new File(ms.getManifest().getInstallDir(), "Jackett.dll");
+                    }
+                    if (!jackettDll.exists()) {
+                        jackettDll = targetDllOrBin;
+                    }
+                    prepareServarrRuntimeConfig(jackettDll);
+                    if (dotnet.exists()) {
+                        dotnet.setExecutable(true, false);
+                        try {
+                            android.system.Os.chmod(dotnet.getAbsolutePath(), 0755);
+                        } catch (Throwable ignored) {}
+                    }
+                    pb = new ProcessBuilder(
+                            dotnet.getAbsolutePath(),
+                            jackettDll.getAbsolutePath(),
+                            "--NoRestart",
+                            "--NoUpdates",
+                            "-d", dataDir.getAbsolutePath(),
+                            "-p", String.valueOf(port)
+                    );
+                } else if (targetDllOrBin.getName().endsWith(".dll")) {
                     // Servarr .NET application (Radarr, Sonarr, Prowlarr, Lidarr)
                     prepareServarrRuntimeConfig(targetDllOrBin);
 
@@ -748,6 +929,9 @@ public class MediaServiceManager {
                 if ("seerr".equalsIgnoreCase(id)) {
                     env.put("PORT", String.valueOf(ms.getManifest().getDefaultPort()));
                     env.put("CONFIG_DIRECTORY", configDir.getAbsolutePath());
+                    env.put("NODE_ENV", "production");
+                    env.put("OPENSSL_CONF", "/dev/null");
+                    env.put("SSL_CERT_FILE", new File(prefix, "etc/tls/cert.pem").getAbsolutePath());
                 }
                 if ("radarr".equalsIgnoreCase(id)) {
                     env.put("RADARR__SERVER__ALLOWEDHOSTS", "*");
@@ -761,6 +945,11 @@ public class MediaServiceManager {
                 } else if ("lidarr".equalsIgnoreCase(id)) {
                     env.put("LIDARR__SERVER__ALLOWEDHOSTS", "*");
                     env.put("LIDARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                } else if ("jackett".equalsIgnoreCase(id)) {
+                    env.put("JACKETT_PORT", String.valueOf(port));
+                    env.put("JACKETT_DATA_FOLDER", dataDir.getAbsolutePath());
+                    env.put("JACKETT_NO_UPDATES", "true");
+                    env.put("JACKETT_NO_RESTART", "true");
                 }
                 env.put("ASPNETCORE_ALLOWEDHOSTS", "*");
                 env.put("AllowedHosts", "*");
@@ -789,6 +978,7 @@ public class MediaServiceManager {
                     env.put("OPENSSL_CONF", sslCnf.getAbsolutePath());
                 } else {
                     env.put("OPENSSL_CONF", "/dev/null");
+                    env.put("SSL_CERT_FILE", new File(prefix, "etc/tls/cert.pem").getAbsolutePath());
                 }
 
                 pb.directory(new File(ms.getManifest().getInstallDir()));
@@ -848,6 +1038,7 @@ public class MediaServiceManager {
                             ms.recordCrash();
                             int crashes = ms.getCrashCount();
                             if (crashes > 5) {
+                                recordServiceActive(id, false);
                                 ms.setLastError("CRASH_LOOP_PROTECTION: Repeated failures (" + crashes + " crashes). Auto-restart halted.");
                                 ms.setState(ServiceState.CRASH_LOOP_PROTECTION);
                                 ms.setHealthy(false);
@@ -886,7 +1077,7 @@ public class MediaServiceManager {
                 // Socket and API readiness verification loop
                 serviceExecutor.execute(() -> {
                     // Phase 1: Wait for TCP socket binding
-                    long socketTimeoutMs = "bazarr".equalsIgnoreCase(id) ? 75000L : 45000L;
+                    long socketTimeoutMs = "bazarr".equalsIgnoreCase(id) ? 150000L : 45000L;
                     long socketDeadline = System.currentTimeMillis() + socketTimeoutMs;
                     boolean socketOk = false;
                     while (System.currentTimeMillis() < socketDeadline && activeProcesses.containsKey(id)) {
@@ -906,7 +1097,27 @@ public class MediaServiceManager {
                     }
 
                     if (!socketOk) {
-                        ms.setLastError("SOCKET_TIMEOUT: Port " + port + " did not bind within " + (socketTimeoutMs / 1000) + "s");
+                        // Check if process is still actively progressing before destroying
+                        Process liveProc = activeProcesses.get(id);
+                        if (liveProc != null && liveProc.isAlive()) {
+                            Log.w(TAG, "[ServiceManager] " + ms.getDisplayName() + " socket still not bound after " + (socketTimeoutMs / 1000) + "s, but process is alive. Granting 45s grace period...");
+                            long graceDeadline = System.currentTimeMillis() + 45000L;
+                            while (System.currentTimeMillis() < graceDeadline && activeProcesses.containsKey(id)) {
+                                if (isPortOccupied(port)) {
+                                    socketOk = true;
+                                    break;
+                                }
+                                try {
+                                    Thread.sleep(500);
+                                } catch (InterruptedException ignored) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!socketOk) {
+                        ms.setLastError("SOCKET_TIMEOUT: Port " + port + " did not bind within timeout window");
                         ms.setState(ServiceState.ERROR);
                         destroyProcess(id);
                         notifyListeners(id, ServiceState.ERROR);
@@ -920,7 +1131,7 @@ public class MediaServiceManager {
                     ms.appendLog("TCP port " + port + " is open.");
 
                     // Phase 2: Wait for HTTP API readiness
-                    long apiTimeoutMs = "bazarr".equalsIgnoreCase(id) ? 75000L : 45000L;
+                    long apiTimeoutMs = "bazarr".equalsIgnoreCase(id) ? 150000L : 45000L;
                     long apiDeadline = System.currentTimeMillis() + apiTimeoutMs;
                     boolean apiOk = false;
                     while (System.currentTimeMillis() < apiDeadline && activeProcesses.containsKey(id)) {
@@ -982,6 +1193,7 @@ public class MediaServiceManager {
     }
 
     public void stopService(String id) {
+        recordServiceActive(id, false);
         ManagedService ms = services.get(id);
         if (ms == null) return;
 
@@ -1043,6 +1255,9 @@ public class MediaServiceManager {
                     if (execPath != null && !execPath.trim().isEmpty()) {
                         String execName = new File(execPath).getName();
                         killProcessByPattern(execName);
+                        if ("jackett".equalsIgnoreCase(id)) {
+                            killProcessByPattern("Jackett.dll");
+                        }
                     }
                 }
             }
@@ -1093,6 +1308,7 @@ public class MediaServiceManager {
     }
 
     public void uninstallService(String id, boolean purgeConfig, Runnable onComplete) {
+        recordServiceActive(id, false);
         serviceExecutor.execute(() -> {
             ManagedService ms = services.get(id);
             if (ms == null || ms.getManifest().isCore()) {
@@ -1136,6 +1352,9 @@ public class MediaServiceManager {
                     if (execPath != null && !execPath.trim().isEmpty()) {
                         String execName = new File(execPath).getName();
                         killProcessByPattern(execName);
+                        if ("jackett".equalsIgnoreCase(id)) {
+                            killProcessByPattern("Jackett.dll");
+                        }
                     }
                 } catch (Throwable ignored) {}
             }
@@ -1218,11 +1437,27 @@ public class MediaServiceManager {
             try {
                 p.destroy();
                 for (int i = 0; i < 20; i++) {
-                    if (!p.isAlive()) return;
+                    if (!p.isAlive()) break;
                     Thread.sleep(100);
                 }
                 p.destroyForcibly();
             } catch (Throwable ignored) {}
+        }
+        ManagedService ms = services.get(id);
+        if (ms != null) {
+            long recordedPid = ms.getProcessPid();
+            if (recordedPid > 0 && recordedPid != android.os.Process.myPid()) {
+                try {
+                    android.os.Process.killProcess((int) recordedPid);
+                    android.os.Process.sendSignal((int) recordedPid, 9);
+                } catch (Throwable ignored) {}
+            }
+        }
+        if ("bazarr".equalsIgnoreCase(id)) {
+            killProcessByPattern("bazarr");
+            killProcessByPattern("main.py");
+        } else if ("seerr".equalsIgnoreCase(id)) {
+            killProcessByPattern("seerr");
         }
     }
 
@@ -1397,7 +1632,9 @@ public class MediaServiceManager {
             File parent = dllFile.getParentFile();
             if (parent == null) return;
 
-            String baseName = dllFile.getName().substring(0, dllFile.getName().lastIndexOf('.'));
+            String name = dllFile.getName();
+            int dot = name.lastIndexOf('.');
+            String baseName = dot > 0 ? name.substring(0, dot) : name;
             File runtimeConfig = new File(parent, baseName + ".runtimeconfig.json");
 
             // 1. Rename glibc deps.json so Bionic .NET runtime uses runtimeconfig.json frameworks
@@ -1410,8 +1647,8 @@ public class MediaServiceManager {
             // 2. Remove all bundled glibc .so and CLR host files
             String[] glibcLibs = {
                 "libcoreclr.so", "libhostpolicy.so", "libhostfxr.so",
-                "libclrjit.so", "libclrgc.so", "libcoreclrtraceptprovider.so",
-                "libmscordaccore.so", "libmscordbi.so",
+                "libclrjit.so", "libclrgc.so", "libclrgcexp.so", "libcoreclrtraceptprovider.so",
+                "libmscordaccore.so", "libmscordbi.so", "libMono.Unix.so",
                 "libSystem.Native.so", "libSystem.Globalization.Native.so",
                 "libSystem.IO.Compression.Native.so", "libSystem.Net.Security.Native.so",
                 "libSystem.Security.Cryptography.Native.OpenSsl.so"
@@ -1609,6 +1846,11 @@ public class MediaServiceManager {
             sanitizeBazarrConfig(bazarrConfigDir);
             return;
         }
+        if ("jackett".equalsIgnoreCase(serviceId)) {
+            File jackettConfigDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/Jackett");
+            sanitizeJackettConfig(jackettConfigDir);
+            return;
+        }
         String baseName = null;
         int port = 0;
         if ("radarr".equalsIgnoreCase(serviceId)) { baseName = "Radarr"; port = 7878; }
@@ -1724,6 +1966,91 @@ public class MediaServiceManager {
             }
         } catch (Throwable t) {
             Log.w(TAG, "[Bazarr] Error patching Bazarr scripts: " + t.getMessage());
+        }
+    }
+
+    private void sanitizeJackettConfig(File jackettConfigDir) {
+        try {
+            if (!jackettConfigDir.exists()) jackettConfigDir.mkdirs();
+            File indexersDir = new File(jackettConfigDir, "Indexers");
+            if (!indexersDir.exists()) indexersDir.mkdirs();
+            File configFile = new File(jackettConfigDir, "ServerConfig.json");
+
+            org.json.JSONObject cfg;
+            if (configFile.exists()) {
+                try {
+                    String json = new String(java.nio.file.Files.readAllBytes(configFile.toPath()), StandardCharsets.UTF_8);
+                    cfg = new org.json.JSONObject(json);
+                } catch (Throwable t) {
+                    cfg = new org.json.JSONObject();
+                }
+            } else {
+                cfg = new org.json.JSONObject();
+            }
+
+            boolean changed = false;
+            if (!cfg.has("Port") || cfg.optInt("Port") != 9117) {
+                cfg.put("Port", 9117);
+                changed = true;
+            }
+            if (!cfg.has("AllowExternal") || !cfg.optBoolean("AllowExternal")) {
+                cfg.put("AllowExternal", true);
+                changed = true;
+            }
+            if (!cfg.has("UpdateDisabled") || !cfg.optBoolean("UpdateDisabled")) {
+                cfg.put("UpdateDisabled", true);
+                changed = true;
+            }
+            if (!cfg.has("AutoUpdate") || cfg.optBoolean("AutoUpdate")) {
+                cfg.put("AutoUpdate", false);
+                changed = true;
+            }
+            if (!cfg.has("APIKey") || cfg.optString("APIKey", "").trim().isEmpty()) {
+                String newKey = java.util.UUID.randomUUID().toString().replace("-", "");
+                cfg.put("APIKey", newKey);
+                changed = true;
+            }
+            if (!cfg.has("InstanceId")) {
+                cfg.put("InstanceId", java.util.UUID.randomUUID().toString());
+                changed = true;
+            }
+            if (!cfg.has("FlareSolverrUrl") || cfg.optString("FlareSolverrUrl", "").trim().isEmpty()) {
+                cfg.put("FlareSolverrUrl", "http://127.0.0.1:8191");
+                changed = true;
+            }
+
+            if (changed || !configFile.exists()) {
+                try (FileOutputStream fos = new FileOutputStream(configFile)) {
+                    fos.write(cfg.toString(2).getBytes(StandardCharsets.UTF_8));
+                }
+                Log.i(TAG, "[ConfigSanitizer] Sanitized Jackett ServerConfig.json (Port 9117, API key secured, FlareSolverr linked)");
+            }
+
+            preSeedPopularJackettIndexers(indexersDir);
+        } catch (Throwable t) {
+            Log.w(TAG, "sanitizeJackettConfig error: " + t.getMessage());
+        }
+    }
+
+    private void preSeedPopularJackettIndexers(File indexersDir) {
+        String[][] trackers = {
+            {"1337x", "https://1337x.to/"},
+            {"yts", "https://yts.mx/"},
+            {"thepiratebay", "https://thepiratebay.org/"},
+            {"eztv", "https://eztv.re/"},
+            {"torrentgalaxy", "https://torrentgalaxy.to/"},
+            {"limetorrents", "https://limetorrents.lol/"}
+        };
+        for (String[] tracker : trackers) {
+            File idxFile = new File(indexersDir, tracker[0] + ".json");
+            if (!idxFile.exists()) {
+                try {
+                    String json = "[\n  {\n    \"id\": \"sitelink\",\n    \"type\": \"inputstring\",\n    \"name\": \"Site Link\",\n    \"value\": \"" + tracker[1] + "\"\n  }\n]\n";
+                    try (FileOutputStream fos = new FileOutputStream(idxFile)) {
+                        fos.write(json.getBytes(StandardCharsets.UTF_8));
+                    }
+                } catch (Throwable ignored) {}
+            }
         }
     }
 
@@ -1954,9 +2281,10 @@ public class MediaServiceManager {
             conn.setConnectTimeout(1500);
             conn.setReadTimeout(1500);
             conn.setRequestMethod("GET");
-            conn.setInstanceFollowRedirects(true);
+            // Do not follow redirects: 301/302 redirects (e.g. Jackett cookie check / login) indicate active HTTP responsiveness
+            conn.setInstanceFollowRedirects(false);
             int code = conn.getResponseCode();
-            // HTTP 200/204 is OK, HTTP 401 Unauthorized (Radarr/Sonarr auth), and HTTP 409 Conflict (Transmission RPC check)
+            // HTTP 200/204/301/302 is OK, HTTP 401 Unauthorized (Radarr/Sonarr auth), and HTTP 409 Conflict (Transmission RPC check)
             return (code >= 200 && code < 400) || code == 401 || code == 409;
         } catch (Exception e) {
             return false;
@@ -2032,7 +2360,8 @@ public class MediaServiceManager {
                 startService(serviceId);
             }
 
-            long deadline = System.currentTimeMillis() + timeoutMs;
+            long effectiveTimeout = "bazarr".equalsIgnoreCase(serviceId) ? Math.max(timeoutMs, 150000L) : timeoutMs;
+            long deadline = System.currentTimeMillis() + effectiveTimeout;
             while (System.currentTimeMillis() < deadline) {
                 if (ms.isReady()) {
                     int port = ms.getManifest().getDefaultPort();
@@ -2054,7 +2383,7 @@ public class MediaServiceManager {
                 }
             }
 
-            mainHandler.post(() -> callback.onError("STARTUP_TIMEOUT: " + ms.getDisplayName() + " did not reach API_READY within " + (timeoutMs / 1000) + "s"));
+            mainHandler.post(() -> callback.onError("STARTUP_TIMEOUT: " + ms.getDisplayName() + " did not reach API_READY within " + (effectiveTimeout / 1000) + "s"));
         });
     }
 
@@ -2092,10 +2421,11 @@ public class MediaServiceManager {
     public void startAllServices() {
         serviceExecutor.execute(() -> {
             ensureForegroundServiceActive();
-            String[] startOrder = {"jellyfin", "transmission", "prowlarr", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
+            String[] startOrder = {"jellyfin", "transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
             for (String id : startOrder) {
                 ManagedService svc = services.get(id);
                 if (svc != null && svc.isEnabled() && !svc.isBlocked() && svc.isInstalled() && !svc.isRunning()) {
+                    recordServiceActive(id, true);
                     startService(id);
                     // Brief pause to allow socket to bind before starting dependents
                     try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
@@ -2115,6 +2445,7 @@ public class MediaServiceManager {
      * Transmission is stopped first with clean RPC session-close to flush all .resume files.
      */
     public void stopAllServices() {
+        clearPersistedActiveServices();
         serviceExecutor.execute(() -> {
             // Stop Transmission first to guarantee clean RPC session-close and resume save
             ManagedService tr = services.get("transmission");
@@ -2140,10 +2471,11 @@ public class MediaServiceManager {
     public void startCompanionServices() {
         serviceExecutor.execute(() -> {
             ensureForegroundServiceActive();
-            String[] startOrder = {"transmission", "prowlarr", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
+            String[] startOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
             for (String id : startOrder) {
                 ManagedService svc = services.get(id);
                 if (svc != null && svc.isEnabled() && !svc.isBlocked() && svc.isInstalled() && !svc.isRunning()) {
+                    recordServiceActive(id, true);
                     startService(id);
                     try { Thread.sleep(1500); } catch (InterruptedException ignored) {}
                 }
@@ -2161,6 +2493,9 @@ public class MediaServiceManager {
      * Strictly does NOT stop Jellyfin core server.
      */
     public void stopCompanionServices() {
+        for (String cid : new String[]{"transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"}) {
+            recordServiceActive(cid, false);
+        }
         serviceExecutor.execute(() -> {
             ManagedService tr = services.get("transmission");
             if (tr != null) {
@@ -2174,6 +2509,41 @@ public class MediaServiceManager {
             }
             killProcessByPattern("bazarr");
             killProcessByPattern("main.py");
+        });
+    }
+
+    /**
+     * Selectively restores only the specified services in dependency order after OS kill / resurrection.
+     * Guaranteed to NOT start any services that were not active prior to process termination.
+     */
+    public void restoreSpecificServices(Collection<String> serviceIds) {
+        if (serviceIds == null || serviceIds.isEmpty()) return;
+        serviceExecutor.execute(() -> {
+            ensureForegroundServiceActive();
+            Set<String> targetIds = new HashSet<>();
+            for (String s : serviceIds) {
+                if (s != null) targetIds.add(s.trim().toLowerCase(Locale.ROOT));
+            }
+            Log.i(TAG, "[StackPersistence] Selectively restoring services on OS revival: " + targetIds);
+
+            // 1. If Jellyfin was active prior to kill, restore Jellyfin first
+            if (targetIds.contains("jellyfin")) {
+                Log.i(TAG, "[StackPersistence] Restoring Jellyfin core server");
+                JellyfinController.getInstance().start(appContext);
+                try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
+            }
+
+            // 2. Selectively restore only companion services present in targetIds
+            String[] companionOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
+            for (String id : companionOrder) {
+                if (!targetIds.contains(id)) continue;
+                ManagedService svc = services.get(id);
+                if (svc != null && svc.isEnabled() && !svc.isBlocked() && svc.isInstalled() && !svc.isRunning() && !svc.isStarting()) {
+                    Log.i(TAG, "[StackPersistence] Restoring active companion service: " + svc.getDisplayName());
+                    startService(id);
+                    try { Thread.sleep(1500); } catch (InterruptedException ignored) {}
+                }
+            }
         });
     }
 
@@ -2241,6 +2611,8 @@ public class MediaServiceManager {
                     ok = wireBazarr(log);
                 } else if ("seerr".equalsIgnoreCase(serviceId)) {
                     ok = wireSeerr(log);
+                } else if ("jackett".equalsIgnoreCase(serviceId)) {
+                    ok = wireJackett(log);
                 }
                 postCallback(callback, ok, log.toString().trim());
             } catch (Throwable t) {
@@ -2309,6 +2681,14 @@ public class MediaServiceManager {
             }
         }
 
+        // 5b. Link Jackett Torznab if running
+        if (isPortOccupied(9117)) {
+            String jackettKey = getServiceApiKey("jackett");
+            if (jackettKey != null) {
+                ensureJackettInRadarr(radarrKey, jackettKey, log);
+            }
+        }
+
         // 6. Enforce Quality Profiles & Custom Formats (No 4K, Strictly 720p/1080p, Max < 20GB, IMAX, HDR, x265, x264, Hindi-English)
         configureRadarrQualityProfilesAndFormats(radarrKey, log);
 
@@ -2364,6 +2744,14 @@ public class MediaServiceManager {
                     log.append("[OK] Sonarr verified in Prowlarr\n");
                 }
                 postJson("http://127.0.0.1:9696/api/v1/command?apiKey=" + prowlarrKey, "{\"name\":\"ApplicationIndexerSync\"}");
+            }
+        }
+
+        // 5b. Link Jackett Torznab if running
+        if (isPortOccupied(9117)) {
+            String jackettKey = getServiceApiKey("jackett");
+            if (jackettKey != null) {
+                ensureJackettInSonarr(sonarrKey, jackettKey, log);
             }
         }
 
@@ -2968,6 +3356,14 @@ public class MediaServiceManager {
                 }
             }
         }
+
+        // 5b. Link Jackett Torznab if running
+        if (isPortOccupied(9117)) {
+            String jackettKey = getServiceApiKey("jackett");
+            if (jackettKey != null) {
+                ensureJackettInLidarr(lidarrKey, jackettKey, log);
+            }
+        }
         return true;
     }
 
@@ -3032,6 +3428,14 @@ public class MediaServiceManager {
             ensureIndexersTagged(prowlarrKey, cfTagId);
         }
 
+        // Link Jackett into Prowlarr if running
+        if (isPortOccupied(9117)) {
+            String jackettKey = getServiceApiKey("jackett");
+            if (jackettKey != null) {
+                ensureJackettInProwlarr(prowlarrKey, jackettKey, log);
+            }
+        }
+
         // Trigger sync command to push indexers to Radarr, Sonarr, and Lidarr
         postJson("http://127.0.0.1:9696/api/v1/command?apiKey=" + prowlarrKey, "{\"name\":\"ApplicationIndexerSync\"}");
         log.append("[OK] ApplicationIndexerSync triggered\n");
@@ -3070,6 +3474,400 @@ public class MediaServiceManager {
             }
         }
         return true;
+    }
+
+    public boolean wireJackett(StringBuilder log) {
+        if (!isPortOccupied(9117)) {
+            log.append("[SKIP] Jackett is not running (Port 9117 offline)\n");
+            return false;
+        }
+        String jackettKey = getServiceApiKey("jackett");
+        if (jackettKey == null || jackettKey.isEmpty()) {
+            log.append("[FAIL] Could not read Jackett API key\n");
+            return false;
+        }
+        log.append("[OK] Jackett active on port 9117 (API key verified)\n");
+
+        if (isPortOccupied(7878)) {
+            String radarrKey = getServiceApiKey("radarr");
+            if (radarrKey != null) {
+                ensureJackettInRadarr(radarrKey, jackettKey, log);
+            }
+        }
+        if (isPortOccupied(8989)) {
+            String sonarrKey = getServiceApiKey("sonarr");
+            if (sonarrKey != null) {
+                ensureJackettInSonarr(sonarrKey, jackettKey, log);
+            }
+        }
+        if (isPortOccupied(8686)) {
+            String lidarrKey = getServiceApiKey("lidarr");
+            if (lidarrKey != null) {
+                ensureJackettInLidarr(lidarrKey, jackettKey, log);
+            }
+        }
+        if (isPortOccupied(9696)) {
+            String prowlarrKey = getServiceApiKey("prowlarr");
+            if (prowlarrKey != null) {
+                ensureJackettInProwlarr(prowlarrKey, jackettKey, log);
+            }
+        }
+        return true;
+    }
+
+    public static class JackettIndexerInfo {
+        public final String id;
+        public final String displayName;
+        public final boolean supportsMovies;
+        public final boolean supportsTv;
+        public final boolean supportsMusic;
+
+        public JackettIndexerInfo(String id, String displayName, boolean supportsMovies, boolean supportsTv, boolean supportsMusic) {
+            this.id = id;
+            this.displayName = displayName;
+            this.supportsMovies = supportsMovies;
+            this.supportsTv = supportsTv;
+            this.supportsMusic = supportsMusic;
+        }
+    }
+
+    private String getJackettIndexerDisplayName(String id) {
+        if (id == null) return "Jackett";
+        String lower = id.toLowerCase(Locale.ROOT).trim();
+        if ("yts".equals(lower)) return "YTS";
+        if ("thepiratebay".equals(lower) || "tpb".equals(lower)) return "The Pirate Bay";
+        if ("1337x".equals(lower)) return "1337x";
+        if ("eztv".equals(lower)) return "EZTV";
+        if ("torrentgalaxy".equals(lower) || "torrentgalaxyclone".equals(lower)) return "TorrentGalaxy";
+        if ("limetorrents".equals(lower)) return "LimeTorrents";
+        if ("nyaasi".equals(lower) || "nyaa".equals(lower)) return "Nyaa.si";
+        if ("therarbg".equals(lower) || "rarbg".equals(lower)) return "TheRARBG";
+        if ("kickasstorrents-ws".equals(lower) || "kickasstorrents-to".equals(lower) || "kat".equals(lower)) return "KickassTorrents";
+        if ("bangumi-moe".equals(lower)) return "Bangumi Moe";
+        if ("subsplease".equals(lower)) return "SubsPlease";
+        if ("internetarchive".equals(lower)) return "Internet Archive";
+        if ("torrentdownload".equals(lower) || "torrentdownloads".equals(lower)) return "TorrentDownload";
+
+        String[] parts = id.split("[-_\\s]+");
+        StringBuilder sb = new StringBuilder();
+        for (String p : parts) {
+            if (p.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(" ");
+            sb.append(Character.toUpperCase(p.charAt(0)));
+            if (p.length() > 1) sb.append(p.substring(1));
+        }
+        return sb.length() > 0 ? sb.toString() : id;
+    }
+
+    public List<JackettIndexerInfo> getConfiguredJackettIndexers(String jackettKey) {
+        List<JackettIndexerInfo> list = new ArrayList<>();
+        File home = TermuxConstants.TERMUX_HOME_DIR;
+        File jackettConfigDir = new File(home, ".config/Jackett");
+        File indexersDir = new File(jackettConfigDir, "Indexers");
+
+        java.util.LinkedHashSet<String> foundIds = new java.util.LinkedHashSet<>();
+        if (indexersDir.exists() && indexersDir.isDirectory()) {
+            File[] files = indexersDir.listFiles((dir, name) ->
+                    name.endsWith(".json") && !name.endsWith(".bak") && !name.endsWith(".tmp") && !name.startsWith("."));
+            if (files != null) {
+                java.util.Arrays.sort(files, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+                for (File f : files) {
+                    String name = f.getName();
+                    String id = name.substring(0, name.length() - 5).trim();
+                    if (!id.isEmpty() && !"ServerConfig".equalsIgnoreCase(id)) {
+                        foundIds.add(id);
+                    }
+                }
+            }
+        }
+
+        if (foundIds.isEmpty()) {
+            foundIds.add("yts");
+            foundIds.add("thepiratebay");
+            foundIds.add("1337x");
+            foundIds.add("torrentgalaxy");
+            foundIds.add("limetorrents");
+            foundIds.add("eztv");
+        }
+
+        for (String id : foundIds) {
+            String displayName = getJackettIndexerDisplayName(id);
+            boolean movies = true;
+            boolean tv = true;
+            boolean music = false;
+
+            String lower = id.toLowerCase(Locale.ROOT);
+            if (lower.contains("yts")) {
+                movies = true;
+                tv = false;
+                music = false;
+            } else if (lower.contains("eztv") || lower.contains("subsplease") || lower.contains("bangumi")) {
+                movies = false;
+                tv = true;
+                music = false;
+            } else if (lower.contains("thepiratebay") || lower.contains("1337x") || lower.contains("limetorrents") || lower.contains("therarbg")) {
+                movies = true;
+                tv = true;
+                music = true;
+            } else if (lower.contains("torrentbyte") || lower.contains("torrentcore") || lower.contains("uindex") || lower.contains("torrentdownload")) {
+                movies = true;
+                tv = true;
+                music = false;
+            }
+
+            if (jackettKey != null && !jackettKey.isEmpty() && isPortOccupied(9117)) {
+                try {
+                    String caps = httpGet("http://127.0.0.1:9117/api/v2.0/indexers/" + id + "/results/torznab/api?t=caps&apikey=" + jackettKey);
+                    if (caps != null && caps.contains("<caps>")) {
+                        movies = caps.contains("<movie-search") || caps.contains("id=\"2000\"") || caps.contains("Movies");
+                        tv = caps.contains("<tv-search") || caps.contains("id=\"5000\"") || caps.contains("TV");
+                        music = caps.contains("<music-search") || caps.contains("<audio-search") || caps.contains("id=\"3000\"") || caps.contains("Audio") || caps.contains("Music");
+                    }
+                } catch (Throwable ignored) {}
+            }
+
+            list.add(new JackettIndexerInfo(id, displayName, movies, tv, music));
+        }
+
+        return list;
+    }
+
+    private void cleanupLegacyJackettAllIndexer(int port, String apiKey, String existing) {
+        if (existing == null || (!existing.contains("Jackett (All)") && !existing.contains("/indexers/all/"))) return;
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray(existing);
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject item = arr.getJSONObject(i);
+                String name = item.optString("name", "");
+                String raw = item.toString();
+                if (name.contains("Jackett (All)") || raw.contains("/indexers/all/")) {
+                    int id = item.optInt("id", -1);
+                    if (id > 0) {
+                        httpDelete("http://127.0.0.1:" + port + getApiPrefix(port) + "/indexer/" + id + "?apiKey=" + apiKey);
+                        Log.i(TAG, "[AutoWire] Cleaned up obsolete Jackett aggregate indexer id " + id + " from port " + port);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "[AutoWire] cleanupLegacyJackettAllIndexer notice: " + t.getMessage());
+        }
+    }
+
+    private void ensureJackettInRadarr(String radarrKey, String jackettKey, StringBuilder log) {
+        try {
+            String existing = httpGet("http://127.0.0.1:7878/api/v3/indexer?apiKey=" + radarrKey);
+            cleanupLegacyJackettAllIndexer(7878, radarrKey, existing);
+
+            List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
+            int addedCount = 0;
+            int verifiedCount = 0;
+
+            for (JackettIndexerInfo info : indexers) {
+                if (!info.supportsMovies) continue;
+
+                String targetUrl = "http://127.0.0.1:9117/api/v2.0/indexers/" + info.id + "/results/torznab/";
+                String targetName = info.displayName + " (Jackett)";
+
+                if (existing != null && (existing.contains(targetUrl) || existing.contains("\"" + targetName + "\""))) {
+                    verifiedCount++;
+                    continue;
+                }
+
+                try {
+                    org.json.JSONObject idx = new org.json.JSONObject();
+                    idx.put("name", targetName);
+                    idx.put("enableAutomaticSearch", true);
+                    idx.put("enableInteractiveSearch", true);
+                    idx.put("supportsRss", true);
+                    idx.put("supportsSearch", true);
+                    idx.put("protocol", "torrent");
+                    idx.put("priority", 25);
+                    idx.put("configContract", "TorznabSettings");
+                    idx.put("implementation", "Torznab");
+                    org.json.JSONArray fields = new org.json.JSONArray();
+                    fields.put(new org.json.JSONObject().put("name", "baseUrl").put("value", targetUrl));
+                    fields.put(new org.json.JSONObject().put("name", "apiPath").put("value", "/api"));
+                    fields.put(new org.json.JSONObject().put("name", "apiKey").put("value", jackettKey));
+                    org.json.JSONArray cats = new org.json.JSONArray();
+                    cats.put(2000).put(2010).put(2020).put(2030).put(2040).put(2045).put(2050).put(2060);
+                    fields.put(new org.json.JSONObject().put("name", "categories").put("value", cats));
+                    idx.put("fields", fields);
+
+                    if (postJson("http://127.0.0.1:7878/api/v3/indexer?apiKey=" + radarrKey, idx.toString(), 20000)) {
+                        addedCount++;
+                        log.append("[OK] Jackett indexer linked into Radarr: ").append(info.displayName).append("\n");
+                    }
+                } catch (Throwable it) {
+                    Log.w(TAG, "[AutoWire] Radarr Jackett link notice for " + info.id + ": " + it.getMessage());
+                }
+            }
+            if (verifiedCount > 0) {
+                log.append("[OK] ").append(verifiedCount).append(" Jackett indexer(s) active in Radarr\n");
+            }
+        } catch (Throwable t) {
+            log.append("[WARN] Radarr Jackett linking notice: ").append(t.getMessage()).append("\n");
+        }
+    }
+
+    private void ensureJackettInSonarr(String sonarrKey, String jackettKey, StringBuilder log) {
+        try {
+            String existing = httpGet("http://127.0.0.1:8989/api/v3/indexer?apiKey=" + sonarrKey);
+            cleanupLegacyJackettAllIndexer(8989, sonarrKey, existing);
+
+            List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
+            int addedCount = 0;
+            int verifiedCount = 0;
+
+            for (JackettIndexerInfo info : indexers) {
+                if (!info.supportsTv) continue;
+
+                String targetUrl = "http://127.0.0.1:9117/api/v2.0/indexers/" + info.id + "/results/torznab/";
+                String targetName = info.displayName + " (Jackett)";
+
+                if (existing != null && (existing.contains(targetUrl) || existing.contains("\"" + targetName + "\""))) {
+                    verifiedCount++;
+                    continue;
+                }
+
+                try {
+                    org.json.JSONObject idx = new org.json.JSONObject();
+                    idx.put("name", targetName);
+                    idx.put("enableAutomaticSearch", true);
+                    idx.put("enableInteractiveSearch", true);
+                    idx.put("supportsRss", true);
+                    idx.put("supportsSearch", true);
+                    idx.put("protocol", "torrent");
+                    idx.put("priority", 25);
+                    idx.put("configContract", "TorznabSettings");
+                    idx.put("implementation", "Torznab");
+                    org.json.JSONArray fields = new org.json.JSONArray();
+                    fields.put(new org.json.JSONObject().put("name", "baseUrl").put("value", targetUrl));
+                    fields.put(new org.json.JSONObject().put("name", "apiPath").put("value", "/api"));
+                    fields.put(new org.json.JSONObject().put("name", "apiKey").put("value", jackettKey));
+                    org.json.JSONArray cats = new org.json.JSONArray();
+                    cats.put(5000).put(5010).put(5020).put(5030).put(5040).put(5045);
+                    fields.put(new org.json.JSONObject().put("name", "categories").put("value", cats));
+                    idx.put("fields", fields);
+
+                    if (postJson("http://127.0.0.1:8989/api/v3/indexer?apiKey=" + sonarrKey, idx.toString(), 20000)) {
+                        addedCount++;
+                        log.append("[OK] Jackett indexer linked into Sonarr: ").append(info.displayName).append("\n");
+                    }
+                } catch (Throwable it) {
+                    Log.w(TAG, "[AutoWire] Sonarr Jackett link notice for " + info.id + ": " + it.getMessage());
+                }
+            }
+            if (verifiedCount > 0) {
+                log.append("[OK] ").append(verifiedCount).append(" Jackett indexer(s) active in Sonarr\n");
+            }
+        } catch (Throwable t) {
+            log.append("[WARN] Sonarr Jackett linking notice: ").append(t.getMessage()).append("\n");
+        }
+    }
+
+    private void ensureJackettInLidarr(String lidarrKey, String jackettKey, StringBuilder log) {
+        try {
+            String existing = httpGet("http://127.0.0.1:8686/api/v1/indexer?apiKey=" + lidarrKey);
+            cleanupLegacyJackettAllIndexer(8686, lidarrKey, existing);
+
+            List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
+            int addedCount = 0;
+            int verifiedCount = 0;
+
+            for (JackettIndexerInfo info : indexers) {
+                if (!info.supportsMusic) continue;
+
+                String targetUrl = "http://127.0.0.1:9117/api/v2.0/indexers/" + info.id + "/results/torznab/";
+                String targetName = info.displayName + " (Jackett)";
+
+                if (existing != null && (existing.contains(targetUrl) || existing.contains("\"" + targetName + "\""))) {
+                    verifiedCount++;
+                    continue;
+                }
+
+                try {
+                    org.json.JSONObject idx = new org.json.JSONObject();
+                    idx.put("name", targetName);
+                    idx.put("enableAutomaticSearch", true);
+                    idx.put("enableInteractiveSearch", true);
+                    idx.put("supportsRss", true);
+                    idx.put("supportsSearch", true);
+                    idx.put("protocol", "torrent");
+                    idx.put("priority", 25);
+                    idx.put("configContract", "TorznabSettings");
+                    idx.put("implementation", "Torznab");
+                    org.json.JSONArray fields = new org.json.JSONArray();
+                    fields.put(new org.json.JSONObject().put("name", "baseUrl").put("value", targetUrl));
+                    fields.put(new org.json.JSONObject().put("name", "apiPath").put("value", "/api"));
+                    fields.put(new org.json.JSONObject().put("name", "apiKey").put("value", jackettKey));
+                    org.json.JSONArray cats = new org.json.JSONArray();
+                    cats.put(3000).put(3010).put(3020).put(3030).put(3040);
+                    fields.put(new org.json.JSONObject().put("name", "categories").put("value", cats));
+                    idx.put("fields", fields);
+
+                    if (postJson("http://127.0.0.1:8686/api/v1/indexer?apiKey=" + lidarrKey, idx.toString(), 20000)) {
+                        addedCount++;
+                        log.append("[OK] Jackett indexer linked into Lidarr: ").append(info.displayName).append("\n");
+                    }
+                } catch (Throwable it) {
+                    Log.w(TAG, "[AutoWire] Lidarr Jackett link notice for " + info.id + ": " + it.getMessage());
+                }
+            }
+            if (verifiedCount > 0) {
+                log.append("[OK] ").append(verifiedCount).append(" Jackett indexer(s) active in Lidarr\n");
+            }
+        } catch (Throwable t) {
+            log.append("[WARN] Lidarr Jackett linking notice: ").append(t.getMessage()).append("\n");
+        }
+    }
+
+    private void ensureJackettInProwlarr(String prowlarrKey, String jackettKey, StringBuilder log) {
+        try {
+            String existing = httpGet("http://127.0.0.1:9696/api/v1/indexer?apiKey=" + prowlarrKey);
+            cleanupLegacyJackettAllIndexer(9696, prowlarrKey, existing);
+
+            List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
+            int addedCount = 0;
+            int verifiedCount = 0;
+
+            for (JackettIndexerInfo info : indexers) {
+                String targetUrl = "http://127.0.0.1:9117/api/v2.0/indexers/" + info.id + "/results/torznab/";
+                String targetName = info.displayName + " (Jackett)";
+
+                if (existing != null && (existing.contains(targetUrl) || existing.contains("\"" + targetName + "\""))) {
+                    verifiedCount++;
+                    continue;
+                }
+
+                try {
+                    org.json.JSONObject idx = new org.json.JSONObject();
+                    idx.put("name", targetName);
+                    idx.put("enable", true);
+                    idx.put("redirect", false);
+                    idx.put("priority", 25);
+                    idx.put("configContract", "TorznabSettings");
+                    idx.put("implementation", "Torznab");
+                    idx.put("protocol", "torrent");
+                    org.json.JSONArray fields = new org.json.JSONArray();
+                    fields.put(new org.json.JSONObject().put("name", "baseUrl").put("value", targetUrl));
+                    fields.put(new org.json.JSONObject().put("name", "apiPath").put("value", "/api"));
+                    fields.put(new org.json.JSONObject().put("name", "apiKey").put("value", jackettKey));
+                    idx.put("fields", fields);
+
+                    if (postJson("http://127.0.0.1:9696/api/v1/indexer?apiKey=" + prowlarrKey, idx.toString(), 20000)) {
+                        addedCount++;
+                        log.append("[OK] Jackett indexer linked into Prowlarr: ").append(info.displayName).append("\n");
+                    }
+                } catch (Throwable it) {
+                    Log.w(TAG, "[AutoWire] Prowlarr Jackett link notice for " + info.id + ": " + it.getMessage());
+                }
+            }
+            if (verifiedCount > 0) {
+                log.append("[OK] ").append(verifiedCount).append(" Jackett indexer(s) active in Prowlarr\n");
+            }
+        } catch (Throwable t) {
+            log.append("[WARN] Prowlarr Jackett linking notice: ").append(t.getMessage()).append("\n");
+        }
     }
 
     public boolean wireBazarr(StringBuilder log) {
@@ -3356,6 +4154,13 @@ public class MediaServiceManager {
                     wiredServices.add("Prowlarr");
                 }
 
+                ManagedService jackett = getService("jackett");
+                if (jackett != null && jackett.isInstalled() && isPortOccupied(9117)) {
+                    ensureServiceConfigSanitized("jackett");
+                    wireJackett(log);
+                    wiredServices.add("Jackett");
+                }
+
                 ManagedService bazarr = getService("bazarr");
                 if (bazarr != null && bazarr.isInstalled() && isPortOccupied(6767)) {
                     ensureServiceConfigSanitized("bazarr");
@@ -3548,6 +4353,16 @@ public class MediaServiceManager {
         if ("sonarr".equals(id)) return readApiKey(new File(home, ".config/Sonarr/config.xml"));
         if ("prowlarr".equals(id)) return readApiKey(new File(home, ".config/Prowlarr/config.xml"));
         if ("lidarr".equals(id)) return readApiKey(new File(home, ".config/Lidarr/config.xml"));
+        if ("jackett".equals(id)) {
+            File cfg = new File(home, ".config/Jackett/ServerConfig.json");
+            if (cfg.exists()) {
+                try {
+                    String json = new String(java.nio.file.Files.readAllBytes(cfg.toPath()), StandardCharsets.UTF_8);
+                    org.json.JSONObject obj = new org.json.JSONObject(json);
+                    return obj.optString("APIKey", null);
+                } catch (Exception ignored) {}
+            }
+        }
         if ("bazarr".equals(id)) {
             File cfg = new File(home, ".config/bazarr/config/config.yaml");
             if (cfg.exists()) {
@@ -3609,12 +4424,16 @@ public class MediaServiceManager {
     }
 
     private boolean postJson(String urlStr, String jsonBody) {
+        return postJson(urlStr, jsonBody, 15000);
+    }
+
+    private boolean postJson(String urlStr, String jsonBody, int timeoutMs) {
         HttpURLConnection conn = null;
         try {
             URL url = new URL(urlStr);
             conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
+            conn.setConnectTimeout(timeoutMs);
+            conn.setReadTimeout(timeoutMs);
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
             String key = extractApiKey(urlStr);

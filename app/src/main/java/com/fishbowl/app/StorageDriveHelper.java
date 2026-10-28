@@ -773,6 +773,16 @@ public final class StorageDriveHelper {
         return count;
     }
 
+    public static boolean isVideoFile(String name) {
+        if (name == null) return false;
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.endsWith(".mp4") || n.endsWith(".mkv") || n.endsWith(".avi") ||
+                n.endsWith(".mov") || n.endsWith(".wmv") || n.endsWith(".webm") ||
+                n.endsWith(".flv") || n.endsWith(".m4v") || n.endsWith(".ts") ||
+                n.endsWith(".mpg") || n.endsWith(".mpeg") || n.endsWith(".m2ts") ||
+                n.endsWith(".vob") || n.endsWith(".3gp") || n.endsWith(".iso");
+    }
+
     public static boolean isMediaFile(String name) {
         if (name == null) return false;
         String n = name.toLowerCase(Locale.ROOT);

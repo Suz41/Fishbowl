@@ -1,0 +1,1484 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
+<meta name="referrer" content="no-referrer" />
+<title>Jellyseerr</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  if (window.tailwind) {
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' }
+          },
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+        }
+      }
+    };
+  }
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-base: #060913;
+    --bg-surface: #0c1222;
+    --bg-card: #111827;
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --accent: #6366f1;
+    --text-primary: #f8fafc;
+    --text-muted: #94a3b8;
+  }
+  html, body {
+    overscroll-behavior: none;
+    -webkit-font-smoothing: antialiased;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    min-height: 100%;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  .glass {
+    background: rgba(12, 18, 34, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .glass-card {
+    background: rgba(17, 24, 39, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .poster {
+    position: relative;
+    overflow: hidden;
+    background: #0f172a;
+  }
+  .poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform .25s ease;
+  }
+  .poster:hover img {
+    transform: scale(1.05);
+  }
+  .poster::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(6, 9, 19, 0.95) 0%, rgba(6, 9, 19, 0.15) 45%, transparent 70%);
+  }
+  .badge {
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(4px);
+  }
+  .badge-available {
+    background: rgba(16, 185, 129, 0.25);
+    border: 1px solid rgba(16, 185, 129, 0.5);
+    color: #6ee7b7;
+  }
+  .badge-processing {
+    background: rgba(245, 158, 11, 0.25);
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    color: #fde68a;
+  }
+  .badge-requested {
+    background: rgba(99, 102, 241, 0.25);
+    border: 1px solid rgba(99, 102, 241, 0.5);
+    color: #c7d2fe;
+  }
+  .safe-top { padding-top: env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .season-chip {
+    padding: 5px 10px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(30, 41, 59, 0.6);
+    color: #cbd5e1;
+  }
+  .season-chip.selected {
+    background: #4f46e5;
+    border-color: #6366f1;
+    color: #ffffff;
+  }
+  .dl-track {
+    width: 100%;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .dl-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #00A4DC);
+    transition: width 0.3s ease;
+  }
+  .dl-fill.paused {
+    background: #f59e0b;
+  }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-toast { animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+  .nav-pill.active {
+    color: #ffffff;
+    background: rgba(99, 102, 241, 0.25);
+    border-color: rgba(99, 102, 241, 0.5);
+  }
+  .bnav-container {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    align-items: stretch;
+    justify-content: space-between;
+    padding: 0;
+    margin: 0;
+    height: 56px;
+    box-sizing: border-box;
+    z-index: 50;
+    background: rgba(12, 18, 34, 0.98);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .bnav-item {
+    flex: 1 1 0%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 6px 2px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  .bnav-item svg {
+    width: 19px;
+    height: 19px;
+    flex-shrink: 0;
+    margin-bottom: 2px;
+  }
+  .bnav-item span {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    display: block;
+    line-height: 1.1;
+  }
+  .bnav-item.active {
+    color: #818cf8;
+    background: rgba(99, 102, 241, 0.12);
+  }
+  .bnav-item:active {
+    transform: scale(0.95);
+  }
+</style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-brand-500 selection:text-white pb-24 lg:pb-6">
+
+<!-- Minimal Header -->
+<header class="sticky top-0 z-40 glass safe-top">
+  <div class="max-w-[1700px] mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3 sm:gap-6">
+    <div class="flex items-center gap-2.5 flex-shrink-0 cursor-pointer" onclick="switchTab('discover')">
+      <div class="w-8 h-8 rounded-xl bg-brand-600 flex items-center justify-center font-bold text-sm text-white shadow-md shadow-brand-600/30">J</div>
+      <span class="font-bold text-base tracking-tight text-white hidden xs:inline">Jellyseerr</span>
+    </div>
+
+    <!-- Search Box -->
+    <div class="flex-1 max-w-md relative">
+      <input id="search-input" type="text" placeholder="Search 2024-2026 media..." autocomplete="off"
+        class="w-full bg-gray-900/90 border border-gray-800 rounded-xl px-3 py-1.5 pl-8 pr-7 text-xs sm:text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-brand-500/70" />
+      <svg class="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
+      </svg>
+      <button id="search-clear" class="hidden absolute right-2.5 top-2.5 text-gray-400 hover:text-white">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- Desktop Nav Pills -->
+    <nav class="hidden lg:flex items-center gap-1.5 text-xs font-semibold">
+      <button onclick="switchTab('discover')" class="nav-pill active px-3 py-1.5 rounded-lg text-gray-300 hover:text-white border border-transparent transition-colors" data-tab="discover">Discover</button>
+      <button onclick="switchTab('movies')" class="nav-pill px-3 py-1.5 rounded-lg text-gray-300 hover:text-white border border-transparent transition-colors" data-tab="movies">Movies</button>
+      <button onclick="switchTab('tv')" class="nav-pill px-3 py-1.5 rounded-lg text-gray-300 hover:text-white border border-transparent transition-colors" data-tab="tv">TV Shows</button>
+      <button onclick="switchTab('requests')" class="nav-pill px-3 py-1.5 rounded-lg text-gray-300 hover:text-white border border-transparent transition-colors flex items-center gap-1.5" data-tab="requests">
+        Requests <span id="req-nav-badge" class="px-1.5 py-0.2 rounded-md bg-brand-600 text-white font-mono text-[10px]">0</span>
+      </button>
+      <button onclick="switchTab('services')" class="nav-pill px-3 py-1.5 rounded-lg text-gray-300 hover:text-white border border-transparent transition-colors flex items-center gap-1.5" data-tab="services">
+        Services <span id="services-nav-badge" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+      </button>
+      <button onclick="switchTab('downloads')" class="nav-pill px-3 py-1.5 rounded-lg text-gray-300 hover:text-white border border-transparent transition-colors flex items-center gap-1.5" data-tab="downloads">
+        Downloads <span id="dl-count" class="px-1.5 py-0.2 rounded-md bg-gray-800 text-gray-300 font-mono text-[10px]">0</span>
+      </button>
+    </nav>
+
+    <!-- Settings Button -->
+    <button id="btn-open-settings" title="Connection Settings" class="p-1.5 rounded-xl border border-gray-800 text-gray-300 hover:text-white transition-colors text-xs font-mono flex items-center gap-1.5">
+      <svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+      <span id="host-badge" class="hidden sm:inline text-gray-400">:5055</span>
+    </button>
+  </div>
+</header>
+
+<!-- Main Container -->
+<main class="max-w-[1700px] mx-auto px-3 sm:px-6 py-4 space-y-6 flex-1 min-h-[calc(100vh-140px)]">
+
+  <!-- Search Results Overlay Grid -->
+  <section id="search-section" class="hidden glass-card rounded-2xl p-4 space-y-3">
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-bold flex items-center gap-2">
+        <span>Search Results</span>
+        <span id="search-query-badge" class="text-xs bg-brand-500/20 text-brand-300 px-2 py-0.2 rounded font-mono"></span>
+      </h3>
+      <button id="search-close-btn" class="text-xs text-gray-400 hover:text-white px-2 py-1 rounded border border-gray-800">Close</button>
+    </div>
+    <!-- Clean 4-Column Grid on Mobile, expanding on PC -->
+    <div id="search-grid" class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2 sm:gap-3"></div>
+  </section>
+
+  <!-- TAB 1: DISCOVER -->
+  <div id="view-discover" class="space-y-6 min-h-[65vh]">
+
+    <!-- Minimal Hero Feature Banner -->
+    <section class="relative rounded-2xl overflow-hidden glass-card shadow-xl border border-white/5">
+      <div id="hero-bg" class="absolute inset-0 bg-cover bg-center transition-all duration-500"></div>
+      <div class="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/80 to-gray-950/40"></div>
+      
+      <div class="relative z-10 p-3.5 sm:p-6 flex flex-col justify-end">
+        <div class="flex items-center gap-3.5 sm:gap-5">
+          <!-- Spotlight Cover Image -->
+          <div class="w-20 sm:w-28 aspect-[2/3] rounded-xl overflow-hidden shadow-2xl poster border border-white/10 flex-shrink-0 cursor-pointer" onclick="openHeroModal()">
+            <img id="hero-poster" src="" alt="Cover Poster" class="w-full h-full object-cover pointer-events-none" />
+          </div>
+
+          <div class="flex-1 min-w-0">
+            <div class="flex flex-wrap items-center gap-1.5 text-[11px] mb-1.5">
+              <span class="px-2 py-0.2 rounded bg-brand-600/30 text-brand-300 font-semibold font-mono text-[10px]">SPOTLIGHT</span>
+              <span id="hero-type-badge" class="px-1.5 py-0.2 rounded bg-gray-800 text-gray-300 uppercase font-mono text-[10px]">MOVIE</span>
+              <span id="hero-meta" class="text-gray-400"></span>
+              <span id="hero-library-status" class="hidden text-[10px] px-1.5 py-0.2 rounded font-medium"></span>
+            </div>
+            <h1 id="hero-title" class="text-base sm:text-2xl font-bold text-white leading-tight truncate">Loading...</h1>
+            <p id="hero-overview" class="text-xs text-gray-300 mt-1 line-clamp-2 leading-relaxed hidden xs:block"></p>
+            
+            <div class="flex items-center gap-2 mt-2 text-xs">
+              <span class="text-amber-400 font-bold flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                <span id="hero-rating">0.0</span>
+              </span>
+              <span class="text-gray-600">|</span>
+              <span id="hero-genres" class="text-gray-400 truncate"></span>
+            </div>
+
+            <!-- Direct Instant Action Buttons -->
+            <div class="flex items-center gap-2 mt-3">
+              <button id="hero-action-btn" class="px-4 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition-all active:scale-95 shadow">
+                <span id="hero-action-text">Request</span>
+              </button>
+              <button onclick="openHeroModal()" class="px-3 py-1.5 rounded-lg border border-gray-800 text-gray-300 hover:text-white text-xs transition-all">
+                Details
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Trending Section (Exact 4 in Grid on Mobile, Max fit on PC) -->
+    <section class="space-y-2.5">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm sm:text-base font-bold text-white tracking-tight">Trending (2024-2026)</h2>
+        <span class="text-[11px] text-gray-500">Tap to request</span>
+      </div>
+      <div id="trending-grid" class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2 sm:gap-3"></div>
+    </section>
+
+    <!-- Popular Movies Section (4 in Grid on Mobile) -->
+    <section class="space-y-2.5">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm sm:text-base font-bold text-white tracking-tight">Popular Movies</h2>
+        <button onclick="switchTab('movies')" class="text-xs text-brand-400 hover:text-brand-300 font-medium">All Movies</button>
+      </div>
+      <div id="movies-preview-grid" class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2 sm:gap-3"></div>
+    </section>
+
+    <!-- Popular TV Shows Section (4 in Grid on Mobile) -->
+    <section class="space-y-2.5">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm sm:text-base font-bold text-white tracking-tight">Popular TV Shows</h2>
+        <button onclick="switchTab('tv')" class="text-xs text-brand-400 hover:text-brand-300 font-medium">All Series</button>
+      </div>
+      <div id="tv-preview-grid" class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2 sm:gap-3"></div>
+    </section>
+
+  </div>
+
+  <!-- TAB 2: FULL MOVIES (Exact 4 in Grid on Mobile, Max fit on PC) -->
+  <div id="view-movies" class="hidden space-y-3">
+    <div class="flex items-center justify-between">
+      <h2 class="text-base sm:text-lg font-bold text-white">All Movies</h2>
+      <span id="movies-full-count" class="text-xs font-mono text-gray-400"></span>
+    </div>
+    <div id="movies-full-grid" class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2 sm:gap-3"></div>
+  </div>
+
+  <!-- TAB 3: FULL TV SHOWS (Exact 4 in Grid on Mobile, Max fit on PC) -->
+  <div id="view-tv" class="hidden space-y-3">
+    <div class="flex items-center justify-between">
+      <h2 class="text-base sm:text-lg font-bold text-white">All TV Series</h2>
+      <span id="tv-full-count" class="text-xs font-mono text-gray-400"></span>
+    </div>
+    <div id="tv-full-grid" class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2 sm:gap-3"></div>
+  </div>
+
+  <!-- TAB 4: REQUESTS & CANCELLATION LEDGER -->
+  <div id="view-requests" class="hidden space-y-3">
+    <div class="flex items-center justify-between">
+      <h2 class="text-base sm:text-lg font-bold text-white">Active Requests</h2>
+      <button onclick="fetchRequestsList()" class="px-2.5 py-1 rounded-lg border border-gray-800 text-xs text-gray-300 hover:text-white">Refresh</button>
+    </div>
+    <div id="requests-ledger-list" class="space-y-2.5">
+      <div class="text-center py-12 text-gray-500 text-xs">No active requests</div>
+    </div>
+  </div>
+
+  <!-- TAB 5: COMPANION SERVICES -->
+  <div id="view-services" class="hidden space-y-3">
+    <div class="flex items-center justify-between">
+      <h2 class="text-base sm:text-lg font-bold text-white">Automation Stack Services</h2>
+      <button onclick="fetchServicesList()" class="px-2.5 py-1 rounded-lg border border-gray-800 text-xs text-gray-300 hover:text-white">Scan</button>
+    </div>
+    <div id="services-grid" class="grid grid-cols-1 md:grid-cols-2 gap-2.5"></div>
+  </div>
+
+  <!-- TAB 6: ACTIVE DOWNLOADS -->
+  <div id="view-downloads" class="hidden space-y-3">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <h2 class="text-base sm:text-lg font-bold text-white">Transmission Transfers</h2>
+        <span class="text-xs font-mono text-gray-400"><span id="tab-dl-speed" class="font-bold text-white">0.00</span> MB/s</span>
+      </div>
+      <button onclick="fetchDownloads()" class="px-2.5 py-1 rounded-lg border border-gray-800 text-xs text-gray-300 hover:text-white">Refresh</button>
+    </div>
+    <div id="downloads-ledger-list" class="space-y-2.5"></div>
+  </div>
+
+</main>
+
+<!-- INSTANT ACTION BOTTOM SHEET / MODAL (1-Tap Request / Cancel - NO SCROLLING DOWN!) -->
+<div id="details-modal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm">
+  <div class="glass-card w-full max-w-lg max-h-[90vh] sm:rounded-2xl rounded-t-3xl overflow-hidden flex flex-col shadow-2xl relative border border-white/10">
+    
+    <!-- Modal Close -->
+    <button id="modal-close-btn" class="absolute top-3 right-3 z-30 p-1.5 rounded-full bg-black/60 text-gray-300 hover:text-white">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+
+    <!-- Modal Backdrop Art -->
+    <div id="modal-backdrop" class="w-full h-36 sm:h-44 bg-cover bg-center relative flex-shrink-0">
+      <div class="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/60 to-transparent"></div>
+    </div>
+
+    <!-- Modal Content -->
+    <div class="p-4 overflow-y-auto space-y-3.5 -mt-14 relative z-10 flex-1">
+      <div class="flex gap-3">
+        <div class="w-20 sm:w-24 aspect-[2/3] rounded-xl overflow-hidden shadow-2xl flex-shrink-0 poster border border-white/10">
+          <img id="modal-poster" src="" alt="Poster" class="w-full h-full object-cover pointer-events-none" />
+        </div>
+        <div class="flex-1 min-w-0 pt-4">
+          <div class="flex flex-wrap items-center gap-1.5 mb-1">
+            <span id="modal-type" class="px-1.5 py-0.2 rounded bg-brand-500/20 text-brand-300 text-[10px] font-mono uppercase font-bold"></span>
+            <span id="modal-year" class="text-xs text-gray-400 font-mono"></span>
+            <span id="modal-status-badge" class="hidden text-[10px] px-1.5 py-0.2 rounded font-medium"></span>
+          </div>
+          <h3 id="modal-title" class="text-base sm:text-lg font-bold text-white leading-tight truncate"></h3>
+          <div class="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+            <span class="flex items-center gap-1 text-amber-400 font-bold">
+              <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+              <span id="modal-rating">0.0</span>
+            </span>
+            <span>•</span>
+            <span id="modal-runtime"></span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p id="modal-overview" class="text-xs text-gray-300 leading-relaxed line-clamp-3"></p>
+      </div>
+
+      <!-- Quick Request Parameters -->
+      <div class="rounded-xl p-2.5 bg-gray-900/60 border border-gray-800 space-y-2 text-xs">
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-gray-400 block mb-1">Quality</label>
+            <select id="modal-quality" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-2 py-1 text-xs text-gray-200 focus:outline-none">
+              <option value="4" selected>HD-1080p</option>
+              <option value="5">Ultra-HD (4K)</option>
+              <option value="1">Any Quality</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-gray-400 block mb-1">Root Folder</label>
+            <select id="modal-root" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-2 py-1 text-xs text-gray-200 focus:outline-none">
+              <option value="/storage/emulated/0/FishbowlMedia/Movies" selected>FishbowlMedia/Movies</option>
+              <option value="/storage/emulated/0/FishbowlMedia/TV">FishbowlMedia/TV</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- TV Seasons Chips -->
+        <div id="modal-tv-section" class="hidden pt-1.5 border-t border-gray-800">
+          <label class="text-gray-400 block mb-1">Seasons</label>
+          <div id="modal-seasons-chips" class="flex flex-wrap gap-1"></div>
+        </div>
+      </div>
+
+      <!-- 1-Tap Action Execution Buttons (Right inside modal!) -->
+      <div class="pt-1 flex flex-col gap-2">
+        <button id="modal-submit-btn" class="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition-all active:scale-95">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          <span id="modal-submit-text">Request Media</span>
+        </button>
+
+        <button id="modal-cancel-btn" class="hidden w-full py-2.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-300 font-semibold text-xs flex items-center justify-center gap-2 transition-all active:scale-95">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          <span>Cancel Request</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Mobile Bottom Navigation Bar (100% Equal Column Width & Justified) -->
+<nav class="lg:hidden fixed bottom-0 left-0 right-0 z-40 glass safe-bottom border-t border-gray-800/80 bnav-container select-none">
+  <button onclick="switchTab('discover')" class="bnav-item active" data-tab="discover">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+    <span>Discover</span>
+  </button>
+  <button onclick="switchTab('movies')" class="bnav-item" data-tab="movies">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/></svg>
+    <span>Movies</span>
+  </button>
+  <button onclick="switchTab('tv')" class="bnav-item" data-tab="tv">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+    <span>TV Shows</span>
+  </button>
+  <button onclick="switchTab('requests')" class="bnav-item relative" data-tab="requests">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+    <span>Requests</span>
+    <span id="mobile-req-badge" class="hidden absolute top-1 right-1/4 w-2 h-2 rounded-full bg-brand-500"></span>
+  </button>
+  <button onclick="switchTab('downloads')" class="bnav-item" data-tab="downloads">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+    <span>Downloads</span>
+  </button>
+  <button onclick="switchTab('services')" class="bnav-item" data-tab="services">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>
+    <span>Services</span>
+  </button>
+</nav>
+
+<!-- Settings Modal -->
+<div id="settings-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+  <div class="glass-card w-full max-w-sm rounded-2xl p-4 space-y-3 shadow-2xl">
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-bold text-white">Connection Endpoint</h3>
+      <button id="settings-close-btn" class="text-gray-400 hover:text-white">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="space-y-2">
+      <div>
+        <label class="text-[11px] text-gray-400 block mb-1">Server Host</label>
+        <input id="cfg-host" type="text" placeholder="http://127.0.0.1:5055" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 font-mono" />
+      </div>
+      <div>
+        <label class="text-[11px] text-gray-400 block mb-1">API Key</label>
+        <input id="cfg-api-key" type="password" placeholder="Optional" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 font-mono" />
+      </div>
+    </div>
+    <div class="pt-2 border-t border-gray-800 flex justify-end gap-2">
+      <button id="cfg-reset-btn" class="px-2.5 py-1 text-xs text-gray-400 hover:text-white">Reset</button>
+      <button id="cfg-save-btn" class="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-semibold">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toasts -->
+<div id="toast-container" class="fixed bottom-16 lg:bottom-4 right-4 z-50 flex flex-col gap-1.5 pointer-events-none max-w-xs"></div>
+
+<script>
+function resolveBaseUrl() {
+  const custom = localStorage.getItem('jellyseerr_host');
+  if (custom && custom.trim().length > 0) return custom.trim().replace(/\/+$/, '');
+  const loc = window.location;
+  if (loc && loc.port === '5055') return loc.origin;
+  if (!loc || !loc.hostname || loc.hostname === 'localhost' || loc.hostname === '127.0.0.1') {
+    return 'http://127.0.0.1:5055';
+  }
+  return 'http://' + loc.hostname + ':5055';
+}
+
+let BASE_URL = resolveBaseUrl();
+let heroItem = null;
+let activeModalItem = null;
+let currentTrending = [];
+let currentMovies = [];
+let currentTv = [];
+let libraryMovies = [];
+let librarySeries = [];
+let activeRequestsList = [];
+let radarrQualityProfiles = [];
+let sonarrQualityProfiles = [];
+let radarrRootFolders = [];
+let sonarrRootFolders = [];
+let modalSelectedSeasons = [];
+
+// Fallback SVG Poster Generator
+function generateSvgPoster(title, year) {
+  const safeTitle = (title || 'Media').replace(/[<>&"]/g, '');
+  const safeYear = year || '';
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450">' +
+      '<defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">' +
+      '<stop offset="0%" stop-color="#0f172a" />' +
+      '<stop offset="100%" stop-color="#1e293b" />' +
+      '</linearGradient></defs>' +
+      '<rect width="100%" height="100%" fill="url(#bg)" />' +
+      '<rect x="12" y="12" width="276" height="426" rx="10" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="2"/>' +
+      '<circle cx="150" cy="180" r="40" fill="none" stroke="#6366f1" stroke-width="2.5" opacity="0.4"/>' +
+      '<text x="150" y="187" fill="#6366f1" font-size="18" font-family="sans-serif" font-weight="bold" text-anchor="middle">MEDIA</text>' +
+      '<text x="150" y="270" fill="#f8fafc" font-size="14" font-family="sans-serif" font-weight="bold" text-anchor="middle">' + safeTitle.substring(0, 18) + '</text>' +
+      '<text x="150" y="295" fill="#94a3b8" font-size="12" font-family="sans-serif" text-anchor="middle">' + safeYear + '</text>' +
+    '</svg>'
+  );
+}
+
+function handleImgError(img, title, year) {
+  img.onerror = null;
+  img.src = generateSvgPoster(title, year);
+}
+
+function getPoster(item) {
+  const p = item.poster_path || item.posterPath;
+  if (p && p.startsWith('/')) {
+    return 'https://image.tmdb.org/t/p/w500' + p;
+  }
+  if (p && p.startsWith('http')) {
+    return p;
+  }
+  if (item.remotePoster && item.remotePoster.includes('http')) {
+    return item.remotePoster;
+  }
+  if (item.backdrop && item.backdrop.includes('http')) {
+    return item.backdrop;
+  }
+  return generateSvgPoster(getItemTitle(item), getItemYear(item));
+}
+
+function getBackdrop(item) {
+  const b = item.backdrop_path || item.backdropPath;
+  if (b && b.startsWith('/')) {
+    return 'https://image.tmdb.org/t/p/original' + b;
+  }
+  if (b && b.startsWith('http')) {
+    return b;
+  }
+  if (item.backdrop && item.backdrop.includes('http')) {
+    return item.backdrop;
+  }
+  if (item.remotePoster && item.remotePoster.includes('http')) {
+    return item.remotePoster.replace(/\/w\d+\//, '/original/');
+  }
+  return '';
+}
+
+function getItemTitle(item) {
+  return item.title || item.name || item.original_title || item.original_name || 'Untitled';
+}
+
+function getItemYear(item) {
+  const d = item.release_date || item.first_air_date || item.releaseDate || item.firstAirDate || item.year || '';
+  return String(d).substring(0, 4);
+}
+
+function getItemType(item) {
+  return item.media_type || item.type || item.mediaType || (item.name ? 'tv' : 'movie');
+}
+
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  const borderCol = type === 'success' ? 'border-emerald-500/40 text-emerald-300' :
+                    type === 'error'   ? 'border-rose-500/40 text-rose-300' :
+                                         'border-brand-500/40 text-brand-300';
+  toast.className = 'glass px-3 py-2 rounded-xl border ' + borderCol + ' text-xs font-medium shadow-2xl flex items-center gap-2 pointer-events-auto animate-toast bg-gray-950/95';
+  toast.innerHTML = '<span>' + message + '</span>';
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.25s ease';
+    setTimeout(() => toast.remove(), 250);
+  }, 2800);
+}
+
+function getItemLibraryStatus(item) {
+  const type = getItemType(item);
+  const titleLow = getItemTitle(item).toLowerCase();
+
+  const reqMatch = activeRequestsList.find(r => 
+    (item.tmdbId && r.tmdbId === item.tmdbId) || 
+    (item.tvdbId && r.tvdbId === item.tvdbId) || 
+    (r.title && r.title.toLowerCase() === titleLow)
+  );
+  if (reqMatch) {
+    if (reqMatch.status === 'pending') {
+      return { label: 'Pending Offline', cssClass: 'bg-amber-500/20 text-amber-300 border border-amber-500/40', isRequested: true, isPending: true, isAvailable: false, requestId: reqMatch.id };
+    }
+    if (reqMatch.status === 'in_library') {
+      return { label: 'In Library', cssClass: 'badge-available', isRequested: false, isAvailable: true };
+    }
+    return { label: 'Requested', cssClass: 'badge-requested', isRequested: true, isAvailable: false, requestId: reqMatch.id };
+  }
+
+  if (type === 'movie') {
+    const match = libraryMovies.find(m => (item.tmdbId && m.tmdbId === item.tmdbId) || (m.title && m.title.toLowerCase() === titleLow));
+    if (match) {
+      if (match.hasFile) return { label: 'In Library', cssClass: 'badge-available', isAvailable: true };
+      return { label: 'Processing', cssClass: 'badge-processing', isAvailable: false };
+    }
+  } else if (type === 'tv') {
+    const match = librarySeries.find(s => (item.tvdbId && s.tvdbId === item.tvdbId) || (s.title && s.title.toLowerCase() === titleLow));
+    if (match) {
+      const isComplete = match.percentOfEpisodes === 100 || (match.statistics && match.statistics.percentOfEpisodes === 100);
+      if (isComplete) return { label: 'In Library', cssClass: 'badge-available', isAvailable: true };
+      return { label: 'Requested', cssClass: 'badge-requested', isAvailable: false };
+    }
+  }
+  return null;
+}
+
+async function apiGet(endpoint) {
+  const apiKey = localStorage.getItem('jellyseerr_api_key');
+  const headers = { 'Accept': 'application/json' };
+  if (apiKey) headers['X-Api-Key'] = apiKey;
+  const res = await fetch(BASE_URL + endpoint, { headers });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return await res.json();
+}
+
+async function apiPost(endpoint, payload) {
+  const apiKey = localStorage.getItem('jellyseerr_api_key');
+  const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+  if (apiKey) headers['X-Api-Key'] = apiKey;
+  const res = await fetch(BASE_URL + endpoint, {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = (data && data.message) ? data.message : ('HTTP ' + res.status);
+    throw new Error(msg);
+  }
+  return data;
+}
+
+function switchTab(tab) {
+  const tabs = ['discover', 'movies', 'tv', 'requests', 'services', 'downloads'];
+  tabs.forEach(t => {
+    const view = document.getElementById('view-' + t);
+    if (view) view.classList.add('hidden');
+    document.querySelectorAll('.nav-pill[data-tab="' + t + '"]').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.bnav-item[data-tab="' + t + '"]').forEach(b => b.classList.remove('active'));
+  });
+
+  const activeView = document.getElementById('view-' + tab);
+  if (activeView) activeView.classList.remove('hidden');
+
+  document.querySelectorAll('.nav-pill[data-tab="' + tab + '"]').forEach(b => b.classList.add('active'));
+  document.querySelectorAll('.bnav-item[data-tab="' + tab + '"]').forEach(b => b.classList.add('active'));
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  if (tab === 'requests') fetchRequestsList();
+  if (tab === 'services') fetchServicesList();
+  if (tab === 'downloads') fetchDownloads();
+  if (tab === 'movies' && currentMovies.length > 0) renderGrid('movies-full-grid', currentMovies);
+  if (tab === 'tv' && currentTv.length > 0) renderGrid('tv-full-grid', currentTv);
+}
+
+// Master Loader
+async function load() {
+  const hostBadge = document.getElementById('host-badge');
+  if (hostBadge) hostBadge.textContent = BASE_URL.replace(/https?:\/\//, '');
+
+  await Promise.allSettled([
+    fetchRequestsList(),
+    fetchLibrary(),
+    fetchTrending(),
+    fetchMovies(),
+    fetchTv(),
+    fetchProfilesAndFolders(),
+    fetchServicesList(),
+    fetchDownloads()
+  ]);
+}
+
+async function fetchTrending() {
+  try {
+    const data = await apiGet('/api/v1/discover/trending');
+    const items = (data && data.results) ? data.results : (Array.isArray(data) ? data : []);
+    currentTrending = items;
+    if (items.length > 0 && !heroItem) {
+      heroItem = items[0];
+      renderHero(items[0]);
+    }
+    renderGrid('trending-grid', items.slice(0, 16));
+  } catch (err) {}
+}
+
+async function fetchMovies() {
+  try {
+    const data = await apiGet('/api/v1/discover/movies');
+    currentMovies = (data && data.results) ? data.results : (Array.isArray(data) ? data : []);
+    renderGrid('movies-preview-grid', currentMovies.slice(0, 8));
+    const countEl = document.getElementById('movies-full-count');
+    if (countEl) countEl.textContent = currentMovies.length + ' titles';
+  } catch (e) {}
+}
+
+async function fetchTv() {
+  try {
+    const data = await apiGet('/api/v1/discover/tv');
+    currentTv = (data && data.results) ? data.results : (Array.isArray(data) ? data : []);
+    renderGrid('tv-preview-grid', currentTv.slice(0, 8));
+    const countEl = document.getElementById('tv-full-count');
+    if (countEl) countEl.textContent = currentTv.length + ' series';
+  } catch (e) {}
+}
+
+async function fetchLibrary() {
+  try {
+    const data = await apiGet('/api/v1/library');
+    libraryMovies = data.movies || [];
+    librarySeries = data.series || [];
+  } catch (e) {}
+}
+
+async function fetchProfilesAndFolders() {
+  try {
+    const [profiles, folders] = await Promise.all([
+      apiGet('/api/v1/quality-profiles').catch(() => ({})),
+      apiGet('/api/v1/root-folders').catch(() => ({}))
+    ]);
+    radarrQualityProfiles = profiles.radarr || [];
+    sonarrQualityProfiles = profiles.sonarr || [];
+    radarrRootFolders = folders.radarr || [];
+    sonarrRootFolders = folders.sonarr || [];
+  } catch (e) {}
+}
+
+async function fetchRequestsList() {
+  try {
+    const data = await apiGet('/api/v1/request');
+    activeRequestsList = (data && data.results) ? data.results : (Array.isArray(data) ? data : []);
+    const count = activeRequestsList.length;
+    const reqBadge = document.getElementById('req-nav-badge');
+    const mobBadge = document.getElementById('mobile-req-badge');
+    if (reqBadge) reqBadge.textContent = count;
+    if (mobBadge) {
+      if (count > 0) mobBadge.classList.remove('hidden');
+      else mobBadge.classList.add('hidden');
+    }
+    renderRequestsLedger();
+  } catch (e) {}
+}
+
+function renderRequestsLedger() {
+  const container = document.getElementById('requests-ledger-list');
+  if (!container) return;
+  if (activeRequestsList.length === 0) {
+    container.innerHTML = '<div class="text-center py-12 text-gray-500 text-xs">No active requests</div>';
+    return;
+  }
+
+  const pendingItems = activeRequestsList.filter(r => r.status === 'pending');
+  let html = '';
+
+  if (pendingItems.length > 0) {
+    html += 
+      '<div class="glass-card rounded-xl p-3 border border-amber-500/30 bg-amber-950/20 flex items-center justify-between gap-3 mb-3">' +
+        '<div class="flex items-center gap-2.5 min-w-0">' +
+          '<span class="relative flex h-2.5 w-2.5 flex-shrink-0">' +
+            '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>' +
+            '<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>' +
+          '</span>' +
+          '<div class="min-w-0">' +
+            '<h4 class="text-xs font-bold text-amber-200">' + pendingItems.length + ' Request' + (pendingItems.length > 1 ? 's' : '') + ' Queued Offline</h4>' +
+            '<p class="text-[10px] text-amber-300/80 truncate">Will auto-dispatch automatically once automation stack starts.</p>' +
+          '</div>' +
+        '</div>' +
+        '<button onclick="dispatchPendingNow()" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex-shrink-0 transition-all active:scale-95 shadow">' +
+          'Dispatch Now' +
+        '</button>' +
+      '</div>';
+  }
+
+  activeRequestsList.forEach(r => {
+    const dateStr = r.requestedAt ? new Date(r.requestedAt).toLocaleDateString() : 'Recent';
+    const typeLabel = (r.type === 'tv' ? 'TV' : 'MOVIE');
+    const serviceName = (r.type === 'tv' ? 'SONARR' : 'RADARR');
+    const isPending = r.status === 'pending';
+    const isInLib = r.status === 'in_library';
+
+    let badgeHtml = '';
+    let statusText = '';
+    if (isPending) {
+      badgeHtml = '<span class="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">PENDING OFFLINE</span>';
+      statusText = '<p class="text-[10px] text-amber-300/80 mt-0.5">Waiting for ' + serviceName + ' to start • Auto-dispatches on launch</p>';
+    } else if (isInLib) {
+      badgeHtml = '<span class="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40">IN LIBRARY</span>';
+      statusText = '<p class="text-[10px] text-sky-300/80 mt-0.5">Available in Jellyfin library • ' + dateStr + '</p>';
+    } else {
+      badgeHtml = '<span class="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">DISPATCHED</span>';
+      statusText = '<p class="text-[10px] text-gray-400 mt-0.5">' + serviceName + ' • ' + dateStr + '</p>';
+    }
+
+    html += 
+      '<div class="glass-card rounded-xl p-3 flex items-center justify-between gap-3 border ' + (isPending ? 'border-amber-500/30' : 'border-gray-800') + '">' +
+        '<div class="flex items-center gap-2.5 min-w-0">' +
+          '<div class="w-10 h-14 rounded overflow-hidden poster flex-shrink-0 border border-white/5">' +
+            '<img src="' + getPoster(r) + '" alt="' + r.title + '" class="w-full h-full object-cover pointer-events-none" onerror="handleImgError(this, \'' + (r.title || '').replace(/'/g, "\\'") + '\', \'' + (r.year || '') + '\')" />' +
+          '</div>' +
+          '<div class="min-w-0">' +
+            '<div class="flex items-center gap-1.5 mb-0.5">' +
+              '<span class="text-[9px] px-1 py-0.2 rounded font-mono font-bold bg-brand-500/20 text-brand-300">' + typeLabel + '</span>' +
+              '<span class="text-[11px] text-gray-400 font-mono">' + (r.year || '') + '</span>' +
+              badgeHtml +
+            '</div>' +
+            '<h4 class="text-xs sm:text-sm font-bold text-white truncate">' + (r.title || 'Untitled') + '</h4>' +
+            statusText +
+          '</div>' +
+        '</div>' +
+        '<button onclick="cancelRequestAction(' + r.id + ', \'' + (r.title || '').replace(/'/g, "\\'") + '\', \'' + r.type + '\', ' + (r.tmdbId || 0) + ', ' + (r.tvdbId || 0) + ')" class="px-2.5 py-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-300 text-[11px] font-semibold flex-shrink-0 transition-all active:scale-95">' +
+          (isPending ? 'Remove' : 'Cancel') +
+        '</button>' +
+      '</div>';
+  });
+  container.innerHTML = html;
+}
+
+async function dispatchPendingNow() {
+  showToast('Checking services & dispatching pending requests...', 'info');
+  try {
+    const res = await apiPost('/api/v1/request/dispatch-pending', {});
+    if (res && res.dispatched > 0) {
+      showToast('Successfully dispatched ' + res.dispatched + ' pending request(s)!', 'success');
+    } else if (res && res.pending > 0) {
+      showToast('Target service is still offline. ' + res.pending + ' request(s) remain queued.', 'warning');
+    } else {
+      showToast('No pending requests to dispatch.', 'info');
+    }
+    await fetchRequestsList();
+    await fetchLibrary();
+  } catch (e) {
+    showToast('Dispatch error: ' + (e.message || 'Service offline'), 'error');
+  }
+}
+
+async function cancelRequestAction(id, title, type, tmdbId, tvdbId) {
+  if (!confirm('Cancel request for "' + title + '" and unlink from automation?')) return;
+  showToast('Cancelling request for "' + title + '"...', 'info');
+  try {
+    const res = await apiPost('/api/v1/request/cancel', {
+      id: id,
+      title: title,
+      type: type,
+      tmdbId: tmdbId,
+      tvdbId: tvdbId
+    });
+    showToast(res.message || ('Cancelled: ' + title), 'success');
+    await fetchRequestsList();
+    await fetchLibrary();
+    if (activeModalItem && getItemTitle(activeModalItem) === title) {
+      openInstantModal(activeModalItem);
+    }
+    if (heroItem && getItemTitle(heroItem) === title) {
+      renderHero(heroItem);
+    }
+    if (currentTrending.length > 0) renderGrid('trending-grid', currentTrending.slice(0, 16));
+  } catch (err) {
+    showToast('Failed to cancel: ' + err.message, 'error');
+  }
+}
+
+// Services
+async function fetchServicesList() {
+  try {
+    const data = await apiGet('/api/v1/services');
+    const services = data.services || [];
+    renderServicesDashboard(services);
+    const anyOnline = services.some(s => s.online);
+    const navDot = document.getElementById('services-nav-badge');
+    if (navDot) navDot.className = 'w-2 h-2 rounded-full ' + (anyOnline ? 'bg-emerald-400' : 'bg-gray-500');
+  } catch (e) {}
+}
+
+function renderServicesDashboard(services) {
+  const grid = document.getElementById('services-grid');
+  if (!grid) return;
+  let html = '';
+  services.forEach(s => {
+    const isOnline = s.online;
+    html += 
+      '<div class="glass-card rounded-xl p-3 flex items-center justify-between gap-2.5 border border-gray-800">' +
+        '<div class="flex items-center gap-2.5">' +
+          '<div class="w-2.5 h-2.5 rounded-full ' + (isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600') + '"></div>' +
+          '<div>' +
+            '<h4 class="text-xs sm:text-sm font-bold text-white">' + s.name + '</h4>' +
+            '<p class="text-[10px] text-gray-400">' + s.category + ' • Port ' + s.port + '</p>' +
+          '</div>' +
+        '</div>' +
+        '<div class="flex items-center gap-2">' +
+          '<span class="text-[11px] font-mono ' + (isOnline ? 'text-emerald-400' : 'text-gray-500') + '">' + (isOnline ? 'Online' : 'Stopped') + '</span>' +
+          '<a href="' + s.url + '" target="_blank" class="px-2.5 py-1 rounded-lg border border-gray-800 text-[11px] text-gray-200 hover:text-white font-medium">Open</a>' +
+        '</div>' +
+      '</div>';
+  });
+  grid.innerHTML = html;
+}
+
+// Hero Rendering
+function renderHero(item) {
+  heroItem = item;
+  const bg = getBackdrop(item);
+  const poster = getPoster(item);
+  const title = getItemTitle(item);
+  const year = getItemYear(item);
+  const type = getItemType(item);
+
+  const heroBg = document.getElementById('hero-bg');
+  const heroPoster = document.getElementById('hero-poster');
+  if (heroBg) {
+    if (bg) heroBg.style.backgroundImage = 'url(' + bg + ')';
+    else heroBg.style.backgroundImage = 'linear-gradient(135deg, #1e1b4b 0%, #060913 100%)';
+  }
+  if (heroPoster) {
+    heroPoster.src = poster;
+    heroPoster.onerror = () => handleImgError(heroPoster, title, year);
+  }
+
+  document.getElementById('hero-title').textContent = title;
+  document.getElementById('hero-overview').textContent = item.overview || 'No synopsis provided.';
+  document.getElementById('hero-rating').textContent = (item.voteAverage || item.rating || 0).toFixed(1);
+  document.getElementById('hero-type-badge').textContent = type === 'tv' ? 'TV SHOW' : 'MOVIE';
+  document.getElementById('hero-meta').textContent = year + (item.certification ? ' • ' + item.certification : '') + (item.runtime ? ' • ' + item.runtime : '');
+
+  const genres = item.genres || [];
+  const genreNames = genres.map(g => (typeof g === 'string' ? g : g.name)).slice(0, 2);
+  document.getElementById('hero-genres').textContent = genreNames.join(' • ');
+
+  const libStatus = getItemLibraryStatus(item);
+  const heroStatus = document.getElementById('hero-library-status');
+  const actionText = document.getElementById('hero-action-text');
+  const actionBtn = document.getElementById('hero-action-btn');
+
+  if (heroStatus) {
+    if (libStatus) {
+      heroStatus.className = 'text-[10px] px-1.5 py-0.2 rounded font-medium ' + libStatus.cssClass;
+      heroStatus.textContent = libStatus.label;
+      heroStatus.classList.remove('hidden');
+    } else {
+      heroStatus.classList.add('hidden');
+    }
+  }
+
+  if (actionText && actionBtn) {
+    if (libStatus && libStatus.isRequested) {
+      actionText.textContent = 'Cancel Request';
+      actionBtn.className = 'px-3.5 py-1.5 rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-500/40 text-rose-300 font-semibold text-xs transition-all active:scale-95 shadow';
+      actionBtn.onclick = () => cancelRequestAction(libStatus.requestId, title, type, item.tmdbId, item.tvdbId);
+    } else if (libStatus && libStatus.isAvailable) {
+      actionText.textContent = 'In Library';
+      actionBtn.className = 'px-3.5 py-1.5 rounded-lg bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-semibold text-xs shadow';
+      actionBtn.onclick = () => showToast('Title already indexed and ready in Jellyfin', 'info');
+    } else {
+      actionText.textContent = 'Request ' + (type === 'tv' ? 'Series' : 'Movie');
+      actionBtn.className = 'px-3.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition-all active:scale-95 shadow';
+      actionBtn.onclick = () => openInstantModal(item);
+    }
+  }
+}
+
+function openHeroModal() {
+  if (heroItem) openInstantModal(heroItem);
+}
+
+// EXACT 4-COLUMN RESPONSIVE GRID (Mobile: 4, Tablet/PC: Max fit)
+function renderGrid(containerId, items) {
+  const grid = document.getElementById(containerId);
+  if (!grid) return;
+  grid.innerHTML = '';
+  if (!items || items.length === 0) {
+    grid.innerHTML = '<div class="col-span-full py-6 text-center text-gray-500 text-xs">No media found</div>';
+    return;
+  }
+
+  items.forEach(item => {
+    grid.appendChild(createMediaCard(item));
+  });
+}
+
+function createMediaCard(item) {
+  const title = getItemTitle(item);
+  const year = getItemYear(item);
+  const type = getItemType(item);
+  const rating = (item.voteAverage || item.rating || 0).toFixed(1);
+  const poster = getPoster(item);
+  const libStatus = getItemLibraryStatus(item);
+
+  // Button wrapper for 100% reliable touch & click handling without drag issues
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'group text-left p-0 bg-transparent border-0 focus:outline-none select-none w-full cursor-pointer';
+  card.onclick = (e) => {
+    e.stopPropagation();
+    openInstantModal(item);
+  };
+
+  let statusPillHtml = '';
+  if (libStatus) {
+    statusPillHtml = '<div class="absolute top-1 right-1 z-10"><span class="badge text-[8px] px-1 py-0.2 rounded font-bold ' + libStatus.cssClass + '">' + libStatus.label + '</span></div>';
+  }
+
+  card.innerHTML = 
+    '<div class="poster aspect-[2/3] rounded-lg overflow-hidden mb-1 relative border border-white/5 shadow-sm">' +
+      '<img src="' + poster + '" alt="' + title.replace(/"/g, '&quot;') + '" class="w-full h-full object-cover pointer-events-none select-none" loading="lazy" onerror="handleImgError(this, \'' + title.replace(/'/g, "\\'") + '\', \'' + year + '\')" />' +
+      statusPillHtml +
+      '<div class="absolute bottom-1 left-1 right-1 z-10 flex items-center justify-between pointer-events-none">' +
+        '<span class="badge text-[9px] px-1 py-0.2 rounded flex items-center gap-0.5 font-bold text-white">' +
+          '<svg class="w-2.5 h-2.5 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>' +
+          rating +
+        '</span>' +
+        '<span class="badge text-[8px] px-1 py-0.2 rounded font-mono font-bold text-gray-300">' + (type === 'tv' ? 'TV' : 'MOV') + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<p class="text-[11px] font-semibold truncate text-gray-200 group-hover:text-white leading-tight">' + title + '</p>' +
+    '<p class="text-[10px] text-gray-500 font-mono">' + year + '</p>';
+
+  return card;
+}
+
+// 1-TAP INSTANT ACTION MODAL (NO SCROLLING DOWN!)
+function openInstantModal(item) {
+  if (!item) return;
+  activeModalItem = item;
+
+  const modal = document.getElementById('details-modal');
+  const bg = getBackdrop(item);
+  const poster = getPoster(item);
+  const title = getItemTitle(item);
+  const year = getItemYear(item);
+  const type = getItemType(item);
+
+  document.getElementById('modal-backdrop').style.backgroundImage = bg ? ('url(' + bg + ')') : 'none';
+  const mPoster = document.getElementById('modal-poster');
+  mPoster.src = poster;
+  mPoster.onerror = () => handleImgError(mPoster, title, year);
+
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-year').textContent = year;
+  document.getElementById('modal-type').textContent = type === 'tv' ? 'TV SHOW' : 'MOVIE';
+  document.getElementById('modal-rating').textContent = (item.voteAverage || item.rating || 0).toFixed(1);
+  document.getElementById('modal-runtime').textContent = item.runtime ? (item.runtime + (String(item.runtime).includes('m') ? '' : ' mins')) : '';
+  document.getElementById('modal-overview').textContent = item.overview || 'No synopsis provided.';
+
+  // Quality Profiles
+  const qSelect = document.getElementById('modal-quality');
+  qSelect.innerHTML = '';
+  const profiles = (type === 'tv' ? sonarrQualityProfiles : radarrQualityProfiles);
+  if (profiles.length > 0) {
+    profiles.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      if (p.name.toLowerCase().includes('1080p')) opt.selected = true;
+      qSelect.appendChild(opt);
+    });
+  } else {
+    qSelect.innerHTML = '<option value="4" selected>HD-1080p (Optimal)</option><option value="5">Ultra-HD (4K)</option><option value="1">Any Quality</option>';
+  }
+
+  // Root Folders
+  const rfSelect = document.getElementById('modal-root');
+  rfSelect.innerHTML = '';
+  const folders = (type === 'tv' ? sonarrRootFolders : radarrRootFolders);
+  if (folders.length > 0) {
+    folders.forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f;
+      opt.textContent = f;
+      rfSelect.appendChild(opt);
+    });
+  } else {
+    const defaultPath = (type === 'tv' ? '/storage/emulated/0/FishbowlMedia/TV' : '/storage/emulated/0/FishbowlMedia/Movies');
+    rfSelect.innerHTML = '<option value="' + defaultPath + '">' + defaultPath + '</option>';
+  }
+
+  // TV Seasons Chips
+  const tvSection = document.getElementById('modal-tv-section');
+  const seasonsGrid = document.getElementById('modal-seasons-chips');
+  seasonsGrid.innerHTML = '';
+  modalSelectedSeasons = [];
+
+  if (type === 'tv') {
+    tvSection.classList.remove('hidden');
+    const seasonsList = (item.seasons && item.seasons.length > 0) ? item.seasons : [{ seasonNumber: 1, episodeCount: 10 }];
+    seasonsList.forEach(s => {
+      if (s.seasonNumber === 0) return;
+      modalSelectedSeasons.push(s.seasonNumber);
+      const chip = document.createElement('div');
+      chip.className = 'season-chip selected';
+      chip.textContent = 'S' + s.seasonNumber + (s.episodeCount ? ' (' + s.episodeCount + ' eps)' : '');
+      chip.onclick = () => {
+        chip.classList.toggle('selected');
+        const num = parseInt(s.seasonNumber, 10);
+        if (chip.classList.contains('selected')) {
+          if (!modalSelectedSeasons.includes(num)) modalSelectedSeasons.push(num);
+        } else {
+          modalSelectedSeasons = modalSelectedSeasons.filter(x => x !== num);
+        }
+      };
+      seasonsGrid.appendChild(chip);
+    });
+  } else {
+    tvSection.classList.add('hidden');
+  }
+
+  const libStatus = getItemLibraryStatus(item);
+  const statusBadge = document.getElementById('modal-status-badge');
+  const submitBtn = document.getElementById('modal-submit-btn');
+  const submitText = document.getElementById('modal-submit-text');
+  const cancelBtn = document.getElementById('modal-cancel-btn');
+
+  if (libStatus) {
+    statusBadge.className = 'text-[9px] px-1.5 py-0.2 rounded font-medium ' + libStatus.cssClass;
+    statusBadge.textContent = libStatus.label;
+    statusBadge.classList.remove('hidden');
+  } else {
+    statusBadge.classList.add('hidden');
+  }
+
+  if (libStatus && libStatus.isRequested) {
+    if (libStatus.isPending) {
+      statusBadge.className = 'text-[9px] px-1.5 py-0.5 rounded font-medium ' + libStatus.cssClass;
+      statusBadge.textContent = 'Pending Offline';
+      statusBadge.classList.remove('hidden');
+      submitBtn.classList.remove('hidden');
+      cancelBtn.classList.remove('hidden');
+      submitBtn.className = 'w-full py-2.5 rounded-xl bg-amber-950/70 border border-amber-500/50 text-amber-300 font-semibold text-xs flex items-center justify-center gap-2 shadow';
+      submitText.textContent = '⏱ Queued in Pending Requests';
+      submitBtn.onclick = () => showToast('This request will automatically dispatch when ' + (type === 'tv' ? 'Sonarr' : 'Radarr') + ' starts.', 'info');
+      cancelBtn.onclick = () => cancelRequestAction(libStatus.requestId, title, type, item.tmdbId, item.tvdbId);
+    } else {
+      statusBadge.className = 'text-[9px] px-1.5 py-0.2 rounded font-medium ' + libStatus.cssClass;
+      statusBadge.textContent = libStatus.label;
+      statusBadge.classList.remove('hidden');
+      submitBtn.classList.add('hidden');
+      cancelBtn.classList.remove('hidden');
+      cancelBtn.onclick = () => cancelRequestAction(libStatus.requestId, title, type, item.tmdbId, item.tvdbId);
+    }
+  } else if (libStatus && libStatus.isAvailable) {
+    submitBtn.classList.remove('hidden');
+    cancelBtn.classList.add('hidden');
+    submitBtn.className = 'w-full py-2.5 rounded-xl bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 font-semibold text-xs flex items-center justify-center gap-2 shadow';
+    submitText.textContent = '✓ In Library (Already Downloaded)';
+    submitBtn.onclick = () => showToast('Title is already downloaded and ready in Jellyfin. Skipping download.', 'info');
+  } else {
+    submitBtn.classList.remove('hidden');
+    cancelBtn.classList.add('hidden');
+    submitBtn.className = 'w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow transition-all active:scale-95';
+    submitText.textContent = 'Request ' + (type === 'tv' ? 'Series' : 'Movie');
+    submitBtn.onclick = () => executeInstantRequest();
+  }
+
+  modal.classList.remove('hidden');
+}
+
+async function executeInstantRequest() {
+  if (!activeModalItem) return;
+  const item = activeModalItem;
+  const title = getItemTitle(item);
+  const type = getItemType(item);
+
+  // Prevent duplicate downloads if title is already in library
+  const currentLibStatus = getItemLibraryStatus(item);
+  if (currentLibStatus && currentLibStatus.isAvailable) {
+    showToast('Movie is already downloaded and present in library! Skipping download.', 'info');
+    return;
+  }
+  const quality = document.getElementById('modal-quality').value;
+  const root = document.getElementById('modal-root').value;
+  const service = (type === 'tv' ? 'sonarr' : 'radarr');
+
+  const submitBtn = document.getElementById('modal-submit-btn');
+  const submitText = document.getElementById('modal-submit-text');
+  if (submitBtn) submitBtn.disabled = true;
+  if (submitText) submitText.textContent = 'Routing to ' + service.toUpperCase() + '...';
+
+  const payload = {
+    type: type,
+    mediaType: type,
+    item: item,
+    title: title,
+    mediaId: item.id || item.tmdbId || item.tvdbId,
+    tmdbId: item.tmdbId || item.id,
+    tvdbId: item.tvdbId || item.id,
+    qualityProfileId: parseInt(quality, 10) || 4,
+    profileId: parseInt(quality, 10) || 4,
+    rootFolderPath: root,
+    rootFolder: root
+  };
+
+  if (type === 'tv' && modalSelectedSeasons.length > 0) {
+    payload.seasons = modalSelectedSeasons;
+  }
+
+  try {
+    const res = await apiPost('/api/v1/request', payload);
+    if (!res || res.success === false) {
+      const errTxt = (res && res.message) ? res.message : 'Unknown rejection from server';
+      showToast('Request rejected: ' + errTxt, 'error');
+      if (submitText) submitText.textContent = 'Request Failed';
+      return;
+    }
+    if (res.alreadyExists) {
+      showToast(res.message || 'Title is already in library! Skipping duplicate download.', 'info');
+      await fetchLibrary();
+      await fetchRequestsList();
+      openInstantModal(item);
+      return;
+    }
+    if (res.alreadyPending) {
+      showToast(res.message || 'Title is already in Pending Requests queue!', 'warning');
+      await fetchRequestsList();
+      openInstantModal(item);
+      return;
+    }
+    if (res.pending) {
+      showToast(res.message || (service.toUpperCase() + ' offline: Saved to Pending Requests (will auto-dispatch on start)'), 'warning');
+      if (submitText) submitText.textContent = 'Saved to Pending!';
+      await fetchRequestsList();
+      setTimeout(() => {
+        document.getElementById('details-modal').classList.add('hidden');
+        if (heroItem && getItemTitle(heroItem) === title) renderHero(heroItem);
+        if (currentTrending.length > 0) renderGrid('trending-grid', currentTrending.slice(0, 16));
+      }, 1000);
+      return;
+    }
+    showToast('Routed to ' + service.toUpperCase() + ': "' + title + '"', 'success');
+    if (submitText) submitText.textContent = 'Requested Successfully!';
+    await fetchRequestsList();
+    await fetchLibrary();
+    setTimeout(() => {
+      document.getElementById('details-modal').classList.add('hidden');
+      if (heroItem && getItemTitle(heroItem) === title) renderHero(heroItem);
+      if (currentTrending.length > 0) renderGrid('trending-grid', currentTrending.slice(0, 16));
+    }, 800);
+  } catch (err) {
+    showToast('Request failed: ' + (err.message || 'Network error'), 'error');
+    if (submitText) submitText.textContent = 'Request Failed';
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+document.getElementById('modal-close-btn').addEventListener('click', () => {
+  document.getElementById('details-modal').classList.add('hidden');
+});
+
+// Search
+let searchDebounceTimer = null;
+const searchInput = document.getElementById('search-input');
+const searchClear = document.getElementById('search-clear');
+const searchSection = document.getElementById('search-section');
+
+searchInput.addEventListener('input', () => {
+  const query = searchInput.value.trim();
+  if (query.length > 0) {
+    searchClear.classList.remove('hidden');
+  } else {
+    searchClear.classList.add('hidden');
+    searchSection.classList.add('hidden');
+    return;
+  }
+
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(async () => {
+    if (query.length < 2) return;
+    try {
+      document.getElementById('search-query-badge').textContent = '"' + query + '"';
+      searchSection.classList.remove('hidden');
+      const data = await apiGet('/api/v1/search?q=' + encodeURIComponent(query));
+      const results = (data && data.results) ? data.results : (Array.isArray(data) ? data : []);
+      renderGrid('search-grid', results);
+      searchSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) {
+      document.getElementById('search-grid').innerHTML = '<div class="col-span-full py-4 text-center text-gray-500 text-xs">Search unavailable</div>';
+    }
+  }, 300);
+});
+
+searchClear.addEventListener('click', () => {
+  searchInput.value = '';
+  searchClear.classList.add('hidden');
+  searchSection.classList.add('hidden');
+});
+
+document.getElementById('search-close-btn').addEventListener('click', () => {
+  searchSection.classList.add('hidden');
+});
+
+// Downloads
+async function fetchDownloads() {
+  try {
+    const torrents = await apiGet('/api/v1/downloads');
+    renderDownloads(torrents || []);
+  } catch (e) {}
+}
+
+function renderDownloads(torrents) {
+  const container = document.getElementById('downloads-ledger-list');
+  const countBadge = document.getElementById('dl-count');
+  const speedBadge = document.getElementById('tab-dl-speed');
+
+  if (countBadge) countBadge.textContent = torrents.length;
+  let totalSpeed = 0;
+  torrents.forEach(t => totalSpeed += (t.rateDownload || 0));
+  if (speedBadge) speedBadge.textContent = (totalSpeed / 1048576).toFixed(2);
+
+  if (!container) return;
+  if (torrents.length === 0) {
+    container.innerHTML = '<div class="text-center py-12 text-gray-500 text-xs">Transmission idle • Zero active downloads</div>';
+    return;
+  }
+
+  let html = '';
+  torrents.forEach(t => {
+    const pct = ((t.percentDone || 0) * 100).toFixed(1);
+    const speed = ((t.rateDownload || 0) / 1048576).toFixed(2) + ' MB/s';
+    const isPaused = t.status === 0;
+
+    html += 
+      '<div class="glass-card rounded-xl p-3 space-y-1.5 border border-gray-800">' +
+        '<div class="flex items-center justify-between text-xs">' +
+          '<div class="font-medium text-gray-200 truncate" title="' + t.name + '">' + t.name + '</div>' +
+          '<div class="font-mono text-gray-400 font-bold">' + pct + '%</div>' +
+        '</div>' +
+        '<div class="dl-track">' +
+          '<div class="dl-fill ' + (isPaused ? 'paused' : '') + '" style="width: ' + pct + '%"></div>' +
+        '</div>' +
+        '<div class="flex items-center justify-between text-[10px] text-gray-400">' +
+          '<span>' + speed + ' • ' + (isPaused ? 'PAUSED' : 'DOWNLOADING') + '</span>' +
+          '<div class="flex items-center gap-2">' +
+            '<button class="px-2 py-0.5 rounded border border-gray-800 text-gray-200 text-[10px]" onclick="toggleTorrentPause(' + t.id + ', ' + isPaused + ')">' + (isPaused ? 'Resume' : 'Pause') + '</button>' +
+            '<button class="px-2 py-0.5 rounded bg-rose-950/60 border border-rose-500/30 text-rose-300 text-[10px]" onclick="deleteTorrentItem(' + t.id + ')">Delete</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  });
+  container.innerHTML = html;
+}
+
+async function toggleTorrentPause(id, isPaused) {
+  const endpoint = isPaused ? '/api/v1/downloads/resume' : '/api/v1/downloads/pause';
+  await apiPost(endpoint, { id: id });
+  fetchDownloads();
+}
+
+async function deleteTorrentItem(id) {
+  if (!confirm('Remove download and delete files from storage?')) return;
+  await apiPost('/api/v1/downloads/delete', { id: id, deleteData: true });
+  showToast('Download removed', 'info');
+  fetchDownloads();
+}
+
+// Settings
+const settingsModal = document.getElementById('settings-modal');
+document.getElementById('btn-open-settings').addEventListener('click', () => {
+  document.getElementById('cfg-host').value = BASE_URL;
+  document.getElementById('cfg-api-key').value = localStorage.getItem('jellyseerr_api_key') || '';
+  settingsModal.classList.remove('hidden');
+});
+document.getElementById('settings-close-btn').addEventListener('click', () => {
+  settingsModal.classList.add('hidden');
+});
+document.getElementById('cfg-save-btn').addEventListener('click', () => {
+  const newHost = document.getElementById('cfg-host').value.trim();
+  const newKey = document.getElementById('cfg-api-key').value.trim();
+  if (newHost) {
+    localStorage.setItem('jellyseerr_host', newHost);
+    BASE_URL = newHost;
+  }
+  if (newKey) localStorage.setItem('jellyseerr_api_key', newKey);
+  else localStorage.removeItem('jellyseerr_api_key');
+  settingsModal.classList.add('hidden');
+  showToast('Saved endpoint: ' + BASE_URL, 'success');
+  load();
+});
+document.getElementById('cfg-reset-btn').addEventListener('click', () => {
+  localStorage.removeItem('jellyseerr_host');
+  localStorage.removeItem('jellyseerr_api_key');
+  BASE_URL = resolveBaseUrl();
+  document.getElementById('cfg-host').value = BASE_URL;
+  document.getElementById('cfg-api-key').value = '';
+  settingsModal.classList.add('hidden');
+  showToast('Reset to default endpoint', 'info');
+  load();
+});
+
+// Boot
+load();
+setInterval(() => {
+  fetchServicesList();
+  fetchDownloads();
+}, 8000);
+setInterval(() => {
+  fetchRequestsList();
+  fetchLibrary();
+}, 25000);
+</script>
+</body>
+</html>
