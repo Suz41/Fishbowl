@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/Suz41/Fishbowl/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/Suz41/Fishbowl/build.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="Build Status" /></a>
-  <a href="https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8"><img src="https://img.shields.io/badge/Release-v1.4.8-00A4DC?style=flat-square" alt="Release" /></a>
+  <a href="https://github.com/Suz41/Fishbowl/releases/tag/v1.4.9-beta.1"><img src="https://img.shields.io/badge/Release-v1.4.9--beta.1-00A4DC?style=flat-square" alt="Release" /></a>
   <a href="https://jellyfin.org"><img src="https://img.shields.io/badge/Jellyfin%20Core-12.1.0-9B59B6?style=flat-square&logo=jellyfin&logoColor=white" alt="Jellyfin" /></a>
   <a href="https://dotnet.microsoft.com"><img src="https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4?style=flat-square&logo=dotnet&logoColor=white" alt=".NET" /></a>
   <a href="https://android.com"><img src="https://img.shields.io/badge/Platform-Android%20ARM64-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android" /></a>
@@ -68,9 +68,9 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 ### Step 1: Download & Install
 
 1. Download the latest universal release package:
-   - [**Fishbowl v1.4.8 (Stable)**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8) (`Fishbowl-v1.4.8-release-universal.apk`)
-   - **SHA-256 Verification:** `91A424E63C6AC400C1C85134470CF96EE13F46996AB05668F70DC9447ED76F6F`
-   - **Package Size:** 338,869,921 bytes (~323.17 MiB)
+   - [**Fishbowl v1.4.9-beta.1 (Pre-release)**](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.9-beta.1) (`Fishbowl-v1.4.9-beta.1-release-universal.apk`)
+   - **SHA-256 Verification:** `A96BDECF7A7B0B4D48EB38E655489EBDB28B264204844078201F57AF07F12414`
+   - **Package Size:** 338,578,148 bytes (~322.9 MiB)
 2. Install the APK on your ARM64 device.
 3. Grant required runtime permissions when prompted:
    - **All-Files Storage Access (`MANAGE_EXTERNAL_STORAGE`):** Allows Jellyfin and automation tools to index video and audio files across internal and external storage volumes.
@@ -196,6 +196,7 @@ flowchart TD
         LIDARR["Lidarr (Music :8686)"]
         BAZARR["Bazarr (Subtitles :6767)"]
         PROWLARR["Prowlarr (Indexers :9696)"]
+        JACKETT["Jackett (Indexers :9117)"]
         TRANS["Transmission 4.1.4 (:9091)"]
         SEERR["Seerr Discovery (:5055)"]
         SOLVER["Native FlareSolver (:8191)"]
@@ -234,8 +235,11 @@ flowchart TD
 - **Dedicated Download Directory Routing:** Dedicated download staging paths for Radarr (`Downloads/radarr`) and Sonarr (`Downloads/sonarr`) to bypass label-drop issues and ensure zero import collisions.
 - **Automated Deduplication Watcher:** Background storage guardian that auto-detects and purges completed staging duplicates once media is successfully imported into library folders, conserving critical flash storage.
 - **Lazy On-Demand Companion Deployment:** Non-core companion services (such as Seerr media discovery engine) deploy strictly on-demand when the user chooses to install them, eliminating storage bloat and unnecessary background daemon overhead on initial launch.
-- **Integrated Companion Orchestration:** Native support and health monitoring for Radarr, Sonarr, Prowlarr, Transmission daemon, Seerr (media requests), and Lidarr.
-- **Home Screen Supervision Widgets:** Glanceable service state tiles and quick-toggle controls directly from the Android home launcher.
+- **Jackett Indexer Proxy Integration:** Native Jackett daemon integration on port :9117 with custom Blaze Orange typographic iconography, Torznab auto-wiring, and direct indexer feed translation for Radarr and Sonarr.
+- **In-App Movie Importer Engine:** Embedded metadata provider, filename parsing heuristics, and download detection watcher automatically renaming and organizing incoming media into Jellyfin library paths.
+- **Integrated Companion Orchestration:** Native support and health monitoring for Jellyfin, Radarr, Sonarr, Prowlarr, Jackett, Transmission daemon, Seerr (media requests), Bazarr, and Lidarr.
+- **5-Column Multi-Row Service Dock:** In-app home screen dock cleanly organizing 9 managed companion services across two balanced, proportional rows.
+- **Dual-Tier Android App Widgets (5x2 Grid):** Refactored home launcher widgets mirroring the 5-column in-app dock with electric crimson (#FF1744) crash alerting and real-time status beacons.
 
 ### User Interface & Diagnostics
 - **Modernized Dynamic Foreground Notification:** Live bootstrap progress indicator (`Fishbowl • Setup (X%)`), real-time chronometer uptime counter, color-coded status badges (Emerald Green for running, Amber for starting, Sky Blue for setup, Crimson for errors), and quick action controls (Open Web UI, Dashboard, Stop All, Retry).
@@ -263,6 +267,7 @@ Fishbowl integrates tested native binaries and runtimes compiled for the Android
 | **Lidarr** | `2.9.6` (ARM64) | Music collection manager and automated audio grabber | [GPLv3](https://github.com/Lidarr/Lidarr) |
 | **Bazarr** | `1.4.5` (Python / Waitress) | Automated subtitle synchronization and multi-provider downloader | [GPLv3](https://github.com/morpheus65535/bazarr) |
 | **Prowlarr** | `1.21.2` (ARM64) | Unified torrent indexer proxy manager integrating with Radarr, Sonarr, and Lidarr | [GPLv3](https://github.com/Prowlarr/Prowlarr) |
+| **Jackett** | `0.22.x` (ARM64) | Standalone torrent indexer proxy translator translating queries into Torznab feeds | [GPLv2](https://github.com/Jackett/Jackett) |
 | **Transmission Daemon** | `4.1.4` (ARM64 Bionic) | Headless native BitTorrent download client with RPC management | [GPLv2 / GPLv3](https://github.com/transmission/transmission) |
 | **Seerr** | `2.2.0` (Node.js) | Media discovery, request management, and user voting portal for Jellyfin | [MIT](https://github.com/fallenbagel/jellyseerr) |
 | **SQLite3 Database Driver** | `3.46.1` (`libe_sqlite3.so`) | Embedded relational database engine storing user library catalogs, metadata, and watch progress | [Public Domain](https://sqlite.org) |
@@ -283,6 +288,7 @@ Fishbowl coordinates and monitors the complete self-hosted media lifecycle throu
 | **Lidarr** | `8686` | HTTP / REST API | .NET 10 (ARM64) | Music track and album management, metadata retrieval, and organization |
 | **Bazarr** | `6767` | HTTP / REST API | Python 3 (Waitress) | Subtitle synchronization engine and multi-provider subtitle downloader |
 | **Prowlarr** | `9696` | HTTP / REST API | .NET 10 (ARM64) | Centralized torrent indexer proxy manager syncing with Radarr, Sonarr, and Lidarr |
+| **Jackett** | `9117` | HTTP / Torznab | Native C# / .NET | Individual torrent tracker indexer proxy with Torznab API auto-wiring |
 | **Transmission** | `9091` | HTTP / RPC | Native C (Bionic) | Headless BitTorrent download engine with dedicated staging directory routing |
 | **Seerr** | `5055` | HTTP / WebSocket | Node.js Runtime | Media discovery, user request voting, and Jellyfin library sync |
 | **Native FlareSolver** | `8191` | HTTP (Headless) | Android Chromium Engine | In-app headless challenge solver for Prowlarr indexer queries |
@@ -530,13 +536,9 @@ adb shell "dumpsys deviceidle whitelist | grep com.fishbowl.app"
 
 ---
 
-## Contributors
+## Maintainer
 
-<p align="center">
-  <a href="https://github.com/Suz41/Fishbowl/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=Suz41/Fishbowl" alt="Contributors" />
-  </a>
-</p>
+Fishbowl is created, maintained, and actively developed by **Sujal Achari** ([@Suz41](https://github.com/Suz41)).
 
 ---
 
@@ -585,6 +587,7 @@ This project is licensed under the [GNU General Public License v3.0](LICENSE). F
 - **Radarr / Sonarr / Prowlarr / Lidarr:** Licensed under GNU General Public License v3.0.
 - **Bazarr:** Licensed under GNU General Public License v3.0.
 - **Transmission:** Licensed under GNU General Public License v2.0 / v3.0.
+- **Jackett:** Licensed under GNU General Public License v2.0.
 - **Seerr (Jellyseerr):** Licensed under the MIT License.
 - **Termux Components:** Licensed under GNU General Public License v3.0 / Apache 2.0 / MIT.
 - **Node.js LTS:** Licensed under the MIT License.
