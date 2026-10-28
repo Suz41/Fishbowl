@@ -47,10 +47,22 @@ android {
         applicationId "com.fishbowl.app"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 101414
-        versionName "1.4.8"
+        versionCode 101416
+        versionName "1.4.9-beta.1"
 
-        if (appVersionName) versionName = appVersionName
+        if (project.hasProperty("appVersionCode")) {
+            versionCode project.property("appVersionCode").toInteger()
+        } else if (System.getenv("FISHBOWL_VERSION_CODE")) {
+            versionCode System.getenv("FISHBOWL_VERSION_CODE").toInteger()
+        }
+
+        if (project.hasProperty("appVersionName")) {
+            versionName project.property("appVersionName")
+        } else if (System.getenv("FISHBOWL_VERSION_NAME")) {
+            versionName System.getenv("FISHBOWL_VERSION_NAME")
+        } else if (appVersionName) {
+            versionName appVersionName
+        }
         validateVersionName(versionName)
 
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
@@ -88,11 +100,29 @@ android {
             storePassword 'xrj45yWGLbsO7W0v'
             keyPassword 'xrj45yWGLbsO7W0v'
         }
+
+        release {
+            // Secure production keystore resolution:
+            // Prioritizes environment variables (CI secrets) or project properties.
+            // Safely falls back to testkey_untrusted.jks for local developer builds & CI validation.
+            def releaseKeyStorePath = System.getenv("FISHBOWL_RELEASE_KEYSTORE_PATH") ?: (project.findProperty("FISHBOWL_RELEASE_KEYSTORE_PATH") ?: null)
+            if (releaseKeyStorePath && file(releaseKeyStorePath).exists()) {
+                storeFile file(releaseKeyStorePath)
+                keyAlias System.getenv("FISHBOWL_RELEASE_KEY_ALIAS") ?: (project.findProperty("FISHBOWL_RELEASE_KEY_ALIAS") ?: 'alias')
+                storePassword System.getenv("FISHBOWL_RELEASE_STORE_PASSWORD") ?: (project.findProperty("FISHBOWL_RELEASE_STORE_PASSWORD") ?: '')
+                keyPassword System.getenv("FISHBOWL_RELEASE_KEY_PASSWORD") ?: (project.findProperty("FISHBOWL_RELEASE_KEY_PASSWORD") ?: '')
+            } else {
+                storeFile file('testkey_untrusted.jks')
+                keyAlias 'alias'
+                storePassword 'xrj45yWGLbsO7W0v'
+                keyPassword 'xrj45yWGLbsO7W0v'
+            }
+        }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             minifyEnabled true
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
