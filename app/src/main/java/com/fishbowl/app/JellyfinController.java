@@ -734,6 +734,15 @@ public class JellyfinController {
                 appendLogLocked("launchServer: Terminating previous deadlocked/stale Jellyfin process before launching new instance");
                 jellyfinProcess.destroyForcibly();
                 jellyfinProcess = null;
+            } else if (isHealthy()) {
+                appendLogLocked("launchServer: Port 8096 occupied by external or unmanaged process. Reclaiming port before launch...");
+                try {
+                    com.fishbowl.app.services.MediaServiceManager.getInstance(ctx != null ? ctx : appContext).killProcessByPattern("jellyfin.dll");
+                } catch (Throwable ignored) {}
+                try {
+                    Thread.sleep(600);
+                } catch (InterruptedException ignored) {}
+                waitForPortRelease();
             }
             startupStartTimeMs = System.currentTimeMillis();
             listeningStartTimeMs = 0;
@@ -831,6 +840,13 @@ public class JellyfinController {
                 env.put("SSL_CERT_FILE", certFile.getAbsolutePath());
                 env.put("SSL_CERT_DIR", certFile.getParentFile().getAbsolutePath());
             }
+            File sslCnf = new File(prefixDir, "etc/tls/openssl.cnf");
+            if (sslCnf.exists()) {
+                env.put("OPENSSL_CONF", sslCnf.getAbsolutePath());
+            } else {
+                env.put("OPENSSL_CONF", "/dev/null");
+            }
+            env.put("DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER", "1");
 
             // §2: Merge stdout+stderr to prevent blocked pipe
             pb.redirectErrorStream(true);
@@ -1053,6 +1069,11 @@ public class JellyfinController {
             process = jellyfinProcess;
             if (process == null || !process.isAlive()) {
                 jellyfinProcess = null;
+                if (isHealthy()) {
+                    try {
+                        com.fishbowl.app.services.MediaServiceManager.getInstance(appContext).killProcessByPattern("jellyfin.dll");
+                    } catch (Throwable ignored) {}
+                }
                 if (currentState != State.STOPPED) setStateLocked(State.STOPPED);
                 return;
             }
@@ -1221,7 +1242,15 @@ public class JellyfinController {
         File dataDir = getProgramDataDir();
         File logDir = new File(dataDir, "log");
         if (!logDir.exists() || !logDir.isDirectory()) return "";
-        File[] files = logDir.listFiles((dir, name) -> name.endsWith(".log"));
+        // Prioritize official Jellyfin server log files (log_YYYYMMDD.log)
+        File[] files = logDir.listFiles((dir, name) -> name.startsWith("log_") && name.endsWith(".log"));
+        if (files == null || files.length == 0) {
+            // Fall back to server logs excluding FFmpeg transcode artifacts
+            files = logDir.listFiles((dir, name) -> name.endsWith(".log") && !name.startsWith("FFmpeg") && !name.startsWith("JellyfinEnhanced"));
+        }
+        if (files == null || files.length == 0) {
+            files = logDir.listFiles((dir, name) -> name.endsWith(".log"));
+        }
         if (files == null || files.length == 0) return "";
         File latest = files[0];
         for (File f : files) {
@@ -1231,7 +1260,7 @@ public class JellyfinController {
         }
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(latest, "r")) {
             long len = raf.length();
-            long start = Math.max(0, len - 32768);
+            long start = Math.max(0, len - 131072);
             raf.seek(start);
             byte[] bytes = new byte[(int) (len - start)];
             raf.readFully(bytes);

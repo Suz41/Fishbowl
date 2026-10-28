@@ -122,6 +122,9 @@ public class FishbowlWidgetProvider extends AppWidgetProvider {
         boolean anyRunning = !runningServices.isEmpty();
         boolean isStarting = (jfState == JellyfinController.State.STARTING || jfState == JellyfinController.State.INITIALIZING);
         boolean isStopping = (jfState == JellyfinController.State.STOPPING);
+        boolean isCrashed = (jfState == JellyfinController.State.CRASHED
+                || jfState == JellyfinController.State.CRASH_LOOP
+                || jfState == JellyfinController.State.FAILED);
         String lanEndpoint = getLanAddress();
 
         // 1. Header: Uptime & Status Beacon

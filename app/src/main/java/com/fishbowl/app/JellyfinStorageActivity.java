@@ -1,5 +1,7 @@
 package com.fishbowl.app;
 
+import com.termux.R;
+
 import android.Manifest;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -152,60 +154,33 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     }
 
     private View buildView() {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(COLOR_BG);
-        scroll.setFillViewport(true);
+        LinearLayout outerRoot = new LinearLayout(this);
+        outerRoot.setOrientation(LinearLayout.VERTICAL);
+        outerRoot.setBackgroundColor(COLOR_BG);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(16), dp(16), dp(24));
-
-        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+        // Apply system bar insets
+        ViewCompat.setOnApplyWindowInsetsListener(outerRoot, (v, insets) -> {
             androidx.core.graphics.Insets statusBarInset = insets.getInsets(WindowInsetsCompat.Type.statusBars());
             androidx.core.graphics.Insets navBarInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
-            v.setPadding(dp(16), statusBarInset.top + dp(12), dp(16), navBarInset.bottom + dp(20));
+            v.setPadding(0, statusBarInset.top, 0, navBarInset.bottom);
             return insets;
         });
 
-        // Top Header Bar
-        LinearLayout headerRow = new LinearLayout(this);
-        headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setGravity(Gravity.CENTER_VERTICAL);
-        headerRow.setPadding(0, 0, 0, dp(18));
+        // 1. Pinned Header Bar (matching FishbowlActivity)
+        outerRoot.addView(buildHeaderBar());
 
-        TextView btnBack = new TextView(this);
-        btnBack.setText("←");
-        btnBack.setTextSize(18);
-        btnBack.setGravity(Gravity.CENTER);
-        btnBack.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        btnBack.setTextColor(COLOR_TEXT_PRIMARY);
-        btnBack.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(18), COLOR_ACCENT));
-        LinearLayout.LayoutParams pBack = new LinearLayout.LayoutParams(dp(36), dp(36));
-        pBack.rightMargin = dp(14);
-        btnBack.setLayoutParams(pBack);
-        btnBack.setClickable(true);
-        btnBack.setFocusable(true);
-        btnBack.setOnClickListener(v -> finish());
-        headerRow.addView(btnBack);
+        // 2. Scrollable Body
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(COLOR_BG);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        scroll.setSmoothScrollingEnabled(true);
 
-        LinearLayout titleCol = new LinearLayout(this);
-        titleCol.setOrientation(LinearLayout.VERTICAL);
-
-        TextView title = new TextView(this);
-        title.setText("Media Manager");
-        title.setTextSize(20);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        title.setTextColor(COLOR_TEXT_PRIMARY);
-        titleCol.addView(title);
-
-        TextView subtitle = new TextView(this);
-        subtitle.setText("Storage folders, library roots & staging");
-        subtitle.setTextSize(12);
-        subtitle.setTextColor(COLOR_TEXT_MUTED);
-        titleCol.addView(subtitle);
-
-        headerRow.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
-        root.addView(headerRow);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(12), dp(16), dp(28));
 
         // Permission Status Banner
         permissionBanner = buildPermissionBanner();
@@ -250,7 +225,82 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         root.addView(buildGuideCard());
 
         scroll.addView(root);
-        return scroll;
+        outerRoot.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1.0f));
+        return outerRoot;
+    }
+
+    private View buildHeaderBar() {
+        LinearLayout rootHeader = new LinearLayout(this);
+        rootHeader.setOrientation(LinearLayout.VERTICAL);
+        rootHeader.setBackgroundColor(COLOR_BG);
+        rootHeader.setPadding(dp(16), dp(8), dp(16), dp(8));
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        // Back Button
+        android.widget.ImageView btnBack = new android.widget.ImageView(this);
+        btnBack.setImageResource(R.drawable.ic_back);
+        btnBack.setColorFilter(COLOR_TEXT_PRIMARY);
+        btnBack.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        btnBack.setPadding(dp(8), dp(8), dp(8), dp(8));
+        btnBack.setClickable(true);
+        btnBack.setFocusable(true);
+        btnBack.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(18), COLOR_ACCENT));
+        LinearLayout.LayoutParams pBack = new LinearLayout.LayoutParams(dp(38), dp(38));
+        pBack.rightMargin = dp(12);
+        btnBack.setLayoutParams(pBack);
+        btnBack.setOnClickListener(v -> finish());
+        header.addView(btnBack);
+
+        // Fishbowl Logo Mark
+        android.widget.ImageView logo = new android.widget.ImageView(this);
+        logo.setImageResource(R.drawable.ic_fishbowl_logo);
+        logo.setColorFilter(Color.WHITE);
+        logo.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(24), dp(24));
+        logoParams.rightMargin = dp(10);
+        header.addView(logo, logoParams);
+
+        // Title Column
+        LinearLayout titleCol = new LinearLayout(this);
+        titleCol.setOrientation(LinearLayout.VERTICAL);
+
+        TextView title = new TextView(this);
+        title.setText("MEDIA STORAGE");
+        title.setTextSize(13.5f);
+        title.setLetterSpacing(0.12f);
+        title.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        title.setTextColor(COLOR_TEXT_PRIMARY);
+        titleCol.addView(title);
+
+        TextView sub = new TextView(this);
+        sub.setText("DRIVES & LIBRARY ROOTS");
+        sub.setTextSize(9.5f);
+        sub.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
+        sub.setTextColor(COLOR_TEXT_MUTED);
+        titleCol.addView(sub);
+
+        header.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        TextView tag = new TextView(this);
+        tag.setText("STORAGE HUB");
+        tag.setTextSize(9.5f);
+        tag.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        tag.setTextColor(COLOR_ACCENT);
+        header.addView(tag);
+
+        rootHeader.addView(header);
+
+        // Hairline divider
+        View border = new View(this);
+        border.setBackgroundColor(Color.argb(12, 255, 255, 255));
+        LinearLayout.LayoutParams pDiv = new LinearLayout.LayoutParams(-1, dp(1));
+        pDiv.topMargin = dp(8);
+        rootHeader.addView(border, pDiv);
+
+        return rootHeader;
     }
 
     private View buildPermissionBanner() {

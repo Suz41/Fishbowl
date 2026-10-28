@@ -1,5 +1,7 @@
 package com.fishbowl.app.model;
 
+import com.termux.shared.termux.TermuxConstants;
+
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -36,6 +38,23 @@ public class ManagedService {
     public synchronized boolean isInstalled() {
         if ("jellyfin".equalsIgnoreCase(manifest.getId()) || "flaresolverr".equalsIgnoreCase(manifest.getId())) {
             return true;
+        }
+        if ("seerr".equalsIgnoreCase(manifest.getId())) {
+            File f = new File(manifest.getExecutableOrDllPath());
+            File nodeBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/node");
+            return f.exists() && nodeBin.exists();
+        }
+        if ("bazarr".equalsIgnoreCase(manifest.getId())) {
+            File f = new File(manifest.getExecutableOrDllPath());
+            File pyBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/python3");
+            return f.exists() && pyBin.exists();
+        }
+        if ("jackett".equalsIgnoreCase(manifest.getId())) {
+            File fBin = new File(manifest.getInstallDir(), "jackett");
+            File fDll = new File(manifest.getInstallDir(), "Jackett.dll");
+            File fDllLower = new File(manifest.getInstallDir(), "jackett.dll");
+            File fTarget = manifest.getExecutableOrDllPath() != null ? new File(manifest.getExecutableOrDllPath()) : null;
+            return (fTarget != null && fTarget.exists()) || fBin.exists() || fDll.exists() || fDllLower.exists();
         }
         if (manifest.getExecutableOrDllPath() != null) {
             File f = new File(manifest.getExecutableOrDllPath());
