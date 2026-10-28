@@ -1,23 +1,51 @@
 version: 2
 updates:
+  # 1. GitHub Actions Dependencies
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "03:00"
+      timezone: "Etc/UTC"
     commit-message:
       prefix: "ci"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "github-actions"
+    groups:
+      github-actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
+  # 2. Gradle Dependencies & Build Tooling
   - package-ecosystem: "gradle"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "03:30"
+      timezone: "Etc/UTC"
     commit-message:
       prefix: "deps"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "gradle"
+    groups:
+      gradle-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Android Gradle Plugin (AGP) 8.13.2 requires Gradle <= 9.5.
+      # Gradle 9.6.0+ removes the InternalProblems internal API, breaking AGP 8.13.x compilation.
+      # Ignore automated Gradle wrapper updates >= 9.6.0 until AGP is upgraded to 8.14+ or 9.0.
+      - dependency-name: "org.gradle:gradle"
+        versions: [">= 9.6.0"]
