@@ -18,6 +18,7 @@ In accordance with Section 6 of the GNU General Public License v3.0 (*Conveying 
 | **Radarr** | `6.4.4` (ARM64) | [Radarr/Radarr](https://github.com/Radarr/Radarr) | GNU GPLv3 |
 | **Sonarr** | `4.0.9` (ARM64) | [Sonarr/Sonarr](https://github.com/Sonarr/Sonarr) | GNU GPLv3 |
 | **Prowlarr** | `1.21.2` (ARM64) | [Prowlarr/Prowlarr](https://github.com/Prowlarr/Prowlarr) | GNU GPLv3 |
+| **Jackett** | `0.22.x` (ARM64) | [Jackett/Jackett](https://github.com/Jackett/Jackett) | GNU GPLv2 |
 | **Transmission Daemon** | `4.1.3` (ARM64 Bionic) | [transmission/transmission](https://github.com/transmission/transmission) | GNU GPLv2 / GPLv3 |
 | **Seerr (Jellyseerr)** | `2.2.0` (ARM64) | [fallenbagel/jellyseerr](https://github.com/fallenbagel/jellyseerr) | MIT License |
 | **Lidarr** | `2.8.2` (ARM64) | [Lidarr/Lidarr](https://github.com/Lidarr/Lidarr) | GNU GPLv3 |
@@ -42,6 +43,11 @@ In accordance with Section 6 of the GNU General Public License v3.0 (*Conveying 
 - **License:** GNU General Public License v3.0 (GPLv3)
 - **Website:** <https://jellyfin.org>
 - **Notice:** Fishbowl is an independent, unofficial community project. It is not affiliated with, endorsed by, maintained by, or sponsored by the official Jellyfin Project.
+
+### Jackett Indexer Proxy
+- **Copyright:** (c) 2014-2026 Jackett Contributors
+- **License:** GNU General Public License v2.0 (GPLv2)
+- **Source:** <https://github.com/Jackett/Jackett>
 
 ### Servarr Automation Stack (Radarr, Sonarr, Prowlarr, Lidarr)
 - **Copyright:** (c) 2010–2026 Sonarr, Radarr, Prowlarr, and Lidarr Contributors
