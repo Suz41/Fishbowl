@@ -5,7 +5,7 @@
 <h1 align="center">Fishbowl</h1>
 
 <p align="center">
-  <b>Standalone Media Server Host & Companion Automation Suite for Android ARM64</b><br>
+  <b>Standalone Jellyfin Server 12.1.0 Host & Companion Automation Suite for Android ARM64</b><br>
   <i>Native POSIX execution on Android Bionic libc without containers, root, or virtualization.</i>
 </p>
 
@@ -29,13 +29,13 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start"><b>Quick Start</b></a> •
-  <a href="#system-architecture"><b>Architecture</b></a> •
-  <a href="#key-features"><b>Features</b></a> •
-  <a href="#service-endpoint--network-port-matrix"><b>Ports & Endpoints</b></a> •
-  <a href="#storage--media-setup"><b>Storage</b></a> •
-  <a href="#star-history"><b>Star History</b></a> •
-  <a href="#contributors"><b>Contributors</b></a>
+  <a href="#quick-start"><b>Quick Start</b></a> &bull;
+  <a href="#system-architecture"><b>Architecture</b></a> &bull;
+  <a href="#key-features"><b>Features</b></a> &bull;
+  <a href="#service-endpoint--network-port-matrix"><b>Ports & Endpoints</b></a> &bull;
+  <a href="#storage--media-setup"><b>Storage</b></a> &bull;
+  <a href="#credits-acknowledgements--thanks"><b>Credits</b></a> &bull;
+  <a href="#maintainer"><b>Maintainer</b></a>
 </p>
 
 > [!IMPORTANT]
@@ -47,7 +47,7 @@
 > - **Thermal & Hardware Guidance:** Sustained, multi-threaded video transcoding on mobile ARM SoCs generates substantial thermal load and power consumption. For continuous server workloads, keeping the host device adequately ventilated and connected to steady AC power is strongly recommended.
 > - **Licensing & Warranty:** Distributed free of charge under the GNU General Public License v3.0 (GPLv3) for homelab and personal self-hosting without commercial warranties or service-level agreements.
 
-Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a native interface for starting the server, viewing status, managing media storage folders, orchestrating companion automation services, and accessing diagnostic logs while keeping the underlying server local to the device.
+Fishbowl runs **Jellyfin Server 12.1.0** natively on compatible ARM64 Android devices (powered by Microsoft .NET 10.0 ARM64), providing a native interface for starting the server, viewing status, managing media storage folders, orchestrating companion automation services (including Jackett, Radarr, Sonarr, Prowlarr, Transmission, and Seerr), and accessing diagnostic logs while keeping the underlying server local to the device.
 
 ---
 
@@ -74,7 +74,7 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
 2. Install the APK on your ARM64 device.
 3. Grant required runtime permissions when prompted:
    - **All-Files Storage Access (`MANAGE_EXTERNAL_STORAGE`):** Allows Jellyfin and automation tools to index video and audio files across internal and external storage volumes.
-   - **Battery Optimization Exemption:** Set battery usage to **Unrestricted** (Settings → Apps → Fishbowl → Battery → Unrestricted) to prevent Android from suspending the server when the screen is locked.
+   - **Battery Optimization Exemption:** Set battery usage to **Unrestricted** (Settings -> Apps -> Fishbowl -> Battery -> Unrestricted) to prevent Android from suspending the server when the screen is locked.
 
 ---
 
@@ -96,7 +96,7 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
      - **Movies:** `/storage/emulated/0/FishbowlMedia/Movies`
      - **TV Shows:** `/storage/emulated/0/FishbowlMedia/TV Shows`
      - **Music:** `/storage/emulated/0/FishbowlMedia/Music`
-   - **External USB OTG / MicroSD:** If using removable drives on Android 11+, tap **Settings → Media Storage & Folders** in Fishbowl and copy the guaranteed app directory:
+   - **External USB OTG / MicroSD:** If using removable drives on Android 11+, tap **Settings -> Media Storage & Folders** in Fishbowl and copy the guaranteed app directory:
      ```text
      /storage/<UUID>/Android/data/com.fishbowl.app/files
      ```
@@ -146,11 +146,12 @@ Fishbowl runs Jellyfin on a compatible ARM64 Android device and provides a nativ
   - [ADB Command-Line Inspection Reference](#adb-command-line-diagnostics--inspection-reference)
 - [Repository Metrics & Code Analysis](#repository-metrics--code-analysis)
 - [Star History](#star-history)
-- [Contributors](#contributors)
 - [Disclosures & License](#disclosures--license)
+  - [AI-Assisted Development & In-App Offline Privacy Disclosure](#ai-assisted-development--in-app-offline-privacy-disclosure)
   - [Content, Homelab Scope & Anti-Piracy Policy](#content-homelab-scope--anti-piracy-policy)
-  - [AI-Assisted Development & Architectural Transparency](#ai-assisted-development--architectural-transparency)
-  - [Project License & Disclosures](#project-license--disclosures)
+  - [Project License & Open-Source Attributions](#project-license--open-source-attributions)
+- [Credits, Acknowledgements & Thanks](#credits-acknowledgements--thanks)
+- [Maintainer](#maintainer)
 
 ---
 
@@ -345,20 +346,20 @@ Playback capabilities depend on client capabilities, network throughput, and ava
 
 ## Storage & Media Setup
 
-Jellyfin requires direct read access to your media files. Fishbowl provides dedicated storage tools under **Settings → Media Storage & Folders** to browse, verify, and copy paths for Jellyfin libraries.
+Jellyfin requires direct read access to your media files. Fishbowl provides dedicated storage tools under **Settings -> Media Storage & Folders** to browse, verify, and copy paths for Jellyfin libraries.
 
 ### Standard Media Storage Structure
 Fishbowl automatically provisions a clean media scaffolding under `/storage/emulated/0/FishbowlMedia/`:
 ```text
 /storage/emulated/0/FishbowlMedia/
-├── Movies/                    # Radarr movie library root
-├── TV/                        # Sonarr TV series library root
-├── Music/                     # Lidarr & user music library root
-├── Downloads/                 # Dedicated download staging (Transmission)
-│   ├── radarr/                # Radarr movie download target
-│   └── sonarr/                # Sonarr episode download target
-└── Backups/                   # 1-Tap disaster recovery archives
-    └── fishbowl_backup_YYYYMMDD_HHmmss.tar.gz
+|-- Movies/                    # Radarr movie library root
+|-- TV/                        # Sonarr TV series library root
+|-- Music/                     # Lidarr & user music library root
+|-- Downloads/                 # Dedicated download staging (Transmission)
+|   |-- radarr/                # Radarr movie download target
+|   `-- sonarr/                # Sonarr episode download target
+`-- Backups/                   # 1-Tap disaster recovery archives
+    `-- fishbowl_backup_YYYYMMDD_HHmmss.tar.gz
 ```
 
 ### Internal Storage
@@ -387,7 +388,7 @@ Tapping **[ COPY PATH FOR JELLYFIN ]** verifies folder contents before copying t
 
 ## 1-Tap Backup & Restore
 
-Under **Settings → 6. Backup & Restore System**, Fishbowl provides complete disaster recovery and device migration:
+Under **Settings -> 6. Backup & Restore System**, Fishbowl provides complete disaster recovery and device migration:
 
 - **Create Backup:** Aggregates and compresses all application configurations, databases, and keys into a timestamped archive:
   ```text
@@ -407,9 +408,9 @@ Under **Settings → 6. Backup & Restore System**, Fishbowl provides complete di
 Android aggressively terminates background processes to conserve power. To ensure continuous server operation:
 
 1. **Battery Optimization Exemption:** Set Fishbowl's battery usage to **Unrestricted** (or **Don't Optimize**). The exact menu name depends on your device manufacturer:
-   - Samsung: Settings → Apps → Fishbowl → Battery → Unrestricted.
-   - Xiaomi / HyperOS: Settings → Apps → Manage Apps → Fishbowl → Battery Saver → No Restrictions.
-   - Pixel / Stock Android: Settings → Apps → Fishbowl → App Battery Usage → Unrestricted.
+   - Samsung: Settings -> Apps -> Fishbowl -> Battery -> Unrestricted.
+   - Xiaomi / HyperOS: Settings -> Apps -> Manage Apps -> Fishbowl -> Battery Saver -> No Restrictions.
+   - Pixel / Stock Android: Settings -> Apps -> Fishbowl -> App Battery Usage -> Unrestricted.
 2. **Foreground Service & Notification:** Keep the persistent foreground service notification enabled so Android prioritizes the process.
 3. **Power Connection:** For extended streaming sessions or initial library indexing, keep the device connected to a charger.
 
@@ -536,64 +537,80 @@ adb shell "dumpsys deviceidle whitelist | grep com.fishbowl.app"
 
 ---
 
-## Maintainer
-
-Fishbowl is created, maintained, and actively developed by **Sujal Achari** ([@Suz41](https://github.com/Suz41)).
-
----
-
 ## Disclosures & License
+
+### AI-Assisted Development & In-App Offline Privacy Disclosure
+
+In the spirit of complete engineering honesty, transparency, and architectural clarity:
+
+- **How AI Was Utilized in Development:**
+  The Fishbowl project codebase, build infrastructure, and technical documentation were developed utilizing conversational agentic AI coding assistants (specifically Google Antigravity and Gemini models) in close collaboration with human developers. Specific areas where AI was employed include:
+  - **Application Architecture & Component Logic:** Assisting in the authoring, refactoring, and modularization of native Android Java components (including `JellyfinController`, `JellyfinServerService`, `FishbowlActivity`, `MediaStorageManager`, and home screen supervision widgets).
+  - **CI/CD & Build Automation:** Generating and hardening Gradle build configurations, ABI-specific packaging rules, Dependabot version shielding, and GitHub Actions automation workflows (`build.yml`, `release.yml`, `lint.yml`).
+  - **Defensive Engineering & Security Hardening:** Identifying potential edge cases, path traversal risks (such as ZipSlip vulnerability analysis in archive extraction), and authoring robust unit test suites (`BackupRestoreSecurityTest`, `MediaStorageCleanupTest`, `ProcessSupervisionTest`, `UpdateManagerSecurityTest`).
+  - **Documentation & Technical Schematics:** Drafting architectural documentation, port matrix tables, hardware codec capability guides, and Mermaid system workflow diagrams.
+
+- **Human Architectural Direction & Physical Device Validation:**
+  All AI-generated code, patches, and configurations were strictly directed, reviewed, and verified by human maintainers. Crucially, all builds undergo manual empirical testing on physical ARM64 Android devices (including Samsung Galaxy smartphones, tablets, Nvidia Shield, and Android TV hardware) to ensure real-world stability, thermal safety, and functional accuracy.
+
+- **100% Offline Application Runtime & Zero AI Telemetry:**
+  While AI tools were utilized during the development and authoring phase, the compiled Fishbowl application runtime is **completely offline and contains zero AI models, zero cloud LLM connections, zero analytics SDKs, and zero telemetry**. Early experimental prototypes briefly explored in-app AI fix / Copilot features; **all such experimental code and LLM endpoints have been completely decommissioned and removed from the application** to guarantee an isolated, secure, and privacy-first local media server where no user data or prompt ever leaves the host device.
+
+- **Open Code Auditing & Reproducibility:**
+  Because this project uses an AI-assisted development workflow, we place paramount importance on open scrutiny. Every line of source code, patch, and build script is openly published in this repository. Users are actively encouraged to inspect the code, decompile the APK, monitor background sockets, and verify builds independently by compiling from source via `./gradlew assembleRelease`.
 
 ### Content, Homelab Scope & Anti-Piracy Policy
 
 Fishbowl is engineered exclusively as a **personal homelab server hosting and media library organization utility**. It is strictly **NOT designed, intended, licensed, or provided for piracy, unauthorized file-sharing, or copyright infringement**.
 
 - **Homelab & Personal Self-Hosting Use Only:** Fishbowl is created for homelab enthusiasts, self-hosters, and developers seeking to run local server infrastructure on low-power ARM64 Android hardware. Intended lawful use cases include:
-  - Streaming private family videos, home recordings, and personal photo/music archives.
+  - Streaming private family videos, home recordings, and personal photo and music archives.
   - Hosting legally acquired, digitized personal backups of physical media owned by the user.
-  - Curating open-access cultural media, public domain films, and Creative Commons audio/video works.
+  - Curating open-access cultural media, public domain films, and Creative Commons audio and video works.
   - Experimenting with ARM64 POSIX process management, Bionic C runtime hosting, and local home networking.
 - **Zero Bundled Content:** The software ships exclusively as hosting infrastructure and automation orchestration daemons. No movies, television shows, audio files, torrent streams, or proprietary copyright-protected media are included, indexed, hosted, or provided.
 - **Absolute Anti-Piracy Position:** The developers strictly condemn copyright infringement and illegal content distribution. Fishbowl does not operate, link to, or affiliate with any torrent indexers, public trackers, or unauthorized repositories.
 - **User Legal Responsibility:** Users are 100% legally responsible for verifying that all media content stored on or streamed from their personal server complies with all applicable local, national, and international intellectual property and copyright laws.
 
-### AI-Assisted Development & Architectural Transparency
-
-In the spirit of complete engineering honesty and transparency:
-
-- **How AI Was Utilized in Development:**
-  The Fishbowl project codebase, build infrastructure, and technical documentation were developed utilizing conversational agentic AI coding assistants (specifically Google Antigravity and Gemini models) in collaboration with human developers. Specific areas where AI was employed include:
-  - **Application Architecture & Component Logic:** Assisting in the authoring, refactoring, and modularization of native Android Java components (including `JellyfinController`, `JellyfinServerService`, `FishbowlActivity`, `MediaStorageManager`, and home screen supervision widgets).
-  - **CI/CD & Build Automation:** Generating and maintaining Gradle build configurations, ABI-specific packaging rules, and GitHub Actions automation workflows (`build.yml`, `release.yml`, `lint.yml`).
-  - **Defensive Engineering & Security Hardening:** Identifying potential edge cases, path traversal risks (such as ZipSlip vulnerability analysis in archive extraction), and authoring robust unit test suites (`BackupRestoreSecurityTest`, `MediaStorageCleanupTest`, `ProcessSupervisionTest`, `UpdateManagerSecurityTest`).
-  - **Documentation & Technical Schematics:** Drafting architectural documentation, port matrix tables, hardware codec capability guides, and Mermaid system workflow diagrams.
-
-- **Human Architectural Direction & Physical Device Validation:**
-  All AI-generated code, patches, and configurations were strictly reviewed, directed, and verified by human maintainers. Crucially, all builds undergo manual empirical testing on physical ARM64 Android devices (including Samsung Galaxy smartphones, tablets, and Android TV hardware) to ensure real-world stability, thermal safety, and functional accuracy.
-
-- **100% Offline Application Runtime & Zero AI Telemetry:**
-  While AI tools were utilized in the development and authoring phase, the compiled Fishbowl application runtime is **completely offline and contains zero AI models, zero cloud LLM connections, zero analytics SDKs, and zero telemetry**. All experimental in-app AI features (such as earlier Copilot and AI Fix prototypes) have been completely decommissioned and removed from the codebase to ensure an isolated, secure, and privacy-first local server.
-
-- **Open Code Auditing & Reproducibility:**
-  Because this project uses an AI-assisted development workflow, we place paramount importance on open scrutiny. Every line of source code, patch, and build script is openly published in this repository. Users are actively encouraged to inspect the code, decompile the APK, monitor background sockets, and verify builds independently by compiling from source via `./gradlew assembleRelease`.
-
-### Project License & Disclosures
+### Project License & Open-Source Attributions
 
 Fishbowl is an unofficial community project and is not supported, maintained, or endorsed by the official Jellyfin project.
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE). For complete third-party attributions, component licenses, and GPLv3 Section 6 corresponding source disclosures, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
-- **Jellyfin:** Licensed under GNU General Public License v3.0.
-- **Radarr / Sonarr / Prowlarr / Lidarr:** Licensed under GNU General Public License v3.0.
-- **Bazarr:** Licensed under GNU General Public License v3.0.
-- **Transmission:** Licensed under GNU General Public License v2.0 / v3.0.
-- **Jackett:** Licensed under GNU General Public License v2.0.
+- **Fishbowl:** Licensed under the GNU General Public License v3.0 (GPLv3).
+- **Jellyfin Media Server Core:** Licensed under GNU General Public License v3.0 (GPLv3).
+- **Jackett Indexer Proxy:** Licensed under GNU General Public License v2.0 (GPLv2).
+- **Radarr / Sonarr / Prowlarr / Lidarr:** Licensed under GNU General Public License v3.0 (GPLv3).
+- **Bazarr:** Licensed under GNU General Public License v3.0 (GPLv3).
+- **Transmission BitTorrent Daemon:** Licensed under GNU General Public License v2.0 / v3.0.
 - **Seerr (Jellyseerr):** Licensed under the MIT License.
-- **Termux Components:** Licensed under GNU General Public License v3.0 / Apache 2.0 / MIT.
+- **Termux Subsystems & Shared Libraries:** Licensed under GNU General Public License v3.0 / Apache 2.0 / MIT.
 - **Node.js LTS:** Licensed under the MIT License.
 - **Python Runtime:** Python Software Foundation License (PSFL).
-- **.NET Runtime:** Licensed under the MIT License.
-- **FFmpeg Engine:** Licensed under GNU General Public License v3.0 / LGPL v3.0 (built without `--enable-nonfree`).
-- **SQLite:** Public Domain.
+- **Microsoft .NET Runtime Engine:** Licensed under the MIT License.
+- **Jellyfin FFmpeg Engine:** Licensed under GNU General Public License v3.0 / LGPL v3.0 (built without `--enable-nonfree`).
+- **SQLite Database Engine:** Public Domain.
 
 This application is provided freely without warranties or service-level guarantees. Always back up important library configurations and use this project for personal experimentation and home-lab use only.
+
+---
+
+## Credits, Acknowledgements & Thanks
+
+We extend our sincere gratitude and appreciation to the open-source projects, maintainers, and community members whose work makes Fishbowl possible:
+
+- **The Jellyfin Project & Contributors:** For creating an outstanding, privacy-first, community-driven media server (<https://jellyfin.org>).
+- **The Jackett Maintainers & Contributors:** For developing an exceptional, versatile torrent indexer proxy translator (<https://github.com/Jackett/Jackett>).
+- **The Servarr Community:** The dedicated teams behind **Radarr, Sonarr, Prowlarr, Lidarr, and Bazarr** for creating the definitive automated media collection and subtitle management ecosystem.
+- **The Transmission Project:** For maintaining an efficient, ultra-lightweight, and rock-solid native BitTorrent client (<https://transmissionbt.com>).
+- **Fallenbagel & the Overseerr/Jellyseerr Team:** For designing a beautiful, intuitive, and modern media discovery and request management portal (<https://github.com/fallenbagel/jellyseerr>).
+- **Fredrik Fornwall, agnostic-apollo, and the Termux Project:** For groundbreaking work on Android Bionic POSIX process management and terminal environment packages (<https://github.com/termux>).
+- **Salih800:** For dedicated community collaboration, companion service integration (PR #33), and diagnostic testing on Android TV hardware.
+- **Community Issue Reporters & Testers:** Special thanks to community members (including @r-n-g and @Salih800) whose diagnostic feedback helped isolate and resolve issues across Android 10, 11, 14, and 15 devices.
+
+---
+
+## Maintainer
+
+Fishbowl is created, maintained, and actively developed by **Sujal Achari** ([@Suz41](https://github.com/Suz41)).
