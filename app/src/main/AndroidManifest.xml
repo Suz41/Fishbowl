@@ -86,6 +86,17 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode|fontScale|fontWeightAdjustment|locale|layoutDirection"
             android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
         <activity
+            android:name="com.fishbowl.app.importer.MovieImportActivity"
+            android:exported="true"
+            android:label="Movie Importer"
+            android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode|fontScale|fontWeightAdjustment|locale|layoutDirection"
+            android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar">
+            <intent-filter>
+                <action android:name="com.fishbowl.app.ACTION_REVIEW_IMPORT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
             android:name="com.fishbowl.app.JellyfinWebActivity"
             android:exported="true"
             android:label="Fishbowl Web"
@@ -216,11 +227,11 @@
             </intent-filter>
         </receiver>
 
-        <!-- Phase 9: Auto-start on reboot -->
+        <!-- Phase 9: Auto-start on reboot (Permanently disabled per user requirement) -->
         <receiver
             android:name="com.fishbowl.app.JellyfinBootReceiver"
             android:exported="false"
-            android:enabled="true">
+            android:enabled="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <category android:name="android.intent.category.DEFAULT" />

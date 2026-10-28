@@ -65,6 +65,18 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
     private static final int COLOR_TEXT_MUTED = Color.parseColor("#8A9198");
     private static final int COLOR_ACCENT = Color.parseColor("#10B981");
 
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        customUrl = intent != null ? intent.getStringExtra(EXTRA_URL) : null;
+        customTitle = intent != null ? intent.getStringExtra(EXTRA_TITLE) : null;
+        if (customUrl != null && !customUrl.isEmpty()) {
+            loaded = false;
+            connectToCustomService();
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled") 
     @Override 
     public void onCreate(Bundle state) {
@@ -303,7 +315,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         centerBox.addView(bar);
 
         loadingText = new TextView(this);
-        loadingText.setText("Starting Jellyfin...");
+        loadingText.setText(customTitle != null ? "Starting " + customTitle + "..." : "Starting Fishbowl...");
         loadingText.setTextColor(Color.WHITE);
         loadingText.setTextSize(15);
         loadingText.setGravity(Gravity.CENTER);
@@ -328,17 +340,21 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         }
 
         String serviceId = getIntent() != null ? getIntent().getStringExtra(EXTRA_SERVICE_ID) : null;
-        if (serviceId == null) {
+        if (serviceId == null && customUrl != null) {
             if (customUrl.contains(":8096")) serviceId = "jellyfin";
             else if (customUrl.contains(":7878")) serviceId = "radarr";
             else if (customUrl.contains(":8989")) serviceId = "sonarr";
             else if (customUrl.contains(":9696")) serviceId = "prowlarr";
             else if (customUrl.contains(":9091")) serviceId = "transmission";
             else if (customUrl.contains(":5055")) serviceId = "seerr";
+            else if (customUrl.contains(":6767")) serviceId = "bazarr";
+            else if (customUrl.contains(":8686")) serviceId = "lidarr";
+            else if (customUrl.contains(":9117")) serviceId = "jackett";
         }
 
         if (serviceId != null) {
-            MediaServiceManager.getInstance(this).ensureServiceReadyAndGetUrl(serviceId, 35000, new MediaServiceManager.ServiceReadyCallback() {
+            long waitTimeout = "bazarr".equalsIgnoreCase(serviceId) ? 120000L : 35000L;
+            MediaServiceManager.getInstance(this).ensureServiceReadyAndGetUrl(serviceId, waitTimeout, new MediaServiceManager.ServiceReadyCallback() {
                 @Override
                 public void onReady(String url) {
                     if (isDestroyed) return;
@@ -366,6 +382,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
     }
 
     private void checkServerState(JellyfinController.State state) {
+        if (customUrl != null && !customUrl.isEmpty()) return;
         if (state == JellyfinController.State.RUNNING) {
             runOnUiThread(() -> {
                 if (!loaded) {
@@ -492,6 +509,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
 
     @Override 
     public void onServerChanged(JellyfinController.State state) {
+        if (customUrl != null && !customUrl.isEmpty()) return;
         checkServerState(state);
     }
 
@@ -516,6 +534,10 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
             web.destroy();
             web = null;
         }
+        // Auto-wire media stack debounced if user configured indexers or trackers in web UI
+        try {
+            com.fishbowl.app.services.MediaServiceManager.getInstance(this).scheduleAutoWireDebounced(1500);
+        } catch (Throwable ignored) {}
         super.onDestroy();
     }
 

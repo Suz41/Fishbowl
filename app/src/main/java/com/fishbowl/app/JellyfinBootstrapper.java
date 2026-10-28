@@ -25,7 +25,8 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 public class JellyfinBootstrapper {
 
     private static final String TAG = "JellyfinBootstrapper";
-    private static final String INITIALIZED_MARKER_FILE = ".jellyfin_initialized_v12.1.0";
+    private static final String INITIALIZED_MARKER_FILE = ".jellyfin_initialized_v12.4.0";
+    private static final String LEGACY_V123_MARKER_FILE = ".jellyfin_initialized_v12.3.0";
     private static final String[] ASSET_PARTS = {
             "jellyfin-bootstrap.tar.gz.part_aa",
             "jellyfin-bootstrap.tar.gz.part_ab",
@@ -62,10 +63,11 @@ public class JellyfinBootstrapper {
             return true;
         }
         File marker = new File(TermuxConstants.TERMUX_FILES_DIR, INITIALIZED_MARKER_FILE);
+        File marker123 = new File(TermuxConstants.TERMUX_FILES_DIR, LEGACY_V123_MARKER_FILE);
         File jellyfinDll = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.dll");
         File dotnetBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/dotnet/dotnet");
         File ffmpegBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "opt/jellyfin/bin/ffmpeg");
-        boolean ready = marker.exists() && jellyfinDll.exists() && dotnetBin.exists() && ffmpegBin.exists();
+        boolean ready = (marker.exists() || marker123.exists()) && jellyfinDll.exists() && dotnetBin.exists() && ffmpegBin.exists();
         if (ready) {
             isInitializedCached = true;
         }
@@ -87,9 +89,17 @@ public class JellyfinBootstrapper {
             if (marker.exists()) {
                 marker.delete();
             }
+            File marker123 = new File(TermuxConstants.TERMUX_FILES_DIR, LEGACY_V123_MARKER_FILE);
+            if (marker123.exists()) {
+                marker123.delete();
+            }
             File legacyMarker = new File(TermuxConstants.TERMUX_FILES_DIR, ".jellyfin_initialized_v10.11.11");
             if (legacyMarker.exists()) {
                 legacyMarker.delete();
+            }
+            File v121Marker = new File(TermuxConstants.TERMUX_FILES_DIR, ".jellyfin_initialized_v12.1.0");
+            if (v121Marker.exists()) {
+                v121Marker.delete();
             }
             File prefixDir = TermuxConstants.TERMUX_PREFIX_DIR;
             if (prefixDir.exists()) {
@@ -157,6 +167,38 @@ public class JellyfinBootstrapper {
             String resolvContent = "nameserver 8.8.8.8\nnameserver 1.1.1.1\n";
             try (FileOutputStream out = new FileOutputStream(resolvFile)) {
                 out.write(resolvContent.getBytes());
+            }
+
+            // Ensure CA Root certificate symlinks for OpenSSL and .NET SslStream
+            File certPem = new File(TermuxConstants.TERMUX_PREFIX_DIR, "etc/tls/cert.pem");
+            if (certPem.exists()) {
+                File sslDir = new File(TermuxConstants.TERMUX_PREFIX_DIR, "etc/ssl");
+                if (!sslDir.exists()) sslDir.mkdirs();
+                File sslCertsDir = new File(sslDir, "certs");
+                if (!sslCertsDir.exists()) sslCertsDir.mkdirs();
+
+                File sslCertPem = new File(sslDir, "cert.pem");
+                if (!sslCertPem.exists()) {
+                    try {
+                        Os.symlink(certPem.getAbsolutePath(), sslCertPem.getAbsolutePath());
+                    } catch (Exception ignored) {}
+                }
+
+                File caCertsCrt = new File(sslCertsDir, "ca-certificates.crt");
+                if (!caCertsCrt.exists()) {
+                    try {
+                        Os.symlink(certPem.getAbsolutePath(), caCertsCrt.getAbsolutePath());
+                    } catch (Exception ignored) {}
+                }
+
+                File pkiDir = new File(TermuxConstants.TERMUX_PREFIX_DIR, "etc/pki/tls/certs");
+                if (!pkiDir.exists()) pkiDir.mkdirs();
+                File pkiBundle = new File(pkiDir, "ca-bundle.crt");
+                if (!pkiBundle.exists()) {
+                    try {
+                        Os.symlink(certPem.getAbsolutePath(), pkiBundle.getAbsolutePath());
+                    } catch (Exception ignored) {}
+                }
             }
 
             // Ensure Jellyfin network configuration explicitly enables binding across all interfaces (0.0.0.0)
@@ -246,6 +288,7 @@ public class JellyfinBootstrapper {
     private static boolean initializeInternal(Context context, ProgressCallback callback) {
         lastError = null;
         ensureNetworkConfig(context);
+        patchJellyfin124Version(context);
         if (isInitialized(context)) {
             Log.i(TAG, "Jellyfin environment already initialized.");
             if (callback != null) {
@@ -297,9 +340,17 @@ public class JellyfinBootstrapper {
             if (marker.exists()) {
                 marker.delete();
             }
+            File marker123 = new File(TermuxConstants.TERMUX_FILES_DIR, LEGACY_V123_MARKER_FILE);
+            if (marker123.exists()) {
+                marker123.delete();
+            }
             File legacyMarker = new File(TermuxConstants.TERMUX_FILES_DIR, ".jellyfin_initialized_v10.11.11");
             if (legacyMarker.exists()) {
                 legacyMarker.delete();
+            }
+            File v121Marker = new File(TermuxConstants.TERMUX_FILES_DIR, ".jellyfin_initialized_v12.1.0");
+            if (v121Marker.exists()) {
+                v121Marker.delete();
             }
 
             File prefixDir = TermuxConstants.TERMUX_PREFIX_DIR;
@@ -460,6 +511,8 @@ public class JellyfinBootstrapper {
             File jellyfinDll = new File(prefixDir, "lib/jellyfin/jellyfin.dll");
             Log.i(TAG, "Post-extraction check: dotnetBin=" + dotnetBin.getAbsolutePath() + " exists=" + dotnetBin.exists() + ", jellyfinDll=" + jellyfinDll.getAbsolutePath() + " exists=" + jellyfinDll.exists());
 
+            patchJellyfin124Version(context);
+
             if (!marker.getParentFile().exists()) {
                 marker.getParentFile().mkdirs();
             }
@@ -508,5 +561,116 @@ public class JellyfinBootstrapper {
                 } catch (Exception ignored) {}
             }
         }
+    }
+
+    public static void patchJellyfin124Version(Context context) {
+        try {
+            File jfLibDir = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin");
+            if (!jfLibDir.exists() || !jfLibDir.isDirectory()) return;
+
+            File patchMarker = new File(jfLibDir, ".version_12_4_0_patched");
+            if (patchMarker.exists()) return;
+
+            Log.i(TAG, "Applying Jellyfin 12.4.0 in-place version patcher...");
+
+            // ECMA-335 CLI Assembly & AssemblyRef table binary row pattern:
+            // Major=12 (0x000c), Minor=3 (0x0003), Build=0 (0x0000), Revision=0 (0x0000)
+            byte[] oldAsmBytes = new byte[] { 0x0c, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00 };
+            byte[] newAsmBytes = new byte[] { 0x0c, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+            byte[] u16OldFull = "12.3.0".getBytes(java.nio.charset.StandardCharsets.UTF_16LE);
+            byte[] u16NewFull = "12.4.0".getBytes(java.nio.charset.StandardCharsets.UTF_16LE);
+            byte[] u16OldShort = "12.3".getBytes(java.nio.charset.StandardCharsets.UTF_16LE);
+            byte[] u16NewShort = "12.4".getBytes(java.nio.charset.StandardCharsets.UTF_16LE);
+
+            byte[] u8OldFull = "12.3.0".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] u8NewFull = "12.4.0".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+            patchDirectory(jfLibDir, oldAsmBytes, newAsmBytes, u16OldFull, u16NewFull, u16OldShort, u16NewShort, u8OldFull, u8NewFull);
+
+            File webDir = new File(jfLibDir, "jellyfin-web");
+            if (webDir.exists() && webDir.isDirectory()) {
+                patchWebDirectory(webDir);
+            }
+
+            patchMarker.createNewFile();
+            Log.i(TAG, "Jellyfin 12.4.0 in-place version patcher completed successfully!");
+        } catch (Throwable t) {
+            Log.w(TAG, "Notice during Jellyfin 12.4.0 version patching: " + t.getMessage());
+        }
+    }
+
+    private static void patchDirectory(File dir, byte[] oldAsm, byte[] newAsm,
+                                       byte[] u16OldFull, byte[] u16NewFull,
+                                       byte[] u16OldShort, byte[] u16NewShort,
+                                       byte[] u8OldFull, byte[] u8NewFull) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            if (f.isDirectory()) {
+                if (!"jellyfin-web".equals(f.getName())) {
+                    patchDirectory(f, oldAsm, newAsm, u16OldFull, u16NewFull, u16OldShort, u16NewShort, u8OldFull, u8NewFull);
+                }
+            } else if (f.isFile()) {
+                String name = f.getName();
+                if (name.endsWith(".dll")) {
+                    replaceInFile(f, oldAsm, newAsm);
+                    replaceInFile(f, u16OldFull, u16NewFull);
+                    replaceInFile(f, u16OldShort, u16NewShort);
+                    replaceInFile(f, u8OldFull, u8NewFull);
+                } else if (name.endsWith(".json")) {
+                    replaceInFile(f, u8OldFull, u8NewFull);
+                }
+            }
+        }
+    }
+
+    private static void patchWebDirectory(File webDir) {
+        File[] files = webDir.listFiles();
+        if (files == null) return;
+        byte[] oldChild = "children:\"12.3\"".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] newChild = "children:\"12.4\"".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] oldBuster = "buster:\"12.3\"".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] newBuster = "buster:\"12.4\"".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] oldConcat = "concat(\"12.3\")".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] newConcat = "concat(\"12.4\")".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] oldQuote = "\"12.3.0\"".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] newQuote = "\"12.4.0\"".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        for (File f : files) {
+            if (f.isFile() && f.getName().endsWith(".js")) {
+                replaceInFile(f, oldChild, newChild);
+                replaceInFile(f, oldBuster, newBuster);
+                replaceInFile(f, oldConcat, newConcat);
+                replaceInFile(f, oldQuote, newQuote);
+            }
+        }
+    }
+
+    private static void replaceInFile(File file, byte[] target, byte[] replacement) {
+        if (target.length != replacement.length || !file.exists() || !file.canRead() || !file.canWrite()) return;
+        try {
+            byte[] data = java.nio.file.Files.readAllBytes(file.toPath());
+            int n = data.length;
+            int m = target.length;
+            boolean modified = false;
+            for (int i = 0; i <= n - m; i++) {
+                boolean match = true;
+                for (int j = 0; j < m; j++) {
+                    if (data[i + j] != target[j]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    System.arraycopy(replacement, 0, data, i, m);
+                    modified = true;
+                    i += m - 1;
+                }
+            }
+            if (modified) {
+                java.nio.file.Files.write(file.toPath(), data);
+            }
+        } catch (Throwable ignored) {}
     }
 }

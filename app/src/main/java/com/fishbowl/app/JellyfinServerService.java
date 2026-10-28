@@ -23,8 +23,10 @@ import com.termux.R;
 import java.net.Inet4Address;
 import java.net.NetworkInterface;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Universal Android Background Survival & Multi-Service Foreground Service.
@@ -102,6 +104,9 @@ public class JellyfinServerService extends Service implements JellyfinController
             String action = intent.getAction();
             if (ACTION_START_JELLYFIN.equals(action) || ACTION_START.equals(action)) {
                 Log.i(TAG, "Service received START_JELLYFIN - launching Jellyfin server only");
+                if (serviceManager != null) {
+                    serviceManager.recordServiceActive("jellyfin", true);
+                }
                 setStackActivePref(true);
                 hasStarted = true;
                 acquireLocks();
@@ -110,6 +115,9 @@ public class JellyfinServerService extends Service implements JellyfinController
                 updateNotificationState();
             } else if (ACTION_STOP_JELLYFIN.equals(action)) {
                 Log.i(TAG, "Service received STOP_JELLYFIN - stopping Jellyfin server only");
+                if (serviceManager != null) {
+                    serviceManager.recordServiceActive("jellyfin", false);
+                }
                 controller.stop();
                 updateNotificationState();
             } else if (ACTION_START_ALL.equals(action)) {
@@ -127,6 +135,9 @@ public class JellyfinServerService extends Service implements JellyfinController
             } else if (ACTION_STOP_ALL.equals(action) || ACTION_STOP.equals(action)) {
                 Log.i(TAG, "Service received STOP_ALL - stopping all media stack services");
                 setStackActivePref(false);
+                if (serviceManager != null) {
+                    serviceManager.clearPersistedActiveServices();
+                }
                 hasStarted = false;
                 releaseLocks();
                 if (serviceManager != null) {
@@ -142,20 +153,23 @@ public class JellyfinServerService extends Service implements JellyfinController
             }
         } else {
             // Intent is null: Restarted by Android OS after Low Memory Killer (START_STICKY)
-            boolean wasActive = isStackActivePref();
-            Log.i(TAG, "JellyfinServerService restarted by Android OS (intent=null, wasActive=" + wasActive + ")");
+            Set<String> activeServices = serviceManager != null ? serviceManager.getPersistedActiveServices() : Collections.emptySet();
+            boolean wasActive = !activeServices.isEmpty() || isStackActivePref();
+            Log.i(TAG, "JellyfinServerService restarted by Android OS after LMK (intent=null, activeServices=" + activeServices + ", wasActive=" + wasActive + ")");
             if (wasActive) {
+                // Strict requirement: On LMK revival, ONLY revive Jellyfin core server!
+                // Never auto-start heavy companion services (Radarr, Sonarr, Transmission, Bazarr, Seerr, etc.)
                 hasStarted = true;
                 acquireLocks();
-                promoteToForeground(buildNotification("Fishbowl Media Stack", "Restoring services after OS kill...", false));
+                promoteToForeground(buildNotification("Fishbowl Media Stack", "Reviving Jellyfin server...", false));
                 if (serviceManager != null) {
-                    serviceManager.startAllServices();
-                } else {
-                    controller.start(getApplicationContext());
+                    serviceManager.resetPersistedActiveServicesToCoreOnly();
                 }
+                controller.start(getApplicationContext());
                 updateNotificationState();
             } else {
                 // User previously stopped services; dismiss any transient notification
+                Log.i(TAG, "No services were active prior to OS kill; releasing resources and terminating service.");
                 releaseLocks();
                 try {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
