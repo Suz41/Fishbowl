@@ -30,6 +30,7 @@
 
 <p align="center">
   <a href="#quick-start"><b>Quick Start</b></a> &bull;
+  <a href="#release-notes-v149-beta1"><b>Release Notes</b></a> &bull;
   <a href="#system-architecture"><b>Architecture</b></a> &bull;
   <a href="#key-features"><b>Features</b></a> &bull;
   <a href="#service-endpoint--network-port-matrix"><b>Ports & Endpoints</b></a> &bull;
@@ -128,9 +129,42 @@ Fishbowl runs **Jellyfin Server 12.1.0** natively on compatible ARM64 Android de
 
 ---
 
+## Release Notes: v1.4.9-beta.1
+
+Fishbowl `v1.4.9-beta.1` introduces native Jackett torrent indexer integration, a redesigned 5-column multi-row services dock, dual-tier home screen supervision widgets, an embedded movie importer engine, and enterprise CI/CD security hardening.
+
+### Release Specifications
+- **Core Server Engine:** Jellyfin Server 12.1.0 (.NET 10.0.12 ARM64 Bionic)
+- **Target Platform:** Android ARM64 (API 21+ / Android 7.0 - 15+)
+- **Indexer Proxy:** Jackett 0.22.x (Port :9117)
+- **Universal APK:** [`Fishbowl-v1.4.9-beta.1-release-universal.apk`](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.9-beta.1) (338,578,148 bytes)
+- **SHA-256 Checksum:** `A96BDECF7A7B0B4D48EB38E655489EBDB28B264204844078201F57AF07F12414`
+
+### Key Highlights & Changes
+- **Jellyfin Server 12.1.0:** Full Bionic native runtime hosting on Android ARM64 with isolated SQLite database storage.
+- **Jackett Native Indexer Proxy (:9117):** Standalone daemon with custom Blaze Orange vector icon and Torznab auto-wiring with Radarr and Sonarr.
+- **5-Column Multi-Row Service Dock:** Responsive 2-tier dashboard organizing 9 managed companion services across two balanced rows.
+- **Dual-Tier Android App Widgets (5x2 Grid):** Home screen widgets mirroring the in-app dock with electric crimson (`#FF1744`) crash alerting.
+- **In-App Movie Importer Engine:** Integrated TMDB metadata matching, filename parsing, and automatic folder routing into library directories.
+- **Bionic Runtime & Community Fixes:** Bundled `libMonoPosixHelper.so` for Android 10/11 (#35), TV setup overlay auto-dismiss (#32), Transmission 4.1.4 upgrade (#33), and POSIX path traversal (#31).
+- **Enterprise CI/CD Hardening:** Provenance-gated releases, Dependabot AGP compatibility shielding (#34), and CodeQL cache isolation (#37).
+
+### Resolved Community Issues & PRs
+- **Issue #35:** Bundled native Bionic `libMonoPosixHelper.so` resolving `MonoPosixHelper` crash on Android 10/11.
+- **Issue #32:** Implemented automated setup overlay dismissal and remote focus navigation for Android TV / Nvidia Shield.
+- **Issue #31:** Hardened POSIX path resolution and documented `/storage/<UUID>/` traversal on removable storage.
+- **PR #33:** Integrated Transmission 4.1.4 upgrade and native Bionic companion libraries (by @Salih800).
+- **PR #34:** Added Dependabot version ignore rule for Gradle >= 9.6.0 to protect AGP 8.13.2 compatibility.
+- **CodeQL Alert #37:** Enforced cache-read-only in release workflows to eliminate cache poisoning vectors.
+
+> Full asset downloads and checksum manifests are available on the [GitHub Release v1.4.9-beta.1](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.9-beta.1) page.
+
+---
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Release Notes (v1.4.9-beta.1)](#release-notes-v149-beta1)
 - [System Architecture](#system-architecture)
 - [Key Features](#key-features)
 - [Bundled Packages & System Components](#bundled-packages--system-components)
