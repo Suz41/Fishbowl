@@ -35,6 +35,8 @@
   <a href="#key-features"><b>Features</b></a> &bull;
   <a href="#service-endpoint--network-port-matrix"><b>Ports & Endpoints</b></a> &bull;
   <a href="#storage--media-setup"><b>Storage</b></a> &bull;
+  <a href="#troubleshooting"><b>Troubleshooting</b></a> &bull;
+  <a href="#disclosures--license"><b>Disclosures & License</b></a> &bull;
   <a href="#credits-acknowledgements--thanks"><b>Credits</b></a> &bull;
   <a href="#maintainer"><b>Maintainer</b></a>
 </p>
@@ -173,11 +175,10 @@ Fishbowl `v1.4.9-beta.1` introduces native Jackett torrent indexer integration, 
   - [Hardware Codec Capability Matrix](#hardware-codec--playback-capability-matrix)
 - [Storage & Media Setup](#storage--media-setup)
 - [1-Tap Backup & Restore](#1-tap-backup--restore)
-- [Background Operation & Battery Guidance](#background-operation--battery-guidance)
 - [Permissions & Privacy](#permissions--privacy)
 - [Building From Source](#building-from-source)
 - [Troubleshooting](#troubleshooting)
-  - [ADB Command-Line Inspection Reference](#adb-command-line-diagnostics--inspection-reference)
+  - [ADB Command-Line Diagnostics & Inspection Reference](#adb-command-line-diagnostics--inspection-reference)
 - [Repository Metrics & Code Analysis](#repository-metrics--code-analysis)
 - [Star History](#star-history)
 - [Disclosures & License](#disclosures--license)
@@ -437,19 +438,6 @@ Under **Settings -> 6. Backup & Restore System**, Fishbowl provides complete dis
 
 ---
 
-## Background Operation & Battery Guidance
-
-Android aggressively terminates background processes to conserve power. To ensure continuous server operation:
-
-1. **Battery Optimization Exemption:** Set Fishbowl's battery usage to **Unrestricted** (or **Don't Optimize**). The exact menu name depends on your device manufacturer:
-   - Samsung: Settings -> Apps -> Fishbowl -> Battery -> Unrestricted.
-   - Xiaomi / HyperOS: Settings -> Apps -> Manage Apps -> Fishbowl -> Battery Saver -> No Restrictions.
-   - Pixel / Stock Android: Settings -> Apps -> Fishbowl -> App Battery Usage -> Unrestricted.
-2. **Foreground Service & Notification:** Keep the persistent foreground service notification enabled so Android prioritizes the process.
-3. **Power Connection:** For extended streaming sessions or initial library indexing, keep the device connected to a charger.
-
----
-
 ## Permissions & Privacy
 
 Fishbowl uses standard Android permissions to provide local server hosting:
@@ -495,25 +483,33 @@ Generated APKs are located at `app/build/outputs/apk/release/Fishbowl-*-release-
 
 ## Troubleshooting
 
-### Initial setup shows 0% or runtime extraction is taking time
+### 1. Initial setup shows 0% or runtime extraction is taking time
 On fresh installation, Fishbowl extracts over 5,600 native POSIX binaries, libraries, and the .NET runtime. The setup overlay runs in complete edge-to-edge isolation to prevent UI race conditions on high-refresh Android devices. Please keep the app open for 30–60 seconds while extraction finishes. If interrupted, simply reopen the app; Fishbowl resumes automatically and idempotently.
 
-### The server stops when I lock the screen or switch apps
-Set Fishbowl's battery setting to **Unrestricted**. Some OEM skins (MIUI, OriginOS, ColorOS) require enabling "Autostart" and setting background limits to "No Restrictions" in system app management.
+### 2. The server stops when I lock the screen or switch apps (Background Battery Optimization)
+Android aggressively terminates background processes to conserve power. To ensure continuous 24/7 background streaming without operating system interruption:
 
-### Other devices cannot connect to the server
+1. **Battery Optimization Exemption:** Set Fishbowl's battery usage to **Unrestricted** (or **Don't Optimize**). Manufacturer-specific navigation:
+   - **Samsung (One UI):** Settings -> Apps -> Fishbowl -> Battery -> Unrestricted.
+   - **Xiaomi / Redmi / POCO (HyperOS / MIUI):** Settings -> Apps -> Manage Apps -> Fishbowl -> Battery Saver -> No Restrictions. Also enable "Autostart".
+   - **Vivo / iQOO (FuntouchOS / OriginOS):** Settings -> Battery -> Background Power Consumption Management -> Fishbowl -> High Background Power Usage.
+   - **Oppo / Realme / OnePlus (ColorOS / OxygenOS):** Settings -> Apps -> App Management -> Fishbowl -> Battery Usage -> Allow Background Activity & Allow Auto-launch.
+   - **Google Pixel / Motorola / Stock Android:** Settings -> Apps -> Fishbowl -> App Battery Usage -> Unrestricted.
+2. **Foreground Service & Ongoing Notification:** Keep the persistent foreground service notification enabled in Android Settings so the system prioritizes the process.
+3. **Power Connection & Ventilation:** For sustained streaming or initial library scanning, keep the host device connected to AC power and well-ventilated.
+
+### 3. Other devices cannot connect to the server (LAN & Network Discovery)
 - Verify both devices are connected to the same local Wi-Fi network and that your router does not have "AP Isolation" or "Client Isolation" enabled.
 - Verify the server status shows **SERVER RUNNING** and port 8096 is not occupied by another app.
 - If using Tailscale, ensure both the host device and client device are logged into the same tailnet with active connections.
 
-### Jellyfin library shows no media files after scanning
-- Ensure the selected folder contains supported media extensions (`.mp4`, `.mkv`, `.mp3`, `.flac`, etc.).
-- On external drives, verify the path starts with `/storage/<UUID>/` rather than `/mnt/media_rw/`.
-- If Android SELinux blocks read access on an external drive, move your media files into the guaranteed app directory (`/storage/<UUID>/Android/data/com.fishbowl.app/files`) and select that path.
+### 4. Jellyfin library shows no media files after scanning (Storage Permissions)
+- Ensure the selected folder contains supported media extensions (.mp4, .mkv, .mp3, .flac, etc.).
+- On external drives, verify the path starts with /storage/<UUID>/ rather than /mnt/media_rw/.
+- If Android SELinux blocks read access on an external drive, move your media files into the guaranteed app directory (/storage/<UUID>/Android/data/com.fishbowl.app/files) and select that path.
 
-### How to update without losing library databases or user accounts
+### 5. How to update without losing library databases or user accounts
 Install new release APKs directly over your existing installation. Fishbowl preserves your database, configuration files, and user libraries across upgrades. Avoid using "Clear Data" in Android settings unless you intentionally want to reset the app.
-
 ### ADB Command-Line Diagnostics & Inspection Reference
 
 <details>
@@ -575,13 +571,27 @@ adb shell "dumpsys deviceidle whitelist | grep com.fishbowl.app"
 
 ### AI-Assisted Development & In-App Offline Privacy Disclosure
 
+> [!IMPORTANT]
+> **AI-Assisted Engineering Disclosure & Offline Privacy Guarantee:**
+> - **Development Methodology:** Fishbowl was engineered utilizing conversational agentic AI coding assistants (Google Antigravity and Gemini models) under strict human architectural supervision and empirical validation on physical ARM64 hardware.
+> - **100% Offline Runtime Guarantee:** The compiled application runtime contains **zero AI models, zero cloud LLM connections, zero remote analytics, and zero telemetry**.
+> - **Open Reproducibility:** Every line of source code, patch, and build configuration is published under GPLv3 for transparent community scrutiny and independent local compilation.
+
+<p align="left">
+  <img src="https://img.shields.io/badge/Development-AI%20Assisted-8E44AD?style=flat-square&logo=google&logoColor=white" alt="AI Assisted" />
+  <img src="https://img.shields.io/badge/Agentic%20Tooling-Google%20Antigravity-512BD4?style=flat-square" alt="Google Antigravity" />
+  <img src="https://img.shields.io/badge/App%20Runtime-100%25%20Offline-2ECC71?style=flat-square" alt="100% Offline" />
+  <img src="https://img.shields.io/badge/Cloud%20LLM%20Calls-0%20(None)-00A4DC?style=flat-square" alt="Zero Cloud LLM" />
+  <img src="https://img.shields.io/badge/Telemetry-0%25%20(Disabled)-34495E?style=flat-square" alt="Zero Telemetry" />
+</p>
+
 In the spirit of complete engineering honesty, transparency, and architectural clarity:
 
 - **How AI Was Utilized in Development:**
   The Fishbowl project codebase, build infrastructure, and technical documentation were developed utilizing conversational agentic AI coding assistants (specifically Google Antigravity and Gemini models) in close collaboration with human developers. Specific areas where AI was employed include:
-  - **Application Architecture & Component Logic:** Assisting in the authoring, refactoring, and modularization of native Android Java components (including `JellyfinController`, `JellyfinServerService`, `FishbowlActivity`, `MediaStorageManager`, and home screen supervision widgets).
-  - **CI/CD & Build Automation:** Generating and hardening Gradle build configurations, ABI-specific packaging rules, Dependabot version shielding, and GitHub Actions automation workflows (`build.yml`, `release.yml`, `lint.yml`).
-  - **Defensive Engineering & Security Hardening:** Identifying potential edge cases, path traversal risks (such as ZipSlip vulnerability analysis in archive extraction), and authoring robust unit test suites (`BackupRestoreSecurityTest`, `MediaStorageCleanupTest`, `ProcessSupervisionTest`, `UpdateManagerSecurityTest`).
+  - **Application Architecture & Component Logic:** Assisting in the authoring, refactoring, and modularization of native Android Java components (including JellyfinController, JellyfinServerService, FishbowlActivity, MediaStorageManager, and home screen supervision widgets).
+  - **CI/CD & Build Automation:** Generating and hardening Gradle build configurations, ABI-specific packaging rules, Dependabot version shielding, and GitHub Actions automation workflows (uild.yml, elease.yml, lint.yml).
+  - **Defensive Engineering & Security Hardening:** Identifying potential edge cases, path traversal risks (such as ZipSlip vulnerability analysis in archive extraction), and authoring robust unit test suites (BackupRestoreSecurityTest, MediaStorageCleanupTest, ProcessSupervisionTest, UpdateManagerSecurityTest).
   - **Documentation & Technical Schematics:** Drafting architectural documentation, port matrix tables, hardware codec capability guides, and Mermaid system workflow diagrams.
 
 - **Human Architectural Direction & Physical Device Validation:**
@@ -591,9 +601,22 @@ In the spirit of complete engineering honesty, transparency, and architectural c
   While AI tools were utilized during the development and authoring phase, the compiled Fishbowl application runtime is **completely offline and contains zero AI models, zero cloud LLM connections, zero analytics SDKs, and zero telemetry**. Early experimental prototypes briefly explored in-app AI fix / Copilot features; **all such experimental code and LLM endpoints have been completely decommissioned and removed from the application** to guarantee an isolated, secure, and privacy-first local media server where no user data or prompt ever leaves the host device.
 
 - **Open Code Auditing & Reproducibility:**
-  Because this project uses an AI-assisted development workflow, we place paramount importance on open scrutiny. Every line of source code, patch, and build script is openly published in this repository. Users are actively encouraged to inspect the code, decompile the APK, monitor background sockets, and verify builds independently by compiling from source via `./gradlew assembleRelease`.
+  Because this project uses an AI-assisted development workflow, we place paramount importance on open scrutiny. Every line of source code, patch, and build script is openly published in this repository. Users are actively encouraged to inspect the code, decompile the APK, monitor background sockets, and verify builds independently by compiling from source via ./gradlew assembleRelease.
 
 ### Content, Homelab Scope & Anti-Piracy Policy
+
+> [!IMPORTANT]
+> **Strict Homelab Scope & Anti-Piracy Notice:**
+> - **Homelab Infrastructure Only:** Fishbowl is strictly a local self-hosting management engine. It does not provide, distribute, host, stream, or index any copyrighted content.
+> - **Anti-Piracy Zero Tolerance:** Maintainers strictly condemn copyright infringement and illegal content distribution.
+> - **User Legal Responsibility:** Users are 100% responsible for verifying that all stored media complies with applicable copyright laws.
+
+<p align="left">
+  <img src="https://img.shields.io/badge/Homelab-Strictly%20Self--Hosted-34495E?style=flat-square" alt="Homelab Only" />
+  <img src="https://img.shields.io/badge/Anti--Piracy-Zero%20Tolerance-E74C3C?style=flat-square" alt="Zero Tolerance Anti-Piracy" />
+  <img src="https://img.shields.io/badge/Bundled%20Media-0%20Files-27AE60?style=flat-square" alt="Zero Bundled Media" />
+  <img src="https://img.shields.io/badge/Indexing%20Services-User%20Configured%20Only-00A4DC?style=flat-square" alt="User Configured" />
+</p>
 
 Fishbowl is engineered exclusively as a **personal homelab server hosting and media library organization utility**. It is strictly **NOT designed, intended, licensed, or provided for piracy, unauthorized file-sharing, or copyright infringement**.
 
@@ -608,23 +631,41 @@ Fishbowl is engineered exclusively as a **personal homelab server hosting and me
 
 ### Project License & Open-Source Attributions
 
+> [!IMPORTANT]
+> **Licensing & Legal Compliance Summary:**
+> - **Fishbowl Platform:** Licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE).
+> - **Jellyfin Media Server Core:** Licensed under GNU General Public License v3.0 (GPLv3).
+> - **Jackett Indexer Proxy:** Licensed under GNU General Public License v2.0 (GPLv2).
+> - **GPLv3 Section 6 Compliance:** Comprehensive upstream source code links, component licensing terms, and corresponding source disclosures are cataloged in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+<p align="left">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Fishbowl-GPL%20v3.0-F1C40F?style=flat-square&logo=gnu&logoColor=white" alt="Fishbowl GPLv3" /></a>
+  <a href="https://jellyfin.org"><img src="https://img.shields.io/badge/Jellyfin%20Core-GPL%20v3.0-9B59B6?style=flat-square&logo=jellyfin&logoColor=white" alt="Jellyfin GPLv3" /></a>
+  <a href="https://github.com/Jackett/Jackett"><img src="https://img.shields.io/badge/Jackett-GPL%20v2.0-FF6D00?style=flat-square" alt="Jackett GPLv2" /></a>
+  <a href="THIRD_PARTY_LICENSES.md"><img src="https://img.shields.io/badge/Third--Party%20Attributions-100%25%20GPL%20Compliant-3DDC84?style=flat-square" alt="GPL Compliance" /></a>
+  <img src="https://img.shields.io/badge/License%20Audit-Clean%20FOSS-00A4DC?style=flat-square" alt="Clean FOSS" />
+</p>
+
 Fishbowl is an unofficial community project and is not supported, maintained, or endorsed by the official Jellyfin project.
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE). For complete third-party attributions, component licenses, and GPLv3 Section 6 corresponding source disclosures, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
-- **Fishbowl:** Licensed under the GNU General Public License v3.0 (GPLv3).
-- **Jellyfin Media Server Core:** Licensed under GNU General Public License v3.0 (GPLv3).
-- **Jackett Indexer Proxy:** Licensed under GNU General Public License v2.0 (GPLv2).
-- **Radarr / Sonarr / Prowlarr / Lidarr:** Licensed under GNU General Public License v3.0 (GPLv3).
-- **Bazarr:** Licensed under GNU General Public License v3.0 (GPLv3).
-- **Transmission BitTorrent Daemon:** Licensed under GNU General Public License v2.0 / v3.0.
-- **Seerr (Jellyseerr):** Licensed under the MIT License.
-- **Termux Subsystems & Shared Libraries:** Licensed under GNU General Public License v3.0 / Apache 2.0 / MIT.
-- **Node.js LTS:** Licensed under the MIT License.
-- **Python Runtime:** Python Software Foundation License (PSFL).
-- **Microsoft .NET Runtime Engine:** Licensed under the MIT License.
-- **Jellyfin FFmpeg Engine:** Licensed under GNU General Public License v3.0 / LGPL v3.0 (built without `--enable-nonfree`).
-- **SQLite Database Engine:** Public Domain.
+| Component / Subsystem | Bundled Version | Upstream License | Status & Attributions |
+| :--- | :--- | :--- | :--- |
+| **Fishbowl Application** | v1.4.9-beta.1 (101416) | GNU GPLv3 | ![GPLv3](https://img.shields.io/badge/License-GPLv3-F1C40F?style=flat-square) |
+| **Jellyfin Core Engine** | 12.4.0 (.NET 10 ARM64) | GNU GPLv3 | ![GPLv3](https://img.shields.io/badge/License-GPLv3-9B59B6?style=flat-square) |
+| **Jackett Indexer Proxy** | 0.22.x | GNU GPLv2 | ![GPLv2](https://img.shields.io/badge/License-GPLv2-FF6D00?style=flat-square) |
+| **Radarr Movie Manager** | 6.4.4 | GNU GPLv3 | ![GPLv3](https://img.shields.io/badge/License-GPLv3-00A4DC?style=flat-square) |
+| **Sonarr TV Manager** | 4.0.9 | GNU GPLv3 | ![GPLv3](https://img.shields.io/badge/License-GPLv3-00A4DC?style=flat-square) |
+| **Lidarr Music Manager** | 2.9.6 | GNU GPLv3 | ![GPLv3](https://img.shields.io/badge/License-GPLv3-00A4DC?style=flat-square) |
+| **Prowlarr Indexer Manager** | 1.21.2 | GNU GPLv3 | ![GPLv3](https://img.shields.io/badge/License-GPLv3-00A4DC?style=flat-square) |
+| **Bazarr Subtitles Manager** | 1.4.5 | GNU GPLv3 | ![GPLv3](https://img.shields.io/badge/License-GPLv3-00A4DC?style=flat-square) |
+| **Transmission Daemon** | 4.1.4 | GNU GPLv2 / v3 | ![GPL](https://img.shields.io/badge/License-GPL-E74C3C?style=flat-square) |
+| **Seerr (Jellyseerr)** | 2.2.0 | MIT License | ![MIT](https://img.shields.io/badge/License-MIT-3498DB?style=flat-square) |
+| **Termux POSIX Runtime** | arm64 bionic runtime | GPLv3 / Apache 2.0 | ![FOSS](https://img.shields.io/badge/License-GPL%2FApache-2ECC71?style=flat-square) |
+| **Microsoft .NET 10 Host** | 10.0.12 ARM64 | MIT License | ![MIT](https://img.shields.io/badge/License-MIT-512BD4?style=flat-square) |
+| **Jellyfin FFmpeg Engine** | 7.1.4 | GNU GPLv3 / LGPLv3 | ![LGPLv3](https://img.shields.io/badge/License-GPL%2FLGPL-1ABC9C?style=flat-square) |
+| **SQLite Database Engine** | 3.46.1 | Public Domain | ![Public Domain](https://img.shields.io/badge/License-Public%20Domain-7F8C8D?style=flat-square) |
 
 This application is provided freely without warranties or service-level guarantees. Always back up important library configurations and use this project for personal experimentation and home-lab use only.
 
@@ -641,8 +682,7 @@ We extend our sincere gratitude and appreciation to the open-source projects, ma
 - **Fallenbagel & the Overseerr/Jellyseerr Team:** For designing a beautiful, intuitive, and modern media discovery and request management portal (<https://github.com/fallenbagel/jellyseerr>).
 - **Fredrik Fornwall, agnostic-apollo, and the Termux Project:** For groundbreaking work on Android Bionic POSIX process management and terminal environment packages (<https://github.com/termux>).
 - **Salih800:** For dedicated community collaboration, companion service integration (PR #33), and diagnostic testing on Android TV hardware.
-- **Community Issue Reporters & Testers:** Special thanks to community members (including @r-n-g and @Salih800) whose diagnostic feedback helped isolate and resolve issues across Android 10, 11, 14, and 15 devices.
-
+- **Community Diagnostic Testers:** Special thanks to community members whose diagnostic feedback and logs helped isolate and verify Bionic runtime fixes across Android 10, 11, 14, and 15 devices.
 ---
 
 ## Maintainer
