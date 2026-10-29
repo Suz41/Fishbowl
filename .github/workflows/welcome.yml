@@ -28,7 +28,7 @@ jobs:
 
             - Please verify that you are running the latest version from [Releases](https://github.com/Suz41/Fishbowl/releases).
             - For device-specific setup or playback issues, please attach your console logs (Logs tab -> COPY) and specify your exact device model and Android version.
-            - Consult the [Troubleshooting & FAQ](https://github.com/Suz41/Fishbowl/wiki/Troubleshooting-&-FAQ) for common resolutions.
+            - Consult the [Troubleshooting section](https://github.com/Suz41/Fishbowl#troubleshooting) in the README for common resolutions.
             - Maintainers will review your report shortly.
           pr-message: |
             Thank you for opening your first pull request on Fishbowl.

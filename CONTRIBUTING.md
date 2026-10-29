@@ -60,17 +60,29 @@ To contribute code to Fishbowl:
 - Android NDK (r25+)
 - Physical ARM64 Android device with USB debugging enabled (recommended)
 
-### Build Commands
+### Build and Verification Commands
 ```bash
 # Clone the repository
 git clone https://github.com/Suz41/Fishbowl.git
 cd Fishbowl
 
+# Download Termux bootstrap packages
+./gradlew downloadBootstraps
+
+# Compile Java and native C/C++ components
+./gradlew :app:compileDebugJavaWithJavac
+
+# Run unit tests
+./gradlew testDebugUnitTest
+
+# Run Android Lint analysis
+./gradlew :app:lintDebug
+
 # Compile debug APK
 ./gradlew assembleDebug
 
 # Install directly to connected device
-adb install -r -d app/build/outputs/apk/debug/Fishbowl-v1.4.8-beta.2-debug-arm64-v8a.apk
+adb install -r -d app/build/outputs/apk/debug/Fishbowl-*-debug-*.apk
 
 # Compile production release universal APK
 ./gradlew assembleRelease
