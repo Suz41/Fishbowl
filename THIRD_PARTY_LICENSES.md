@@ -12,7 +12,7 @@ In accordance with Section 6 of the GNU General Public License v3.0 (*Conveying 
 
 | Bundled Binary Component | Version / Build | Upstream Source Repository | Upstream License |
 | :--- | :--- | :--- | :--- |
-| **Jellyfin Media Server Core** | `12.1.0` (ARM64) | [jellyfin/jellyfin](https://github.com/jellyfin/jellyfin) | GNU GPLv3 |
+| **Jellyfin Media Server Core** | `12.4.0` (ARM64) | [jellyfin/jellyfin](https://github.com/jellyfin/jellyfin) | GNU GPLv3 |
 | **Microsoft .NET Runtime Engine** | `10.0.12` (ARM64 Bionic) | [dotnet/runtime](https://github.com/dotnet/runtime) | MIT License |
 | **Jellyfin FFmpeg Engine** | `7.1.4-Jellyfin` (ARM64) | [jellyfin/jellyfin-ffmpeg](https://github.com/jellyfin/jellyfin-ffmpeg) | GNU GPLv3 / LGPLv3 |
 | **Radarr** | `6.4.4` (ARM64) | [Radarr/Radarr](https://github.com/Radarr/Radarr) | GNU GPLv3 |

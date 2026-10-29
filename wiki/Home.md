@@ -25,7 +25,7 @@ For full architectural documentation, source compilation instructions, and compl
 ## Highlights
 
 *   **Native Android Host:** Direct POSIX process execution on Android Bionic libc with lightweight background service management.
-*   **Jellyfin Core:** Full Jellyfin 12.1.0 media server running locally on-device.
+*   **Jellyfin Core:** Full Jellyfin 12.4.0 media server running locally on-device.
 *   **Runtime:** Embedded Microsoft .NET 10.0.12 JIT runtime for Linux Bionic ARM64.
 *   **Hardware Transcoding:** Native Jellyfin-FFmpeg binary supporting HLS streaming, media remuxing, and thumbnails.
 *   **Local Database:** Embedded SQLite3 relational storage for server state, user accounts, and library metadata.
