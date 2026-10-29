@@ -24,7 +24,7 @@ Fishbowl runs Jellyfin natively inside the Android user space without virtualiza
 |                                  |                                      |
 |  +-------------------------------------------------------------------+  |
 |  |                     Native Subsystem (POSIX)                      |  |
-|  |   .NET 10 Host (dotnet) ---> Jellyfin.Server.dll (12.1.0)         |  |
+|  |   .NET 10 Host (dotnet) ---> Jellyfin.Server.dll (12.4.0)         |  |
 |  |   Servarr Binaries      ---> Radarr, Sonarr, Prowlarr (.NET 10)   |  |
 |  |   Transmission Daemon   ---> Native Headless Torrent Daemon       |  |
 |  |   Jellyfin-FFmpeg Engine ---> Hardware Transcoding / HLS Remux     |  |
