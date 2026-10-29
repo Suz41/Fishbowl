@@ -22,8 +22,8 @@ Fishbowl hosts the full, native **Jellyfin Media Server (v12.4.0)** on your Andr
 ## Step-by-Step Setup
 
 ### Step 1: Download & Install
-1. Go to [Fishbowl Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.8).
-2. Download the latest `Fishbowl-v1.4.8-release-universal.apk` (SHA-256: `34B1DEB600961DCA19A3BF8B23F35ABF5B68DB2BB237D3F3D51BCAE05494298F`).
+1. Go to [Fishbowl Releases](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.9-beta.1).
+2. Download the latest `Fishbowl-v1.4.9-beta.1-release-universal.apk` (SHA-256: `A96BDECF7A7B0B4D48EB38E655489EBDB28B264204844078201F57AF07F12414`).
 3. Open the downloaded file and install the app.
 4. Grant Notification, All-Files Storage Access, and Battery Optimization permissions when prompted.
 
@@ -55,20 +55,20 @@ Fishbowl automatically maintains a clean, separated storage scaffolding under in
 
 ```
 FishbowlMedia/
-├── Movies/                # Radarr auto-organized movies
-│   └── Inception (2010)/
-│       └── Inception (2010).mkv
-├── TV Shows/              # Sonarr auto-organized series
-│   └── Breaking Bad/
-│       └── Season 01/
-│           └── Breaking Bad - S01E01.mkv
-├── Music/                 # Lidarr / music files
-│   └── Artist Name/
-│       └── Album Name/
-│           └── 01 - Track Name.flac
-└── Downloads/             # Isolated download staging
-    ├── radarr/            # Radarr movie downloads
-    └── sonarr/            # Sonarr episode downloads
+|-- Movies/                # Radarr auto-organized movies
+|   `-- Inception (2010)/
+|       `-- Inception (2010).mkv
+|-- TV Shows/              # Sonarr auto-organized series
+|   `-- Breaking Bad/
+|       `-- Season 01/
+|           `-- Breaking Bad - S01E01.mkv
+|-- Music/                 # Lidarr / music files
+|   `-- Artist Name/
+|       `-- Album Name/
+|           `-- 01 - Track Name.flac
+`-- Downloads/             # Isolated download staging
+    |-- radarr/            # Radarr movie downloads
+    `-- sonarr/            # Sonarr episode downloads
 ```
 
 > **Automated Deduplication:** When downloads complete and Radarr or Sonarr imports the media into `Movies/` or `TV Shows/`, Fishbowl's background deduplication watcher automatically purges the duplicate file in `Downloads/` to prevent wasted storage.
@@ -89,6 +89,6 @@ Protect your library configurations and media history against device crashes or 
 
 ## Troubleshooting & Tips
 
-- **Server Stops in Background:** Set Fishbowl's battery optimization to **Unrestricted** in Android Settings (`Apps ➔ Fishbowl ➔ Battery ➔ Unrestricted`).
+- **Server Stops in Background:** Set Fishbowl's battery optimization to **Unrestricted** in Android Settings (Settings -> Apps -> Fishbowl -> Battery -> Unrestricted).
 - **Cannot Connect from Another Device:** Ensure both devices are connected to the same Wi-Fi network and AP isolation is disabled on your router.
 - **Updating the App:** Install new APK releases directly over the existing app. All user data, accounts, and libraries in `--datadir` (`~/.local/share/jellyfin`) are automatically preserved.
