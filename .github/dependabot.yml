@@ -40,6 +40,9 @@ updates:
       gradle-minor-patch:
         patterns:
           - "*"
+        exclude-patterns:
+          - "*gradle*"
+          - "gradle-wrapper"
         update-types:
           - "minor"
           - "patch"
@@ -49,3 +52,15 @@ updates:
       # Ignore automated Gradle wrapper updates >= 9.6.0 until AGP is upgraded to 8.14+ or 9.0.
       - dependency-name: "org.gradle:gradle"
         versions: [">= 9.6.0"]
+      - dependency-name: "gradle"
+        versions: [">= 9.6.0"]
+      - dependency-name: "gradle-wrapper"
+        versions: [">= 9.6.0"]
+      # androidx.core 1.14.0+ requires compileSdk 37 and AGP 9.1+, while project is on AGP 8.13.2 / compileSdk 36
+      - dependency-name: "androidx.core:core"
+        versions: [">= 1.14.0"]
+      - dependency-name: "androidx.core:core-ktx"
+        versions: [">= 1.14.0"]
+      # HiddenApiBypass 6.2+ requires compileSdk 37
+      - dependency-name: "org.lsposed.hiddenapibypass:hiddenapibypass"
+        versions: [">= 6.2.0"]
