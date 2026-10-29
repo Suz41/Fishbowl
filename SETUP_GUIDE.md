@@ -6,7 +6,7 @@ Complete guide to setting up and hosting Jellyfin on your Android ARM64 device w
 
 ## Quick Overview
 
-Fishbowl hosts the full, native **Jellyfin Media Server (v12.1.0)** on your Android device without requiring root access or Docker containers.
+Fishbowl hosts the full, native **Jellyfin Media Server (v12.4.0)** on your Android device without requiring root access or Docker containers.
 
 > [!NOTE]
 > **Authorized Content Policy:** Fishbowl is strictly an infrastructure platform designed for personal self-hosting, legally acquired media, and public domain collections. Fishbowl does not host, distribute, or provide any media content.

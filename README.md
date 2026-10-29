@@ -5,7 +5,7 @@
 <h1 align="center">Fishbowl</h1>
 
 <p align="center">
-  <b>Standalone Jellyfin Server 12.1.0 Host & Companion Automation Suite for Android ARM64</b><br>
+  <b>Standalone Jellyfin Server 12.4.0 Host & Companion Automation Suite for Android ARM64</b><br>
   <i>Native POSIX execution on Android Bionic libc without containers, root, or virtualization.</i>
 </p>
 
@@ -18,7 +18,7 @@
 <p align="center">
   <a href="https://github.com/Suz41/Fishbowl/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/Suz41/Fishbowl/build.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="Build Status" /></a>
   <a href="https://github.com/Suz41/Fishbowl/releases/tag/v1.4.9-beta.1"><img src="https://img.shields.io/badge/Release-v1.4.9--beta.1-00A4DC?style=flat-square" alt="Release" /></a>
-  <a href="https://jellyfin.org"><img src="https://img.shields.io/badge/Jellyfin%20Core-12.1.0-9B59B6?style=flat-square&logo=jellyfin&logoColor=white" alt="Jellyfin" /></a>
+  <a href="https://jellyfin.org"><img src="https://img.shields.io/badge/Jellyfin%20Core-12.4.0-9B59B6?style=flat-square&logo=jellyfin&logoColor=white" alt="Jellyfin" /></a>
   <a href="https://dotnet.microsoft.com"><img src="https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4?style=flat-square&logo=dotnet&logoColor=white" alt=".NET" /></a>
   <a href="https://android.com"><img src="https://img.shields.io/badge/Platform-Android%20ARM64-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL%20v3.0-F1C40F?style=flat-square" alt="License" /></a>
@@ -48,7 +48,7 @@
 > - **Thermal & Hardware Guidance:** Sustained, multi-threaded video transcoding on mobile ARM SoCs generates substantial thermal load and power consumption. For continuous server workloads, keeping the host device adequately ventilated and connected to steady AC power is strongly recommended.
 > - **Licensing & Warranty:** Distributed free of charge under the GNU General Public License v3.0 (GPLv3) for homelab and personal self-hosting without commercial warranties or service-level agreements.
 
-Fishbowl runs **Jellyfin Server 12.1.0** natively on compatible ARM64 Android devices (powered by Microsoft .NET 10.0 ARM64), providing a native interface for starting the server, viewing status, managing media storage folders, orchestrating companion automation services (including Jackett, Radarr, Sonarr, Prowlarr, Transmission, and Seerr), and accessing diagnostic logs while keeping the underlying server local to the device.
+Fishbowl runs **Jellyfin Server 12.4.0** natively on compatible ARM64 Android devices (powered by Microsoft .NET 10.0 ARM64), providing a native interface for starting the server, viewing status, managing media storage folders, orchestrating companion automation services (including Jackett, Radarr, Sonarr, Prowlarr, Transmission, and Seerr), and accessing diagnostic logs while keeping the underlying server local to the device.
 
 ---
 
@@ -134,14 +134,14 @@ Fishbowl runs **Jellyfin Server 12.1.0** natively on compatible ARM64 Android de
 Fishbowl `v1.4.9-beta.1` introduces native Jackett torrent indexer integration, a redesigned 5-column multi-row services dock, dual-tier home screen supervision widgets, an embedded movie importer engine, and enterprise CI/CD security hardening.
 
 ### Release Specifications
-- **Core Server Engine:** Jellyfin Server 12.1.0 (.NET 10.0.12 ARM64 Bionic)
+- **Core Server Engine:** Jellyfin Server 12.4.0 (.NET 10.0.12 ARM64 Bionic)
 - **Target Platform:** Android ARM64 (API 21+ / Android 7.0 - 15+)
 - **Indexer Proxy:** Jackett 0.22.x (Port :9117)
 - **Universal APK:** [`Fishbowl-v1.4.9-beta.1-release-universal.apk`](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.9-beta.1) (338,578,148 bytes)
 - **SHA-256 Checksum:** `A96BDECF7A7B0B4D48EB38E655489EBDB28B264204844078201F57AF07F12414`
 
 ### Key Highlights & Changes
-- **Jellyfin Server 12.1.0:** Full Bionic native runtime hosting on Android ARM64 with isolated SQLite database storage.
+- **Jellyfin Server 12.4.0:** Full Bionic native runtime hosting on Android ARM64 with isolated SQLite database storage.
 - **Jackett Native Indexer Proxy (:9117):** Standalone daemon with custom Blaze Orange vector icon and Torznab auto-wiring with Radarr and Sonarr.
 - **5-Column Multi-Row Service Dock:** Responsive 2-tier dashboard organizing 9 managed companion services across two balanced rows.
 - **Dual-Tier Android App Widgets (5x2 Grid):** Home screen widgets mirroring the in-app dock with electric crimson (`#FF1744`) crash alerting.
@@ -216,7 +216,7 @@ flowchart TD
 
     subgraph Engine["Native POSIX Runtime (Linux Bionic libc)"]
         DOTNET[".NET 10 CLR Host (ARM64)"]
-        JFN["Jellyfin 12.1.0 Core (jellyfin.dll)"]
+        JFN["Jellyfin 12.4.0 Core (jellyfin.dll)"]
         FFMPEG["Jellyfin FFmpeg 7.1.4 (HLS & Audio Remux)"]
         SQLITE["SQLite 3.46.1 Database Engine"]
         
@@ -255,7 +255,7 @@ flowchart TD
 ## Key Features
 
 ### Server & Platform Engine
-- **Embedded Jellyfin 12.1.0 Core:** Direct POSIX execution on Android's Bionic C runtime (`libc.so`) without containers, emulation, or root access.
+- **Embedded Jellyfin 12.4.0 Core:** Direct POSIX execution on Android's Bionic C runtime (`libc.so`) without containers, emulation, or root access.
 - **Embedded .NET 10 Host:** High-performance JIT execution powered by Microsoft .NET 10.0.12 (Linux Bionic ARM64).
 - **Embedded FFmpeg Engine:** Bundled mobile FFmpeg binary supporting media streaming, audio remuxing, and HLS playback.
 - **Local SQLite3 Database:** Embedded SQLite engine (`libe_sqlite3.so`) managing media libraries, user playback states, and metadata locally.
