@@ -64,3 +64,6 @@ updates:
       # HiddenApiBypass 6.2+ requires compileSdk 37
       - dependency-name: "org.lsposed.hiddenapibypass:hiddenapibypass"
         versions: [">= 6.2.0"]
+      # Material Components 1.13.0+ raises minSdkVersion from 21 to 23
+      - dependency-name: "com.google.android.material:material"
+        versions: [">= 1.13.0"]
