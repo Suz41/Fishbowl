@@ -81,7 +81,7 @@
         </activity>
         <activity
             android:name="com.fishbowl.app.JellyfinStorageActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="Media Storage"
             android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode|fontScale|fontWeightAdjustment|locale|layoutDirection"
             android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
@@ -98,7 +98,7 @@
         </activity>
         <activity
             android:name="com.fishbowl.app.JellyfinWebActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="Fishbowl Web"
             android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar"
             android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode|fontScale|fontWeightAdjustment|locale|layoutDirection" />

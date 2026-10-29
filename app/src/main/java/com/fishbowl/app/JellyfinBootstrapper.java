@@ -63,11 +63,10 @@ public class JellyfinBootstrapper {
             return true;
         }
         File marker = new File(TermuxConstants.TERMUX_FILES_DIR, INITIALIZED_MARKER_FILE);
-        File marker123 = new File(TermuxConstants.TERMUX_FILES_DIR, LEGACY_V123_MARKER_FILE);
         File jellyfinDll = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.dll");
         File dotnetBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/dotnet/dotnet");
         File ffmpegBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "opt/jellyfin/bin/ffmpeg");
-        boolean ready = (marker.exists() || marker123.exists()) && jellyfinDll.exists() && dotnetBin.exists() && ffmpegBin.exists();
+        boolean ready = marker.exists() && jellyfinDll.exists() && dotnetBin.exists() && ffmpegBin.exists();
         if (ready) {
             isInitializedCached = true;
         }

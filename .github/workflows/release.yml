@@ -170,9 +170,9 @@ jobs:
             echo "FISHBOWL_RELEASE_KEY_PASSWORD=$KEY_PASS" >> $GITHUB_ENV
             echo "configured=true" >> $GITHUB_OUTPUT
           else
-            echo "Warning: FISHBOWL_RELEASE_KEYSTORE_BASE64 secret is not configured."
-            echo "Falling back to repository test keystore (testkey_untrusted.jks)."
-            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "Error: FISHBOWL_RELEASE_KEYSTORE_BASE64 secret is not configured in GitHub Secrets." >&2
+            echo "Production releases must not be signed or published using public test keys." >&2
+            exit 1
           fi
 
       - name: Build Production Release APK
