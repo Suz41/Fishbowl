@@ -67,3 +67,11 @@ updates:
       # Material Components 1.13.0+ raises minSdkVersion from 21 to 23
       - dependency-name: "com.google.android.material:material"
         versions: [">= 1.13.0"]
+      # AppCompat 1.7.0+ raises minSdkVersion from 21 to 23 (manifest merger failure on Android 5.0)
+      - dependency-name: "androidx.appcompat:appcompat"
+        versions: [">= 1.7.0"]
+      - dependency-name: "androidx.appcompat:appcompat-resources"
+        versions: [">= 1.7.0"]
+      # commons-io > 2.5 uses java.nio.file APIs that throw runtime exceptions on Android < 8 (API 26)
+      - dependency-name: "commons-io:commons-io"
+        versions: [">= 2.6.0"]
