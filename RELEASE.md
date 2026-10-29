@@ -15,6 +15,59 @@ Fishbowl is engineered strictly as a personal homelab server hosting and library
 
 ---
 
+## Release v1.4.9-beta.1 (Pre-release)
+
+- **Release Date:** October 28, 2026
+- **Target Platform:** Android ARM64 (`aarch64`, Bionic libc)
+- **Minimum Android API:** API 21 (Android 5.0)
+- **Target Android API:** API 35 (Android 15)
+- **Version Code:** `101416`
+- **Core Server Engine:** Jellyfin 12.4.0 (.NET 10.0.12 ARM64 Bionic)
+- **Transcoding Engine:** Jellyfin FFmpeg 7.1.4
+- **Database Engine:** SQLite 3.46.1 (`libe_sqlite3.so`)
+- **Native Indexer Proxy:** Jackett 0.22.x (Port :9117)
+- **Automation Stack:** Radarr 6.4.4, Sonarr 4.0.9, Prowlarr 1.21.2, Lidarr 2.9.6, Bazarr 1.4.5, Transmission 4.1.4, Seerr 2.2.0
+
+### Release Artifacts and Verification
+
+| Artifact Name | Architecture | File Size (Bytes) | SHA-256 Checksum |
+| :--- | :--- | :--- | :--- |
+| `Fishbowl-v1.4.9-beta.1-release-universal.apk` | Universal ARM64 | 338,578,148 | `A96BDECF7A7B0B4D48EB38E655489EBDB28B264204844078201F57AF07F12414` |
+| `release-checksums.sha256` | All Platforms | 120 | `sha256sum -c release-checksums.sha256` |
+
+### Detailed Changes
+
+#### 1. Jellyfin Server 12.4.0 Core Engine
+- Direct POSIX execution on Android Bionic C runtime (`libc.so`) without root, chroot, or containers.
+- In-place runtime patcher dynamically sets Jellyfin 12.4.0 metadata and web bundle strings.
+- Isolated and preserved SQLite databases and XML configurations across app updates in `~/.local/share/jellyfin`.
+
+#### 2. Jackett Native Indexer Proxy (:9117)
+- Embedded background daemon with independent process supervision.
+- Custom typographic Blaze Orange (`#FF6D00`) vector iconography.
+- Automatic Torznab endpoint resolution and credential synchronization with Radarr and Sonarr.
+
+#### 3. 5-Column Multi-Row Service Dock & Dual-Tier Widgets
+- Re-architected in-app services dock into a structured 5-column dual-row grid.
+- Redesigned home launcher widgets (5x2 grid) mirroring the in-app dock with electric crimson (`#FF1744`) crash alerting.
+
+#### 4. In-App Movie Importer Engine
+- Integrated TMDB metadata matching, filename parsing heuristics, and download detection watcher.
+- Automatically organizes and moves completed downloads into Jellyfin library directories.
+
+#### 5. Bionic Runtime Compatibility & Community Bug Fixes
+- Bundled native Android/Bionic `libMonoPosixHelper.so`, resolving `System.DllNotFoundException` crashes on Android 10/11 devices (Fixes #35).
+- Implemented TV remote D-pad focus traversal and automated setup overlay dismissal for Android TV / Nvidia Shield (Fixes #32).
+- Upgraded headless Transmission daemon to 4.1.4 with bundled Bionic runtime libraries (`libpsl`, `libminiupnpc`, `libnatpmp`) (Merged PR #33).
+- Hardened POSIX path traversal and documented standard `/storage/<UUID>/` mount traversal (Fixes #31).
+
+#### 6. Enterprise CI/CD Pipeline & Security Hardening
+- Provenance-checked releases requiring SemVer tag validation (`v*`), commit provenance verification, and pre-flight unit test gates.
+- Shielded AGP 8.13.2 against incompatible Gradle 9.6+ updates via Dependabot ignore rules (Closed PR #34).
+- Comprehensive CodeQL SAST scanning and release pipeline cache isolation to prevent cache poisoning (Resolved CodeQL Alert #37).
+
+---
+
 ## Release v1.4.8 (Stable)
 
 - **Release Date:** October 18, 2026

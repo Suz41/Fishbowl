@@ -294,7 +294,7 @@ Fishbowl integrates tested native binaries and runtimes compiled for the Android
 
 | Package / Component | Version / Identifier | Purpose & Role | Upstream License |
 | :--- | :--- | :--- | :--- |
-| **Jellyfin Media Server Core** | `12.1.0` (ARM64) | Core media server runtime (`jellyfin.dll`), library indexing, playback reporting, and REST API | [GPLv3](https://github.com/jellyfin/jellyfin) |
+| **Jellyfin Media Server Core** | `12.4.0` (ARM64) | Core media server runtime (`jellyfin.dll`), library indexing, playback reporting, and REST API | [GPLv3](https://github.com/jellyfin/jellyfin) |
 | **Microsoft .NET Runtime Engine** | `10.0.12` (ARM64) | High-performance managed JIT execution host located in `lib/dotnet/` | [MIT](https://github.com/dotnet/runtime) |
 | **Jellyfin FFmpeg Transcoder** | `7.1.4-Jellyfin` | Native ARM64 binary located in `opt/jellyfin/bin/ffmpeg` for media remuxing, thumbnail generation, and audio transcoding | [GPLv3 / LGPLv3](https://www.ffmpeg.org/legal.html) |
 | **Radarr** | `6.4.4` (ARM64) | Automated movie collection manager and metadata grabber | [GPLv3](https://github.com/Radarr/Radarr) |

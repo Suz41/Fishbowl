@@ -19,9 +19,9 @@ In accordance with Section 6 of the GNU General Public License v3.0 (*Conveying 
 | **Sonarr** | `4.0.9` (ARM64) | [Sonarr/Sonarr](https://github.com/Sonarr/Sonarr) | GNU GPLv3 |
 | **Prowlarr** | `1.21.2` (ARM64) | [Prowlarr/Prowlarr](https://github.com/Prowlarr/Prowlarr) | GNU GPLv3 |
 | **Jackett** | `0.22.x` (ARM64) | [Jackett/Jackett](https://github.com/Jackett/Jackett) | GNU GPLv2 |
-| **Transmission Daemon** | `4.1.3` (ARM64 Bionic) | [transmission/transmission](https://github.com/transmission/transmission) | GNU GPLv2 / GPLv3 |
+| **Transmission Daemon** | `4.1.4` (ARM64 Bionic) | [transmission/transmission](https://github.com/transmission/transmission) | GNU GPLv2 / GPLv3 |
 | **Seerr (Jellyseerr)** | `2.2.0` (ARM64) | [fallenbagel/jellyseerr](https://github.com/fallenbagel/jellyseerr) | MIT License |
-| **Lidarr** | `2.8.2` (ARM64) | [Lidarr/Lidarr](https://github.com/Lidarr/Lidarr) | GNU GPLv3 |
+| **Lidarr** | `2.9.6` (ARM64) | [Lidarr/Lidarr](https://github.com/Lidarr/Lidarr) | GNU GPLv3 |
 | **SQLite3 Database Engine** | `3.46.1` (`libe_sqlite3.so`) | [sqlite/sqlite](https://sqlite.org) | Public Domain |
 | **Fontconfig Engine** | `2.15.0` (`libfontconfig.so`) | [fontconfig/fontconfig](https://gitlab.freedesktop.org/fontconfig/fontconfig) | MIT / Permissive |
 | **FreeType Font Engine** | `2.13.2` (`libfreetype.so`) | [freetype/freetype](https://freetype.org) | FreeType License (FTL) |
