@@ -221,5 +221,20 @@ public class ManagedService {
 
     public synchronized void clearLogs() {
         logs.clear();
+        try {
+            if (manifest != null && manifest.getLogDir() != null) {
+                java.io.File logDir = new java.io.File(manifest.getLogDir());
+                if (logDir.exists() && logDir.isDirectory()) {
+                    java.io.File[] files = logDir.listFiles();
+                    if (files != null) {
+                        for (java.io.File f : files) {
+                            if (f.isFile() && (f.getName().endsWith(".log") || f.getName().endsWith(".txt"))) {
+                                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(f)) {} catch (Throwable ignored) {}
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 }
