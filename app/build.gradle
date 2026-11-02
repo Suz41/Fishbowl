@@ -104,13 +104,17 @@ android {
         release {
             // Secure production keystore resolution:
             // Prioritizes environment variables (CI secrets) or project properties.
-            // Safely falls back to testkey_untrusted.jks for local developer builds & CI validation.
+            // Refuses silent testkey fallback when running release tasks in CI.
+            def isCi = (System.getenv("CI") == "true" || System.getenv("GITHUB_ACTIONS") == "true")
+            def isReleaseTask = gradle.startParameter.taskNames.any { it.contains("Release") }
             def releaseKeyStorePath = System.getenv("FISHBOWL_RELEASE_KEYSTORE_PATH") ?: (project.findProperty("FISHBOWL_RELEASE_KEYSTORE_PATH") ?: null)
             if (releaseKeyStorePath && file(releaseKeyStorePath).exists()) {
                 storeFile file(releaseKeyStorePath)
                 keyAlias System.getenv("FISHBOWL_RELEASE_KEY_ALIAS") ?: (project.findProperty("FISHBOWL_RELEASE_KEY_ALIAS") ?: 'alias')
                 storePassword System.getenv("FISHBOWL_RELEASE_STORE_PASSWORD") ?: (project.findProperty("FISHBOWL_RELEASE_STORE_PASSWORD") ?: '')
                 keyPassword System.getenv("FISHBOWL_RELEASE_KEY_PASSWORD") ?: (project.findProperty("FISHBOWL_RELEASE_KEY_PASSWORD") ?: '')
+            } else if (isCi && isReleaseTask) {
+                throw new GradleException("FISHBOWL_RELEASE_KEYSTORE_PATH must be configured in CI for release builds! Refusing to sign production release APK with untrusted debug testkey.")
             } else {
                 storeFile file('testkey_untrusted.jks')
                 keyAlias 'alias'
