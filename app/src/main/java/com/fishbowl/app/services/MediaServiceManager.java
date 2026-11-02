@@ -127,6 +127,63 @@ public class MediaServiceManager {
      * Resets the persisted active services set to only Jellyfin core server.
      * Used on OS Low Memory Killer (LMK) revival to guarantee companion services are never revived automatically.
      */
+    
+    /**
+     * Cold-starts all previously running services on OS LMK revival in background.
+     */
+    public synchronized void autoRevivePersistedServices(Context ctx) {
+        Set<String> active = getPersistedActiveServices();
+        Log.i(TAG, "[LMKRecovery] Fast background cold-starting persisted active services: " + active);
+        for (String sid : active) {
+            if ("jellyfin".equalsIgnoreCase(sid)) continue;
+            ManagedService s = getService(sid);
+            if (s != null && s.isInstalled() && !s.isRunning()) {
+                startService(sid, ctx != null ? ctx : appContext);
+            }
+        }
+    }
+
+    /**
+     * Uninstalls all companion services by terminating their processes, purging
+     * their binary and configuration folders from internal storage to reclaim space.
+     */
+    public synchronized void uninstallAllCompanionServices() {
+        stopAllServices();
+        try {
+            File home = TermuxConstants.TERMUX_HOME_DIR;
+            File servicesDir = new File(home, "services");
+            if (servicesDir.exists()) {
+                File[] subs = servicesDir.listFiles();
+                if (subs != null) {
+                    for (File f : subs) {
+                        if (!"jellyfin".equalsIgnoreCase(f.getName())) {
+                            deleteRecursive(f);
+                        }
+                    }
+                }
+            }
+            File configDir = new File(home, ".config");
+            if (configDir.exists()) {
+                String[] compConfigs = {"radarr", "sonarr", "prowlarr", "jackett", "transmission-daemon", "seerr", "bazarr", "lidarr"};
+                for (String c : compConfigs) {
+                    File cf = new File(configDir, c);
+                    if (cf.exists()) deleteRecursive(cf);
+                }
+            }
+            for (ManagedService s : getAllServices()) {
+                if (!"jellyfin".equalsIgnoreCase(s.getId())) {
+                    s.reconcileInstalledState();
+                }
+            }
+            clearPersistedActiveServices();
+            Log.i(TAG, "[StorageReclaim] All companion services uninstalled and cleaned.");
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to uninstall companion services: " + t.getMessage());
+        }
+    }
+
+    
+
     public synchronized void resetPersistedActiveServicesToCoreOnly() {
         if (appContext == null) return;
         try {
@@ -920,7 +977,9 @@ public class MediaServiceManager {
                     File customLibs = new File(home, "services/bazarr/custom_libs");
                     File libs = new File(home, "services/bazarr/libs");
                     File bazarrDir = new File(home, "services/bazarr/bazarr");
-                    env.put("PYTHONPATH", customLibs.getAbsolutePath() + ":" + libs.getAbsolutePath() + ":" + bazarrDir.getAbsolutePath());
+                    File pyStdLib = new File(prefix, "lib/python3.14");
+                    String pypath = customLibs.getAbsolutePath() + ":" + libs.getAbsolutePath() + ":" + bazarrDir.getAbsolutePath() + (pyStdLib.exists() ? (":" + pyStdLib.getAbsolutePath()) : "");
+                    env.put("PYTHONPATH", pypath);
                     env.put("BAZARR_VERSION", ms.getManifest().getVersion());
                 }
                 if ("transmission".equalsIgnoreCase(id)) {
@@ -974,12 +1033,10 @@ public class MediaServiceManager {
                     env.put("SSL_CERT_DIR", certFile.getParentFile().getAbsolutePath());
                 }
                 File sslCnf = new File(prefix, "etc/tls/openssl.cnf");
-                if (sslCnf.exists()) {
-                    env.put("OPENSSL_CONF", sslCnf.getAbsolutePath());
-                } else {
-                    env.put("OPENSSL_CONF", "/dev/null");
-                    env.put("SSL_CERT_FILE", new File(prefix, "etc/tls/cert.pem").getAbsolutePath());
-                }
+                // Force empty OPENSSL_CONF to bypass invalid Termux TLS / openssl_init provider probes that cause Bionic crashes
+                env.put("OPENSSL_CONF", "/dev/null");
+                env.put("DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER", "1");
+                env.put("DOTNET_SYSTEM_GLOBALIZATION_PREFER_USER_OVERRIDE", "0");
 
                 pb.directory(new File(ms.getManifest().getInstallDir()));
                 pb.redirectErrorStream(true);
@@ -1431,6 +1488,16 @@ public class MediaServiceManager {
         mainHandler.postDelayed(() -> startService(id, ctx), 1200);
     }
 
+    public void resetCrashLoop(String id) {
+        ManagedService ms = services.get(id);
+        if (ms != null) {
+            ms.resetCrashCount();
+            ms.setLastError(null);
+            ms.setState(ms.isInstalled() ? ServiceState.STOPPED : ServiceState.NOT_INSTALLED);
+            notifyListeners(id, ms.getState());
+        }
+    }
+
     private void destroyProcess(String id) {
         Process p = activeProcesses.remove(id);
         if (p != null) {
@@ -1640,8 +1707,12 @@ public class MediaServiceManager {
             // 1. Rename glibc deps.json so Bionic .NET runtime uses runtimeconfig.json frameworks
             File depsJson = new File(parent, baseName + ".deps.json");
             File depsJsonBak = new File(parent, baseName + ".deps.json.bak");
-            if (depsJson.exists() && !depsJsonBak.exists()) {
-                depsJson.renameTo(depsJsonBak);
+            if (depsJson.exists()) {
+                if (!depsJsonBak.exists()) {
+                    depsJson.renameTo(depsJsonBak);
+                } else {
+                    depsJson.delete();
+                }
             }
 
             // 2. Remove all bundled glibc .so and CLR host files
@@ -1697,6 +1768,32 @@ public class MediaServiceManager {
             File jfConfig = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.runtimeconfig.json");
             if (jfConfig.exists()) {
                 copyFile(jfConfig, runtimeConfig);
+            } else if (!runtimeConfig.exists() || runtimeConfig.length() == 0) {
+                String minimalConfig = "{\n" +
+                        "  \"runtimeOptions\": {\n" +
+                        "    \"tfm\": \"net10.0\",\n" +
+                        "    \"rollForward\": \"Major\",\n" +
+                        "    \"frameworks\": [\n" +
+                        "      {\n" +
+                        "        \"name\": \"Microsoft.NETCore.App\",\n" +
+                        "        \"version\": \"10.0.0\"\n" +
+                        "      },\n" +
+                        "      {\n" +
+                        "        \"name\": \"Microsoft.AspNetCore.App\",\n" +
+                        "        \"version\": \"10.0.0\"\n" +
+                        "      }\n" +
+                        "    ],\n" +
+                        "    \"configProperties\": {\n" +
+                        "      \"System.GC.Server\": false,\n" +
+                        "      \"System.Reflection.Metadata.MetadataUpdater.IsSupported\": false,\n" +
+                        "      \"System.Reflection.NullabilityInfoContext.IsSupported\": true,\n" +
+                        "      \"System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization\": false\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}\n";
+                try (FileOutputStream fos = new FileOutputStream(runtimeConfig)) {
+                    fos.write(minimalConfig.getBytes(StandardCharsets.UTF_8));
+                }
             }
 
             // 6. Pre-create or sanitize config.xml (BindAddress 0.0.0.0 and Auth None for local Web UI)
@@ -1815,7 +1912,7 @@ public class MediaServiceManager {
                     "  <AuthenticationMethod>Forms</AuthenticationMethod>\n" +
                     "  <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>\n" +
                     "  <AllowedHosts>*</AllowedHosts>\n" +
-                    "  <TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32</TrustedNetworks>\n" +
+                    "  <TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32, ::1/128, ::/0</TrustedNetworks>\n" +
                     "  <Branch>master</Branch>\n" +
                     "  <LogLevel>info</LogLevel>\n" +
                     "  <UrlBase></UrlBase>\n" +
@@ -2089,12 +2186,12 @@ public class MediaServiceManager {
                 }
             }
             if (updated.contains("<TrustedNetworks>")) {
-                if (!updated.contains("192.0.0.0/8")) {
-                    updated = updated.replaceAll("<TrustedNetworks>.*?</TrustedNetworks>", "<TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32</TrustedNetworks>");
+                if (!updated.contains("192.0.0.0/8") || !updated.contains("::1/128")) {
+                    updated = updated.replaceAll("<TrustedNetworks>.*?</TrustedNetworks>", "<TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32, ::1/128, ::/0</TrustedNetworks>");
                 }
             } else {
                 if (updated.contains("</Config>")) {
-                    updated = updated.replace("</Config>", "  <TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32</TrustedNetworks>\n</Config>");
+                    updated = updated.replace("</Config>", "  <TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32, ::1/128, ::/0</TrustedNetworks>\n</Config>");
                 }
             }
 
@@ -2371,8 +2468,14 @@ public class MediaServiceManager {
                     mainHandler.post(() -> callback.onReady(targetUrl));
                     return;
                 }
-                if (ms.getState() == ServiceState.ERROR || ms.getState() == ServiceState.FAILED) {
+                if (ms.getState() == ServiceState.ERROR || ms.getState() == ServiceState.FAILED
+                        || ms.getState() == ServiceState.CRASH_LOOP_PROTECTION) {
                     String err = ms.getLastError() != null ? ms.getLastError() : "PROCESS_START_FAILED";
+                    mainHandler.post(() -> callback.onError(err));
+                    return;
+                }
+                if (ms.getState() == ServiceState.RECOVERING && ms.getCrashCount() >= 2) {
+                    String err = ms.getLastError() != null ? ms.getLastError() : "PROCESS_CRASHED (Retry " + ms.getCrashCount() + "/5)";
                     mainHandler.post(() -> callback.onError(err));
                     return;
                 }
