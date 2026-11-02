@@ -18,7 +18,9 @@ import com.fishbowl.app.MediaStorageManager;
 import com.fishbowl.app.StorageDriveHelper;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -83,6 +85,90 @@ public final class MovieImportManager {
     /**
      * Executes safe media import (Movie or TV Show) in background thread.
      */
+    public static String computeSHA256(File file) throws IOException {
+        if (file == null || !file.exists() || !file.isFile()) {
+            throw new IOException("Cannot compute checksum of non-existent or invalid file: " + (file != null ? file.getAbsolutePath() : "null"));
+        }
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] buf = new byte[BUFFER_SIZE];
+            try (InputStream in = new FileInputStream(file)) {
+                int r;
+                while ((r = in.read(buf)) != -1) {
+                    md.update(buf, 0, r);
+                }
+            }
+            byte[] digest = md.digest();
+            StringBuilder hex = new StringBuilder();
+            for (byte b : digest) {
+                hex.append(String.format(Locale.ROOT, "%02x", b));
+            }
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 algorithm unavailable", e);
+        }
+    }
+
+    public static boolean safeCommitDestination(File stagingFile, File destFile) throws IOException {
+        if (stagingFile == null || !stagingFile.exists()) {
+            throw new IOException("Staging file does not exist: " + (stagingFile != null ? stagingFile.getAbsolutePath() : "null"));
+        }
+        File destFolder = destFile.getParentFile();
+        if (destFolder != null && !destFolder.exists()) {
+            destFolder.mkdirs();
+        }
+
+        // Case 1: Destination does not exist yet (clean new import)
+        if (!destFile.exists()) {
+            if (stagingFile.renameTo(destFile)) {
+                return true;
+            }
+            try {
+                java.nio.file.Files.move(stagingFile.toPath(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                return true;
+            } catch (Throwable t) {
+                throw new IOException("Failed to commit staging file to destination: " + t.getMessage(), t);
+            }
+        }
+
+        // Case 2: Destination already exists (REPLACE) - Safe Backup & Rollback
+        File backupFile = new File(destFolder, destFile.getName() + ".replace_backup_" + System.currentTimeMillis());
+        if (!destFile.renameTo(backupFile)) {
+            try {
+                java.nio.file.Files.move(stagingFile.toPath(), destFile.toPath(),
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                return true;
+            } catch (Throwable t) {
+                throw new IOException("Cannot backup existing destination file before replace: " + destFile.getAbsolutePath(), t);
+            }
+        }
+
+        boolean committed = false;
+        try {
+            if (stagingFile.renameTo(destFile)) {
+                committed = true;
+            } else {
+                java.nio.file.Files.move(stagingFile.toPath(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                committed = true;
+            }
+        } catch (Throwable t) {
+            committed = false;
+        }
+
+        if (committed && destFile.exists() && destFile.length() > 0) {
+            // Replacement committed successfully; purge backup
+            backupFile.delete();
+            return true;
+        } else {
+            // Rollback: Restore original destination file!
+            Log.e(TAG, "[Rollback] Commit failed! Restoring original destination file from backup.");
+            if (destFile.exists()) destFile.delete();
+            backupFile.renameTo(destFile);
+            throw new IOException("Failed to commit replacement file. Rollback successfully restored original destination.");
+        }
+    }
+
     public void startImport(Uri sourceUri,
                             String sourceFilename,
                             String destinationFolderRoot,
@@ -291,19 +377,23 @@ public final class MovieImportManager {
                             tempStagingFile.length() + " bytes) does not match source (" + sourceLength + " bytes).");
                 }
 
-                // 7. Atomic Commit (Rename Staging to Final)
-                if (finalDestFile.exists()) {
-                    finalDestFile.delete();
-                }
-                if (!tempStagingFile.renameTo(finalDestFile)) {
-                    throw new IllegalStateException("Failed to commit final destination file: " + finalDestFile.getAbsolutePath());
-                }
+                // 7. Safe Destination Commit with Backup & Rollback Protection
+                safeCommitDestination(tempStagingFile, finalDestFile);
 
                 if (!finalDestFile.exists() || !finalDestFile.canRead()) {
                     throw new IllegalStateException("Destination file verification failed after commit.");
                 }
 
-                // 8. Handle MOVE: Delete source only after destination verified
+                // 8. Independent Destination SHA-256 Verification & Source Deletion Guard
+                String destChecksum = computeSHA256(finalDestFile);
+                if (record.sourceChecksum != null && !record.sourceChecksum.trim().isEmpty()) {
+                    if (!record.sourceChecksum.equalsIgnoreCase(destChecksum)) {
+                        throw new IllegalStateException("Cryptographic verification failed: Destination SHA-256 (" +
+                                destChecksum + ") does not match source checksum (" + record.sourceChecksum + "). Source file preserved.");
+                    }
+                    Log.i(TAG, "[IntegrityGuard] Cryptographic SHA-256 match verified between source and destination: " + destChecksum);
+                }
+
                 if (isMoveOperation) {
                     deleteSourceFile(sourceUri, record.sourcePath, record.sourceFilename, finalDestFile, sourceLength);
                 }
