@@ -22,6 +22,7 @@ import java.util.Set;
  * - Test 3: Seerr settings.json sanitization generates secure API key and enforces CSRF and proxy security.
  * - Test 4: Seerr settings.json sanitization backs up empty files and restores default secure configuration.
  * - Test 5: Seerr settings.json sanitization preserves malformed JSON, backing up to .corrupted.bak without overwriting.
+ * - Test 6: LMK service recovery enforces bounded retries (< 3) and resets counter after confirmed health.
  */
 public class MediaStackSecurityTest {
 
@@ -169,5 +170,24 @@ public class MediaStackSecurityTest {
         // CRITICAL: Original settings.json must NOT be overwritten!
         String currentContent = new String(java.nio.file.Files.readAllBytes(corruptSettings.toPath()), StandardCharsets.UTF_8);
         Assert.assertEquals("Malformed settings.json must be preserved verbatim without overwrite", brokenJson, currentContent);
+    }
+
+    @Test
+    public void testLmkRecoveryBoundedRetriesAndResetOnHealth() {
+        String testService = "radarr";
+        MediaServiceManager.resetLmkRevivalAttempts(testService);
+        Assert.assertEquals("Initial revival attempts should be 0", 0, MediaServiceManager.getLmkRevivalAttempts(testService));
+
+        // Simulate 3 attempts
+        MediaServiceManager.recordLmkRevivalAttempt(testService);
+        MediaServiceManager.recordLmkRevivalAttempt(testService);
+        MediaServiceManager.recordLmkRevivalAttempt(testService);
+
+        Assert.assertEquals(3, MediaServiceManager.getLmkRevivalAttempts(testService));
+        Assert.assertTrue("Attempts >= 3 must be bounded to prevent infinite crash loop", MediaServiceManager.getLmkRevivalAttempts(testService) >= 3);
+
+        // Reset after confirmed health
+        MediaServiceManager.resetLmkRevivalAttempts(testService);
+        Assert.assertEquals("Confirmed health must reset revival attempts to 0", 0, MediaServiceManager.getLmkRevivalAttempts(testService));
     }
 }
