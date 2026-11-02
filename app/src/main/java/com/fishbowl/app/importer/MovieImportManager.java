@@ -17,6 +17,8 @@ import androidx.documentfile.provider.DocumentFile;
 import com.fishbowl.app.MediaStorageManager;
 import com.fishbowl.app.StorageDriveHelper;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -109,7 +111,50 @@ public final class MovieImportManager {
         }
     }
 
-    public static boolean safeCommitDestination(File stagingFile, File destFile) throws IOException {
+    public static class CommitTransaction {
+        public final File backupFile;
+        public final File destFile;
+        public final File stagingFile;
+        public final boolean wasReplaced;
+
+        public CommitTransaction(File backupFile, File destFile, File stagingFile, boolean wasReplaced) {
+            this.backupFile = backupFile;
+            this.destFile = destFile;
+            this.stagingFile = stagingFile;
+            this.wasReplaced = wasReplaced;
+        }
+
+        public void commitSuccess() {
+            if (wasReplaced && backupFile != null && backupFile.exists()) {
+                backupFile.delete();
+            }
+        }
+
+        public void rollback() {
+            if (wasReplaced && backupFile != null && backupFile.exists()) {
+                if (destFile.exists()) {
+                    destFile.delete();
+                }
+                backupFile.renameTo(destFile);
+                Log.e(TAG, "[Rollback] Restored original destination file from backup: " + destFile.getAbsolutePath());
+            } else if (!wasReplaced && destFile != null && destFile.exists()) {
+                destFile.delete();
+            }
+        }
+    }
+
+    public static boolean isPathContained(File libraryRoot, File target) {
+        if (libraryRoot == null || target == null) return false;
+        try {
+            String rootCanonical = libraryRoot.getCanonicalFile().getAbsolutePath();
+            String targetCanonical = target.getCanonicalFile().getAbsolutePath();
+            return targetCanonical.equals(rootCanonical) || targetCanonical.startsWith(rootCanonical + File.separator);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    public static CommitTransaction beginSafeCommitDestination(File stagingFile, File destFile) throws IOException {
         if (stagingFile == null || !stagingFile.exists()) {
             throw new IOException("Staging file does not exist: " + (stagingFile != null ? stagingFile.getAbsolutePath() : "null"));
         }
@@ -121,11 +166,11 @@ public final class MovieImportManager {
         // Case 1: Destination does not exist yet (clean new import)
         if (!destFile.exists()) {
             if (stagingFile.renameTo(destFile)) {
-                return true;
+                return new CommitTransaction(null, destFile, stagingFile, false);
             }
             try {
                 java.nio.file.Files.move(stagingFile.toPath(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                return true;
+                return new CommitTransaction(null, destFile, stagingFile, false);
             } catch (Throwable t) {
                 throw new IOException("Failed to commit staging file to destination: " + t.getMessage(), t);
             }
@@ -135,10 +180,7 @@ public final class MovieImportManager {
         File backupFile = new File(destFolder, destFile.getName() + ".replace_backup_" + System.currentTimeMillis());
         if (!destFile.renameTo(backupFile)) {
             try {
-                java.nio.file.Files.move(stagingFile.toPath(), destFile.toPath(),
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                return true;
+                java.nio.file.Files.move(destFile.toPath(), backupFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             } catch (Throwable t) {
                 throw new IOException("Cannot backup existing destination file before replace: " + destFile.getAbsolutePath(), t);
             }
@@ -157,16 +199,21 @@ public final class MovieImportManager {
         }
 
         if (committed && destFile.exists() && destFile.length() > 0) {
-            // Replacement committed successfully; purge backup
-            backupFile.delete();
-            return true;
+            // Keep backup until destination checksum verification succeeds!
+            return new CommitTransaction(backupFile, destFile, stagingFile, true);
         } else {
-            // Rollback: Restore original destination file!
+            // Immediate rollback
             Log.e(TAG, "[Rollback] Commit failed! Restoring original destination file from backup.");
             if (destFile.exists()) destFile.delete();
             backupFile.renameTo(destFile);
             throw new IOException("Failed to commit replacement file. Rollback successfully restored original destination.");
         }
+    }
+
+    public static boolean safeCommitDestination(File stagingFile, File destFile) throws IOException {
+        CommitTransaction tx = beginSafeCommitDestination(stagingFile, destFile);
+        tx.commitSuccess();
+        return true;
     }
 
     public void startImport(Uri sourceUri,
@@ -210,6 +257,7 @@ public final class MovieImportManager {
             record.sourcePath = resolveSourcePath(sourceUri, record.sourceFilename);
 
             File tempStagingFile = null;
+            CommitTransaction transaction = null;
 
             try {
                 // 1. Validate Source Access and Length
@@ -248,6 +296,11 @@ public final class MovieImportManager {
                 }
 
                 String ext = getFileExtension(record.sourceFilename);
+                if (!MovieFilenameParser.isSupportedMediaExtension(ext)) {
+                    throw new IllegalArgumentException("Unsupported or unsafe media extension: '" + ext + "'. Supported: " +
+                            MovieFilenameParser.ALLOWED_MEDIA_EXTENSIONS);
+                }
+
                 File destFolder;
                 File finalDestFile;
 
@@ -264,6 +317,12 @@ public final class MovieImportManager {
                     destFolder = new File(rootPath, movieFolderName);
                     String baseFileName = MovieFilenameParser.buildSanitizedName(record.movieTitle, record.movieYear, ext);
                     finalDestFile = new File(destFolder, baseFileName);
+                }
+
+                File rootDir = new File(rootPath);
+                if (!isPathContained(rootDir, destFolder) || !isPathContained(rootDir, finalDestFile)) {
+                    throw new SecurityException("Destination path containment violation: Target path escapes media library root. Dest: " +
+                            finalDestFile.getAbsolutePath() + ", Root: " + rootDir.getAbsolutePath());
                 }
 
                 if (!destFolder.exists()) {
@@ -310,10 +369,12 @@ public final class MovieImportManager {
                 // 5. Streamed Buffer Copying & SHA-256 Digest Verification
                 long bytesCopied = 0;
                 long lastProgressTime = 0;
-                java.security.MessageDigest md = null;
+                java.security.MessageDigest md;
                 try {
                     md = java.security.MessageDigest.getInstance("SHA-256");
-                } catch (Throwable ignored) {}
+                } catch (java.security.NoSuchAlgorithmException e) {
+                    throw new IllegalStateException("Cryptographic engine failure: SHA-256 unavailable. Import aborted.", e);
+                }
 
                 try (InputStream in = resolver.openInputStream(sourceUri);
                      FileOutputStream out = new FileOutputStream(tempStagingFile)) {
@@ -378,21 +439,32 @@ public final class MovieImportManager {
                 }
 
                 // 7. Safe Destination Commit with Backup & Rollback Protection
-                safeCommitDestination(tempStagingFile, finalDestFile);
+                transaction = beginSafeCommitDestination(tempStagingFile, finalDestFile);
 
                 if (!finalDestFile.exists() || !finalDestFile.canRead()) {
+                    transaction.rollback();
                     throw new IllegalStateException("Destination file verification failed after commit.");
                 }
 
-                // 8. Independent Destination SHA-256 Verification & Source Deletion Guard
+                // 8. Independent Destination SHA-256 Verification & Fail-Closed Source Deletion Guard
                 String destChecksum = computeSHA256(finalDestFile);
-                if (record.sourceChecksum != null && !record.sourceChecksum.trim().isEmpty()) {
-                    if (!record.sourceChecksum.equalsIgnoreCase(destChecksum)) {
-                        throw new IllegalStateException("Cryptographic verification failed: Destination SHA-256 (" +
-                                destChecksum + ") does not match source checksum (" + record.sourceChecksum + "). Source file preserved.");
-                    }
-                    Log.i(TAG, "[IntegrityGuard] Cryptographic SHA-256 match verified between source and destination: " + destChecksum);
+                if (record.sourceChecksum == null || record.sourceChecksum.trim().isEmpty()) {
+                    transaction.rollback();
+                    throw new IllegalStateException("Cryptographic verification failed: Source checksum is missing or empty. Original destination restored and source preserved.");
                 }
+
+                if (!java.security.MessageDigest.isEqual(
+                        record.sourceChecksum.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8),
+                        destChecksum.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8))) {
+                    transaction.rollback();
+                    throw new IllegalStateException("Cryptographic verification failed: Destination SHA-256 (" +
+                            destChecksum + ") does not match source checksum (" + record.sourceChecksum + "). Original destination restored and source preserved.");
+                }
+
+                Log.i(TAG, "[IntegrityGuard] Cryptographic SHA-256 match verified between source and destination: " + destChecksum);
+
+                // Both commit and cryptographic verification succeeded: safely purge backup
+                transaction.commitSuccess();
 
                 if (isMoveOperation) {
                     deleteSourceFile(sourceUri, record.sourcePath, record.sourceFilename, finalDestFile, sourceLength);
@@ -416,6 +488,9 @@ public final class MovieImportManager {
 
             } catch (Throwable t) {
                 Log.e(TAG, "Media import failed: " + t.getMessage(), t);
+                if (transaction != null) {
+                    transaction.rollback();
+                }
                 if (tempStagingFile != null && tempStagingFile.exists()) {
                     tempStagingFile.delete();
                 }
@@ -570,13 +645,17 @@ public final class MovieImportManager {
         }
     }
 
-    private String getFileExtension(String filename) {
-        if (filename == null) return "mkv";
+    public static String getFileExtension(String filename) {
+        if (filename == null) return "";
         int dot = filename.lastIndexOf('.');
         if (dot >= 0 && dot < filename.length() - 1) {
-            return filename.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
+            String ext = filename.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
+            if (MovieFilenameParser.isSupportedMediaExtension(ext)) {
+                return MovieFilenameParser.normalizeMediaExtension(ext);
+            }
+            return ext;
         }
-        return "mkv";
+        return "";
     }
 
     private boolean triggerJellyfinScan() {

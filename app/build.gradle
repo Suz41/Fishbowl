@@ -105,7 +105,7 @@ android {
             // Secure production keystore resolution:
             // Prioritizes environment variables (CI secrets) or project properties.
             // Refuses silent testkey fallback when running release tasks in CI.
-            def isCi = (System.getenv("CI") == "true" || System.getenv("GITHUB_ACTIONS") == "true")
+            def isCi = (System.getenv("CI") == "true" || System.getenv("GITHUB_ACTIONS") == "true" || project.hasProperty("CI") || project.hasProperty("FISHBOWL_CI"))
             def isReleaseTask = gradle.startParameter.taskNames.any { it.contains("Release") }
             def releaseKeyStorePath = System.getenv("FISHBOWL_RELEASE_KEYSTORE_PATH") ?: (project.findProperty("FISHBOWL_RELEASE_KEYSTORE_PATH") ?: null)
             if (releaseKeyStorePath && file(releaseKeyStorePath).exists()) {

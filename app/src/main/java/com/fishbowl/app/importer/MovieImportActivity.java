@@ -1300,6 +1300,12 @@ public final class MovieImportActivity extends AppCompatActivity {
                                        MovieImportManager.ConflictStrategy strategy,
                                        View cardToRemoveOnSuccess) {
 
+        String ext = MovieImportManager.getFileExtension(sourceFilename);
+        if (!MovieFilenameParser.isSupportedMediaExtension(ext)) {
+            Toast.makeText(this, "Rejected: Unsupported or unsafe media format: '" + ext + "'", Toast.LENGTH_LONG).show();
+            return;
+        }
+
         Dialog progressDialog = new Dialog(this);
         progressDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         progressDialog.setCancelable(false);
