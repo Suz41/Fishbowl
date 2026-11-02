@@ -54,6 +54,8 @@ public class MediaServiceManager {
 
     private final Context appContext;
     private final Map<String, ManagedService> services = new LinkedHashMap<>();
+    private final java.util.concurrent.atomic.AtomicBoolean isRevivingActive = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private final Map<String, Integer> lmkRevivalAttempts = new ConcurrentHashMap<>();
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<ServiceListener> listeners = new CopyOnWriteArrayList<>();
     private final ExecutorService serviceExecutor = Executors.newCachedThreadPool();
@@ -132,24 +134,59 @@ public class MediaServiceManager {
     /**
      * Cold-starts all previously running services on OS LMK revival in background.
      */
-    public synchronized void autoRevivePersistedServices(Context ctx) {
+    public boolean isMediaStackEnabled() {
+        if (appContext == null) return true;
+        try {
+            android.content.SharedPreferences sp = appContext.getSharedPreferences("fishbowl_prefs", Context.MODE_PRIVATE);
+            return sp.getBoolean("media_stack_enabled", true);
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    public void autoRevivePersistedServices(Context ctx) {
+        if (!isMediaStackEnabled()) {
+            Log.i(TAG, "[LMKRecovery] Media Stack is disabled by user. Skipping companion revival.");
+            return;
+        }
+        if (!isRevivingActive.compareAndSet(false, true)) {
+            Log.i(TAG, "[LMKRecovery] Revival sequence already in progress. Skipping duplicate invocation.");
+            return;
+        }
         Set<String> active = getPersistedActiveServices();
         Log.i(TAG, "[LMKRecovery] Scheduling staggered background cold-start for persisted services: " + active);
         serviceExecutor.execute(() -> {
-            String[] startOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
-            for (String sid : startOrder) {
-                if (!active.contains(sid)) continue;
-                try {
-                    ManagedService s = getService(sid);
-                    if (s != null && s.isInstalled() && !s.isRunning()) {
-                        Log.i(TAG, "[LMKRecovery] Reviving " + sid + "...");
+            try {
+                String[] startOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
+                for (String sid : startOrder) {
+                    if (!active.contains(sid)) continue;
+                    try {
+                        ManagedService s = getService(sid);
+                        if (s == null || !s.isInstalled()) continue;
+
+                        int attempts = lmkRevivalAttempts.getOrDefault(sid, 0);
+                        if (attempts >= 3) {
+                            Log.w(TAG, "[LMKRecovery] Service " + sid + " reached maximum revival attempts (" + attempts + "). Skipping to avoid crash loop.");
+                            continue;
+                        }
+
+                        int port = s.getManifest().getDefaultPort();
+                        if (s.isRunning() && isPortOccupied(port)) {
+                            Log.i(TAG, "[LMKRecovery] Service " + sid + " is already healthy on port " + port + ". Skipping restart.");
+                            continue;
+                        }
+
+                        Log.i(TAG, "[LMKRecovery] Reviving " + sid + " (Attempt " + (attempts + 1) + "/3)...");
+                        lmkRevivalAttempts.put(sid, attempts + 1);
                         startService(sid, ctx != null ? ctx : appContext);
                         // Stagger by 1200ms to avoid memory/CPU spikes that trigger Android LMK
                         Thread.sleep(1200);
+                    } catch (Throwable t) {
+                        Log.w(TAG, "[LMKRecovery] Error reviving " + sid + ": " + t.getMessage());
                     }
-                } catch (Throwable t) {
-                    Log.w(TAG, "[LMKRecovery] Error reviving " + sid + ": " + t.getMessage());
                 }
+            } finally {
+                isRevivingActive.set(false);
             }
         });
     }
@@ -1017,19 +1054,23 @@ public class MediaServiceManager {
                     env.put("OPENSSL_CONF", "/dev/null");
                     env.put("SSL_CERT_FILE", new File(prefix, "etc/tls/cert.pem").getAbsolutePath());
                 }
-                String safeTrustedNetworks = "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10";
+                String loopbackOnlyTrust = "127.0.0.1/32,::1/128";
                 if ("radarr".equalsIgnoreCase(id)) {
                     env.put("RADARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("RADARR__SERVER__TRUSTEDNETWORKS", safeTrustedNetworks);
+                    env.put("RADARR__SERVER__AUTHENTICATIONREQUIRED", "Enabled");
+                    env.put("RADARR__SERVER__TRUSTEDNETWORKS", loopbackOnlyTrust);
                 } else if ("sonarr".equalsIgnoreCase(id)) {
                     env.put("SONARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("SONARR__SERVER__TRUSTEDNETWORKS", safeTrustedNetworks);
+                    env.put("SONARR__SERVER__AUTHENTICATIONREQUIRED", "Enabled");
+                    env.put("SONARR__SERVER__TRUSTEDNETWORKS", loopbackOnlyTrust);
                 } else if ("prowlarr".equalsIgnoreCase(id)) {
                     env.put("PROWLARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("PROWLARR__SERVER__TRUSTEDNETWORKS", safeTrustedNetworks);
+                    env.put("PROWLARR__SERVER__AUTHENTICATIONREQUIRED", "Enabled");
+                    env.put("PROWLARR__SERVER__TRUSTEDNETWORKS", loopbackOnlyTrust);
                 } else if ("lidarr".equalsIgnoreCase(id)) {
                     env.put("LIDARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("LIDARR__SERVER__TRUSTEDNETWORKS", safeTrustedNetworks);
+                    env.put("LIDARR__SERVER__AUTHENTICATIONREQUIRED", "Enabled");
+                    env.put("LIDARR__SERVER__TRUSTEDNETWORKS", loopbackOnlyTrust);
                 } else if ("jackett".equalsIgnoreCase(id)) {
                     env.put("JACKETT_PORT", String.valueOf(port));
                     env.put("JACKETT_DATA_FOLDER", dataDir.getAbsolutePath());
@@ -1940,9 +1981,9 @@ public class MediaServiceManager {
                     "  <LaunchBrowser>False</LaunchBrowser>\n" +
                     "  <ApiKey>" + apiKey + "</ApiKey>\n" +
                     "  <AuthenticationMethod>Forms</AuthenticationMethod>\n" +
-                    "  <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>\n" +
+                    "  <AuthenticationRequired>Enabled</AuthenticationRequired>\n" +
                     "  <AllowedHosts>*</AllowedHosts>\n" +
-                    "  <TrustedNetworks>127.0.0.1/32, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7, fe80::/10</TrustedNetworks>\n" +
+                    "  <TrustedNetworks>127.0.0.1/32, ::1/128</TrustedNetworks>\n" +
                     "  <Branch>master</Branch>\n" +
                     "  <LogLevel>info</LogLevel>\n" +
                     "  <UrlBase></UrlBase>\n" +
@@ -1996,21 +2037,57 @@ public class MediaServiceManager {
         }
     }
 
-    private void sanitizeSeerrConfig(File seerrConfigDir) {
+    public static void sanitizeSeerrConfig(File seerrConfigDir) {
+        if (seerrConfigDir == null) return;
         try {
             if (!seerrConfigDir.exists()) seerrConfigDir.mkdirs();
             File settingsJson = new File(seerrConfigDir, "settings.json");
-            org.json.JSONObject root;
-            if (settingsJson.exists()) {
-                try {
-                    String text = readTextFile(settingsJson);
-                    root = (text != null && !text.trim().isEmpty()) ? new org.json.JSONObject(text) : new org.json.JSONObject();
-                } catch (Throwable t) {
-                    root = new org.json.JSONObject();
-                }
-            } else {
-                root = new org.json.JSONObject();
+            if (!settingsJson.exists()) {
+                org.json.JSONObject root = new org.json.JSONObject();
+                org.json.JSONObject main = new org.json.JSONObject();
+                main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
+                main.put("applicationTitle", "Fishbowl Requests");
+                main.put("applicationUrl", "http://127.0.0.1:5055");
+                main.put("trustProxy", false);
+                main.put("csrfProtection", true);
+                root.put("main", main);
+                writeTextFile(settingsJson, root.toString(2));
+                Log.i(TAG, "[ConfigSanitizer] Created new Seerr settings.json with secure API credentials.");
+                return;
             }
+
+            String text = readTextFile(settingsJson);
+            if (text == null || text.trim().isEmpty()) {
+                File emptyBak = new File(seerrConfigDir, "settings.json.empty.bak");
+                copyFile(settingsJson, emptyBak);
+                org.json.JSONObject root = new org.json.JSONObject();
+                org.json.JSONObject main = new org.json.JSONObject();
+                main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
+                main.put("applicationTitle", "Fishbowl Requests");
+                main.put("applicationUrl", "http://127.0.0.1:5055");
+                main.put("trustProxy", false);
+                main.put("csrfProtection", true);
+                root.put("main", main);
+                writeTextFile(settingsJson, root.toString(2));
+                Log.w(TAG, "[ConfigSanitizer] Empty Seerr settings.json detected; backed up and initialized defaults.");
+                return;
+            }
+
+            org.json.JSONObject root;
+            try {
+                root = new org.json.JSONObject(text);
+            } catch (Throwable parseError) {
+                // Malformed JSON: NEVER overwrite malformed user configuration!
+                File corruptedBak = new File(seerrConfigDir, "settings.json.corrupted.bak");
+                copyFile(settingsJson, corruptedBak);
+                Log.e(TAG, "[ConfigSanitizer] WARNING: Seerr settings.json is malformed JSON! Preserving original file. Backup created: " +
+                        corruptedBak.getName() + ". Error: " + parseError.getMessage());
+                return;
+            }
+
+            File bak = new File(seerrConfigDir, "settings.json.bak");
+            copyFile(settingsJson, bak);
+
             org.json.JSONObject main = root.optJSONObject("main");
             if (main == null) {
                 main = new org.json.JSONObject();
@@ -2237,8 +2314,8 @@ public class MediaServiceManager {
                 updated = updated.replaceAll("<AuthenticationMethod>.*?</AuthenticationMethod>", "<AuthenticationMethod>Forms</AuthenticationMethod>");
             }
             if (updated.matches("(?s).*<AuthenticationRequired>.*?</AuthenticationRequired>.*") &&
-                !updated.contains("<AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>")) {
-                updated = updated.replaceAll("<AuthenticationRequired>.*?</AuthenticationRequired>", "<AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>");
+                !updated.contains("<AuthenticationRequired>Enabled</AuthenticationRequired>")) {
+                updated = updated.replaceAll("<AuthenticationRequired>.*?</AuthenticationRequired>", "<AuthenticationRequired>Enabled</AuthenticationRequired>");
             }
             if (updated.contains("<AllowedHosts>")) {
                 if (!updated.contains("<AllowedHosts>*</AllowedHosts>")) {
@@ -2249,9 +2326,9 @@ public class MediaServiceManager {
                     updated = updated.replace("</Config>", "  <AllowedHosts>*</AllowedHosts>\n</Config>");
                 }
             }
-            String safeTrustedXml = "<TrustedNetworks>127.0.0.1/32, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7, fe80::/10</TrustedNetworks>";
+            String safeTrustedXml = "<TrustedNetworks>127.0.0.1/32, ::1/128</TrustedNetworks>";
             if (updated.contains("<TrustedNetworks>")) {
-                if (!updated.contains("fc00::/7") || !updated.contains("::1/128") || updated.contains("::/0") || updated.contains("0.0.0.0/0") || updated.contains("192.0.0.0/8")) {
+                if (!updated.contains("127.0.0.1/32") || !updated.contains("::1/128") || updated.contains("::/0") || updated.contains("0.0.0.0/0") || updated.contains("192.") || updated.contains("10.")) {
                     updated = updated.replaceAll("<TrustedNetworks>.*?</TrustedNetworks>", safeTrustedXml);
                 }
             } else {
@@ -2388,7 +2465,7 @@ public class MediaServiceManager {
         } catch (Throwable ignored) {}
     }
 
-    private void copyFile(File src, File dst) {
+    public static void copyFile(File src, File dst) {
         try (FileInputStream in = new FileInputStream(src);
              FileOutputStream out = new FileOutputStream(dst)) {
             byte[] buf = new byte[8192];
@@ -2399,7 +2476,7 @@ public class MediaServiceManager {
         } catch (Throwable ignored) {}
     }
 
-    private String readTextFile(File file) {
+    public static String readTextFile(File file) {
         try (FileInputStream fis = new FileInputStream(file);
              InputStreamReader isr = new InputStreamReader(fis, StandardCharsets.UTF_8);
              BufferedReader br = new BufferedReader(isr)) {
@@ -2414,7 +2491,7 @@ public class MediaServiceManager {
         }
     }
 
-    private void writeTextFile(File file, String content) {
+    public static void writeTextFile(File file, String content) {
         try (FileOutputStream fos = new FileOutputStream(file)) {
             fos.write(content.getBytes(StandardCharsets.UTF_8));
         } catch (Throwable ignored) {}
