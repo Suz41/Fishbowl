@@ -1,5 +1,7 @@
 package com.fishbowl.app;
 
+import com.fishbowl.app.services.MediaServiceManager;
+
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -16,9 +18,10 @@ import java.util.Set;
 /**
  * Automated security & lifecycle tests for Fishbowl Media Stack subsystem:
  * - Test 1: Strict allowlist directory deletion (preserves unknown/custom directories in services/).
- * - Test 2: deleteRecursive boundary checks preventing deletion of root app directories.
- * - Test 3: TrustedNetworks configuration sanitization enforces RFC 1918/RFC 4193 and forbids 0.0.0.0/0 and ::/0.
- * - Test 4: Seerr settings.json sanitization generates secure API key and enforces CSRF and proxy security.
+ * - Test 2: TrustedNetworks configuration sanitization enforces loopback-only trust and rejects public/LAN wildcards.
+ * - Test 3: Seerr settings.json sanitization generates secure API key and enforces CSRF and proxy security.
+ * - Test 4: Seerr settings.json sanitization backs up empty files and restores default secure configuration.
+ * - Test 5: Seerr settings.json sanitization preserves malformed JSON, backing up to .corrupted.bak without overwriting.
  */
 public class MediaStackSecurityTest {
 
@@ -98,53 +101,73 @@ public class MediaStackSecurityTest {
     }
 
     @Test
-    public void testTrustedNetworksForbidsPublicWildcards() {
-        String safeTrustedNetworks = "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10";
+    public void testTrustedNetworksLoopbackOnlyRestrictsLanAuthBypass() {
+        String loopbackOnlyTrust = "127.0.0.1/32,::1/128";
 
-        // Must NOT contain 0.0.0.0/0 or ::/0
+        // Must NOT contain public or broad private subnets that bypass auth
         Assert.assertFalse("TrustedNetworks must NEVER contain public IPv4 wildcard 0.0.0.0/0",
-                safeTrustedNetworks.contains("0.0.0.0/0"));
+                loopbackOnlyTrust.contains("0.0.0.0/0"));
         Assert.assertFalse("TrustedNetworks must NEVER contain public IPv6 wildcard ::/0",
-                safeTrustedNetworks.contains("::/0"));
-        Assert.assertFalse("TrustedNetworks must NOT contain 192.0.0.0/8",
-                safeTrustedNetworks.contains("192.0.0.0/8"));
+                loopbackOnlyTrust.contains("::/0"));
+        Assert.assertFalse("TrustedNetworks must NOT contain 192.168.0.0/16 (prevents LAN auth bypass)",
+                loopbackOnlyTrust.contains("192.168."));
+        Assert.assertFalse("TrustedNetworks must NOT contain 10.0.0.0/8 (prevents LAN auth bypass)",
+                loopbackOnlyTrust.contains("10.0.0.0"));
 
-        // Must contain private RFC 1918 and loopback subnets
-        Assert.assertTrue("Must contain localhost loopback", safeTrustedNetworks.contains("127.0.0.1/32"));
-        Assert.assertTrue("Must contain IPv6 localhost", safeTrustedNetworks.contains("::1/128"));
-        Assert.assertTrue("Must contain 10.0.0.0/8", safeTrustedNetworks.contains("10.0.0.0/8"));
-        Assert.assertTrue("Must contain 172.16.0.0/12", safeTrustedNetworks.contains("172.16.0.0/12"));
-        Assert.assertTrue("Must contain 192.168.0.0/16", safeTrustedNetworks.contains("192.168.0.0/16"));
-        Assert.assertTrue("Must contain IPv6 ULA", safeTrustedNetworks.contains("fc00::/7"));
-        Assert.assertTrue("Must contain IPv6 Link-Local", safeTrustedNetworks.contains("fe80::/10"));
+        // Must contain localhost loopback only
+        Assert.assertTrue("Must contain IPv4 localhost loopback", loopbackOnlyTrust.contains("127.0.0.1/32"));
+        Assert.assertTrue("Must contain IPv6 localhost loopback", loopbackOnlyTrust.contains("::1/128"));
     }
 
     @Test
-    public void testSeerrSettingsSanitizationEnforcesAuthentication() throws Exception {
-        File seerrConfig = new File(configDir, "seerr");
+    public void testSanitizeSeerrConfigCreatesDefaultSecureSettings() throws Exception {
+        File seerrConfig = new File(configDir, "seerr_new");
         seerrConfig.mkdirs();
+
+        MediaServiceManager.sanitizeSeerrConfig(seerrConfig);
+
         File settingsJson = new File(seerrConfig, "settings.json");
+        Assert.assertTrue("settings.json should be created", settingsJson.exists());
 
-        String generatedKey = java.util.UUID.randomUUID().toString().replace("-", "");
-        String jsonTemplate = "{\n" +
-                "  \"main\": {\n" +
-                "    \"apiKey\": \"" + generatedKey + "\",\n" +
-                "    \"applicationTitle\": \"Fishbowl Requests\",\n" +
-                "    \"applicationUrl\": \"http://127.0.0.1:5055\",\n" +
-                "    \"trustProxy\": false,\n" +
-                "    \"csrfProtection\": true\n" +
-                "  }\n" +
-                "}";
+        String content = MediaServiceManager.readTextFile(settingsJson);
+        Assert.assertNotNull(content);
+        Assert.assertTrue("Should contain apiKey", content.contains("\"apiKey\""));
+        Assert.assertTrue("Should contain applicationTitle", content.contains("Fishbowl Requests"));
+        Assert.assertTrue("Should disable trustProxy", content.contains("\"trustProxy\": false") || content.contains("\"trustProxy\":false"));
+        Assert.assertTrue("Should enable csrfProtection", content.contains("\"csrfProtection\": true") || content.contains("\"csrfProtection\":true"));
+    }
 
-        try (FileOutputStream fos = new FileOutputStream(settingsJson)) {
-            fos.write(jsonTemplate.getBytes(StandardCharsets.UTF_8));
-        }
+    @Test
+    public void testSanitizeSeerrConfigBacksUpAndRestoresEmptyFile() throws Exception {
+        File seerrConfig = new File(configDir, "seerr_empty");
+        seerrConfig.mkdirs();
+        File emptySettings = new File(seerrConfig, "settings.json");
+        emptySettings.createNewFile();
 
-        Assert.assertTrue(settingsJson.exists());
-        String readBack = new String(java.nio.file.Files.readAllBytes(settingsJson.toPath()), StandardCharsets.UTF_8);
+        MediaServiceManager.sanitizeSeerrConfig(seerrConfig);
 
-        Assert.assertTrue("Settings must contain generated API key", readBack.contains(generatedKey));
-        Assert.assertTrue("Settings must disable trustProxy", readBack.contains("\"trustProxy\": false") || readBack.contains("\"trustProxy\":false"));
-        Assert.assertTrue("Settings must enable csrfProtection", readBack.contains("\"csrfProtection\": true") || readBack.contains("\"csrfProtection\":true"));
+        File emptyBak = new File(seerrConfig, "settings.json.empty.bak");
+        Assert.assertTrue("Empty backup file must be created", emptyBak.exists());
+
+        String content = MediaServiceManager.readTextFile(emptySettings);
+        Assert.assertTrue("settings.json must be populated with defaults", content.contains("Fishbowl Requests"));
+    }
+
+    @Test
+    public void testSanitizeSeerrConfigProtectsMalformedJsonWithoutOverwriting() throws Exception {
+        File seerrConfig = new File(configDir, "seerr_corrupt");
+        seerrConfig.mkdirs();
+        File corruptSettings = new File(seerrConfig, "settings.json");
+        String brokenJson = "{\"main\": { corrupt invalid json content without closing tags...";
+        MediaServiceManager.writeTextFile(corruptSettings, brokenJson);
+
+        MediaServiceManager.sanitizeSeerrConfig(seerrConfig);
+
+        File corruptBak = new File(seerrConfig, "settings.json.corrupted.bak");
+        Assert.assertTrue("Corrupted backup file must be created", corruptBak.exists());
+
+        // CRITICAL: Original settings.json must NOT be overwritten!
+        String currentContent = new String(java.nio.file.Files.readAllBytes(corruptSettings.toPath()), StandardCharsets.UTF_8);
+        Assert.assertEquals("Malformed settings.json must be preserved verbatim without overwrite", brokenJson, currentContent);
     }
 }

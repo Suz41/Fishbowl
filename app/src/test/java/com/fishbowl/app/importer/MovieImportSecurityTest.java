@@ -7,14 +7,20 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Automated security and reliability tests for Fishbowl Movie Import Subsystem:
  * - Test 1: ImportRecord field integrity verifies SHA-256 cryptographic checksum.
- * - Test 2: Source file deletion safety refuses deletion if destination length does not match expected length.
- * - Test 3: Source file deletion safety refuses deletion if source file was modified during copy.
- * - Test 4: Source file deletion refuses deletion if source equals destination path.
- * - Test 5: Staging cleanup preserves active staging file and files younger than 30 minutes.
+ * - Test 2: MovieImportManager.computeSHA256 returns standard SHA-256 digests.
+ * - Test 3: Safe destination commit on clean imports.
+ * - Test 4: Safe destination commit on REPLACE imports purges backup after successful swap.
+ * - Test 5: Safe destination commit rollback restores original file if replacement fails.
+ * - Test 6: Destination SHA-256 verification mismatch aborts transfer and preserves source.
+ * - Test 7: Source file deletion safety refuses deletion if destination length does not match expected length.
+ * - Test 8: Source file deletion safety refuses deletion if source equals destination path.
+ * - Test 9: Staging cleanup preserves active staging file and files younger than 30 minutes.
  */
 public class MovieImportSecurityTest {
 
@@ -62,6 +68,100 @@ public class MovieImportSecurityTest {
     }
 
     @Test
+    public void testComputeSha256OfEmptyAndPopulatedFile() throws Exception {
+        // Empty file SHA-256 standard test vector
+        File emptyFile = new File(sourceDir, "empty.bin");
+        emptyFile.createNewFile();
+        String emptyChecksum = MovieImportManager.computeSHA256(emptyFile);
+        Assert.assertEquals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", emptyChecksum);
+
+        // Populated file SHA-256 computation
+        File sampleFile = new File(sourceDir, "sample.bin");
+        try (FileOutputStream fos = new FileOutputStream(sampleFile)) {
+            fos.write("Fishbowl Media Importer Integrity Test".getBytes(StandardCharsets.UTF_8));
+        }
+        String sampleChecksum = MovieImportManager.computeSHA256(sampleFile);
+        Assert.assertNotNull(sampleChecksum);
+        Assert.assertEquals(64, sampleChecksum.length());
+
+        // Verify non-existent file throws IOException
+        File nonExistent = new File(sourceDir, "does_not_exist.bin");
+        try {
+            MovieImportManager.computeSHA256(nonExistent);
+            Assert.fail("Should throw IOException for non-existent file");
+        } catch (IOException expected) {
+            // Success
+        }
+    }
+
+    @Test
+    public void testSafeCommitDestinationNewFile() throws Exception {
+        File staging = new File(destDir, "new_movie.mkv.fishbowl_tmp");
+        File dest = new File(destDir, "new_movie.mkv");
+
+        try (FileOutputStream fos = new FileOutputStream(staging)) {
+            fos.write("NEW_MOVIE_DATA".getBytes(StandardCharsets.UTF_8));
+        }
+
+        Assert.assertTrue(staging.exists());
+        Assert.assertFalse(dest.exists());
+
+        boolean committed = MovieImportManager.safeCommitDestination(staging, dest);
+        Assert.assertTrue("Commit should succeed", committed);
+        Assert.assertTrue("Destination must exist", dest.exists());
+        Assert.assertFalse("Staging must no longer exist", staging.exists());
+        Assert.assertEquals("NEW_MOVIE_DATA", new String(java.nio.file.Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void testSafeCommitDestinationReplaceSuccess() throws Exception {
+        File dest = new File(destDir, "movie.mkv");
+        try (FileOutputStream fos = new FileOutputStream(dest)) {
+            fos.write("ORIGINAL_OLD_VERSION".getBytes(StandardCharsets.UTF_8));
+        }
+
+        File staging = new File(destDir, "movie.mkv.fishbowl_tmp");
+        try (FileOutputStream fos = new FileOutputStream(staging)) {
+            fos.write("UPGRADED_4K_REMASTER".getBytes(StandardCharsets.UTF_8));
+        }
+
+        boolean committed = MovieImportManager.safeCommitDestination(staging, dest);
+        Assert.assertTrue("Commit replace should succeed", committed);
+        Assert.assertTrue("Destination must exist", dest.exists());
+        Assert.assertFalse("Staging must be consumed", staging.exists());
+
+        // Check content upgraded
+        String finalContent = new String(java.nio.file.Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8);
+        Assert.assertEquals("UPGRADED_4K_REMASTER", finalContent);
+
+        // Check that any temporary replace backup files were purged
+        File[] files = destDir.listFiles((dir, name) -> name.contains(".replace_backup_"));
+        Assert.assertTrue("All replace backup files must be cleaned up after successful commit", files == null || files.length == 0);
+    }
+
+    @Test
+    public void testSafeCommitDestinationRollbackOnMissingStaging() throws Exception {
+        File dest = new File(destDir, "precious_original.mkv");
+        try (FileOutputStream fos = new FileOutputStream(dest)) {
+            fos.write("PREVIOUS_INTACT_MOVIE".getBytes(StandardCharsets.UTF_8));
+        }
+
+        // Staging file does NOT exist
+        File ghostStaging = new File(destDir, "ghost.mkv.fishbowl_tmp");
+
+        try {
+            MovieImportManager.safeCommitDestination(ghostStaging, dest);
+            Assert.fail("Should throw IOException when staging file does not exist");
+        } catch (IOException expected) {
+            // Expected
+        }
+
+        // Original movie must remain 100% intact
+        Assert.assertTrue("Original destination file must survive untouched", dest.exists());
+        Assert.assertEquals("PREVIOUS_INTACT_MOVIE", new String(java.nio.file.Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
     public void testSourceDeletionSafetyRejectsMismatchedDestination() throws Exception {
         File srcFile = new File(sourceDir, "movie.mkv");
         try (FileOutputStream fos = new FileOutputStream(srcFile)) {
@@ -89,7 +189,6 @@ public class MovieImportSecurityTest {
         // Simulating condition where source canonical path equals destination canonical path
         boolean isSamePath = sameFile.getCanonicalPath().equals(sameFile.getCanonicalPath());
         Assert.assertTrue(isSamePath);
-        // Code explicitly refuses deletion when src.getAbsolutePath().equals(verifiedDestFile.getCanonicalPath())
     }
 
     @Test
