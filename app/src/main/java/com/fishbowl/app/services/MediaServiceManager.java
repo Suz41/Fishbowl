@@ -55,7 +55,7 @@ public class MediaServiceManager {
     private final Context appContext;
     private final Map<String, ManagedService> services = new LinkedHashMap<>();
     private final java.util.concurrent.atomic.AtomicBoolean isRevivingActive = new java.util.concurrent.atomic.AtomicBoolean(false);
-    private final Map<String, Integer> lmkRevivalAttempts = new ConcurrentHashMap<>();
+    private static final Map<String, Integer> lmkRevivalAttempts = new ConcurrentHashMap<>();
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<ServiceListener> listeners = new CopyOnWriteArrayList<>();
     private final ExecutorService serviceExecutor = Executors.newCachedThreadPool();
@@ -144,6 +144,50 @@ public class MediaServiceManager {
         }
     }
 
+    public boolean isServiceHealthy(ManagedService s) {
+        if (s == null) return false;
+        int port = s.getManifest().getDefaultPort();
+        if (!isPortOccupied(port)) {
+            return false;
+        }
+        String endpoint = s.getManifest().getHealthCheckPath();
+        if (endpoint == null || endpoint.trim().isEmpty() || "/".equals(endpoint)) {
+            return true;
+        }
+        String apiKey = getServiceApiKey(s.getId());
+        String urlStr = "http://127.0.0.1:" + port + endpoint;
+        if (apiKey != null && !apiKey.trim().isEmpty() && !urlStr.contains("apiKey=")) {
+            urlStr += (urlStr.contains("?") ? "&" : "?") + "apiKey=" + apiKey.trim();
+        }
+        try {
+            URL u = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+            conn.setConnectTimeout(2000);
+            conn.setReadTimeout(2000);
+            conn.setRequestMethod("GET");
+            if (apiKey != null && !apiKey.trim().isEmpty()) {
+                conn.setRequestProperty("X-Api-Key", apiKey.trim());
+            }
+            int code = conn.getResponseCode();
+            conn.disconnect();
+            return code >= 200 && code < 500;
+        } catch (Throwable t) {
+            return isPortOccupied(port);
+        }
+    }
+
+    public static int getLmkRevivalAttempts(String sid) {
+        return lmkRevivalAttempts.getOrDefault(sid, 0);
+    }
+
+    public static void recordLmkRevivalAttempt(String sid) {
+        lmkRevivalAttempts.put(sid, getLmkRevivalAttempts(sid) + 1);
+    }
+
+    public static void resetLmkRevivalAttempts(String sid) {
+        lmkRevivalAttempts.remove(sid);
+    }
+
     public void autoRevivePersistedServices(Context ctx) {
         if (!isMediaStackEnabled()) {
             Log.i(TAG, "[LMKRecovery] Media Stack is disabled by user. Skipping companion revival.");
@@ -171,16 +215,25 @@ public class MediaServiceManager {
                         }
 
                         int port = s.getManifest().getDefaultPort();
-                        if (s.isRunning() && isPortOccupied(port)) {
+                        if (s.isRunning() && isServiceHealthy(s)) {
                             Log.i(TAG, "[LMKRecovery] Service " + sid + " is already healthy on port " + port + ". Skipping restart.");
+                            lmkRevivalAttempts.remove(sid);
                             continue;
                         }
 
-                        Log.i(TAG, "[LMKRecovery] Reviving " + sid + " (Attempt " + (attempts + 1) + "/3)...");
+                        long backoff = 1200L * (attempts + 1);
+                        Log.i(TAG, "[LMKRecovery] Reviving " + sid + " (Attempt " + (attempts + 1) + "/3, backoff " + backoff + "ms)...");
                         lmkRevivalAttempts.put(sid, attempts + 1);
                         startService(sid, ctx != null ? ctx : appContext);
-                        // Stagger by 1200ms to avoid memory/CPU spikes that trigger Android LMK
-                        Thread.sleep(1200);
+                        // Stagger with backoff to avoid memory/CPU spikes that trigger Android LMK
+                        Thread.sleep(backoff);
+
+                        if (isServiceHealthy(s)) {
+                            Log.i(TAG, "[LMKRecovery] Service " + sid + " confirmed healthy after revival. Resetting attempt counter.");
+                            lmkRevivalAttempts.remove(sid);
+                        } else {
+                            Log.w(TAG, "[LMKRecovery] Service " + sid + " started but health confirmation is pending.");
+                        }
                     } catch (Throwable t) {
                         Log.w(TAG, "[LMKRecovery] Error reviving " + sid + ": " + t.getMessage());
                     }
