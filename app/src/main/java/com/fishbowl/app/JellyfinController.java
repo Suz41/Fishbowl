@@ -416,8 +416,26 @@ public class JellyfinController {
     public synchronized void clearDisplayedLogs() {
         liveLines.clear();
         preservedErrorLogs.clear();
+        truncateDiskLogs();
         notifyListeners();
         notifyLogListeners();
+    }
+
+    public synchronized void truncateDiskLogs() {
+        try {
+            File dataDir = getProgramDataDir();
+            File logDir = new File(dataDir, "log");
+            if (logDir.exists() && logDir.isDirectory()) {
+                File[] files = logDir.listFiles((dir, name) -> name.endsWith(".log"));
+                if (files != null) {
+                    for (File f : files) {
+                        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(f)) {
+                            // Truncate file to 0 bytes
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     public void addListener(Listener l) {

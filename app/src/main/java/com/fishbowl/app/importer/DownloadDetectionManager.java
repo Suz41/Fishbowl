@@ -35,6 +35,7 @@ public final class DownloadDetectionManager {
     private static final String TAG = "DownloadDetection";
     public static final String PREF_NAME = "fishbowl_importer";
     public static final String KEY_DETECT_DOWNLOADS = "detect_downloads_enabled";
+    public static final String KEY_KEEP_SCREEN_ON = "keep_screen_on_import";
     private static final String CHANNEL_ID = "movie_importer_downloads";
     private static final int NOTIFICATION_ID = 2002;
 
@@ -89,6 +90,20 @@ public final class DownloadDetectionManager {
         } else {
             stopMonitoring();
         }
+    }
+
+    public boolean isKeepScreenOnEnabled() {
+        if (appContext == null) return true;
+        SharedPreferences sp = appContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        return sp.getBoolean(KEY_KEEP_SCREEN_ON, true);
+    }
+
+    public synchronized void setKeepScreenOnEnabled(boolean enabled) {
+        if (appContext == null) return;
+        appContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_KEEP_SCREEN_ON, enabled)
+                .apply();
     }
 
     public synchronized void startMonitoring() {
@@ -209,7 +224,7 @@ public final class DownloadDetectionManager {
                     .setContentText(parsed.title + (parsed.year > 0 ? " (" + parsed.year + ")" : ""))
                     .setStyle(new NotificationCompat.BigTextStyle()
                             .setBigContentTitle("Movie download detected")
-                            .bigText("File: " + filename + "\nReady to organize into Jellyfin movie folder structure. Tap to review destination and import."))
+                            .bigText("File: " + filename + "\nReady to organize into Fishbowl movie folder structure. Tap to review destination and import."))
                     .setSmallIcon(R.drawable.ic_notification_jellyfin)
                     .setContentIntent(pi)
                     .setAutoCancel(true)
@@ -231,7 +246,7 @@ public final class DownloadDetectionManager {
                     "Fishbowl Movie Importer",
                     NotificationManager.IMPORTANCE_DEFAULT
             );
-            channel.setDescription("Notifies when new video downloads are ready to review and import into Jellyfin");
+            channel.setDescription("Notifies when new video downloads are ready to review and import into Fishbowl");
             NotificationManager nm = (NotificationManager) appContext.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
                 nm.createNotificationChannel(channel);

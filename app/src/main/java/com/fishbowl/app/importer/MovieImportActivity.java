@@ -24,6 +24,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
@@ -249,7 +250,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         header.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         TextView tag = new TextView(this);
-        tag.setText("JELLYFIN AUTO-ORG");
+        tag.setText("FISHBOWL AUTO-ORG");
         tag.setTextSize(9.5f);
         tag.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         tag.setTextColor(COLOR_ACCENT);
@@ -364,6 +365,47 @@ public final class MovieImportActivity extends AppCompatActivity {
         row.addView(detectionSwitch, new LinearLayout.LayoutParams(-2, -2));
 
         card.addView(row);
+
+        View div = new View(this);
+        div.setBackgroundColor(COLOR_BORDER);
+        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(-1, dp(1));
+        divLp.topMargin = dp(10);
+        divLp.bottomMargin = dp(10);
+        card.addView(div, divLp);
+
+        LinearLayout screenRow = new LinearLayout(this);
+        screenRow.setOrientation(LinearLayout.HORIZONTAL);
+        screenRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout screenTextCol = new LinearLayout(this);
+        screenTextCol.setOrientation(LinearLayout.VERTICAL);
+
+        TextView screenLabel = new TextView(this);
+        screenLabel.setText("KEEP SCREEN ON WHILE IMPORTING");
+        screenLabel.setTextSize(11.5f);
+        screenLabel.setLetterSpacing(0.06f);
+        screenLabel.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        screenLabel.setTextColor(COLOR_TEXT_PRIMARY);
+        screenTextCol.addView(screenLabel);
+
+        TextView screenDesc = new TextView(this);
+        screenDesc.setText("Prevents device from sleeping or pausing long media transfers.");
+        screenDesc.setTextSize(10.5f);
+        screenDesc.setTextColor(COLOR_TEXT_MUTED);
+        screenDesc.setPadding(0, dp(2), 0, 0);
+        screenTextCol.addView(screenDesc);
+
+        screenRow.addView(screenTextCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        Switch screenSwitch = new Switch(this);
+        screenSwitch.setChecked(detectionManager.isKeepScreenOnEnabled());
+        screenSwitch.setOnCheckedChangeListener((btn, isChecked) -> {
+            detectionManager.setKeepScreenOnEnabled(isChecked);
+            Toast.makeText(this, isChecked ? "Screen will stay awake during imports" : "Screen wake lock disabled", Toast.LENGTH_SHORT).show();
+        });
+        screenRow.addView(screenSwitch, new LinearLayout.LayoutParams(-2, -2));
+
+        card.addView(screenRow);
         return card;
     }
 
@@ -1020,6 +1062,14 @@ public final class MovieImportActivity extends AppCompatActivity {
         lblTo.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         lblTo.setTextColor(COLOR_ACCENT);
         pathBox.addView(lblTo);
+
+        TextView lblExistsWarning = new TextView(this);
+        lblExistsWarning.setTextSize(10.5f);
+        lblExistsWarning.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        lblExistsWarning.setTextColor(Color.parseColor("#F59E0B"));
+        lblExistsWarning.setPadding(0, dp(6), 0, 0);
+        lblExistsWarning.setVisibility(View.GONE);
+        pathBox.addView(lblExistsWarning);
         content.addView(pathBox);
 
         // Update Destination Label dynamically
@@ -1030,6 +1080,7 @@ public final class MovieImportActivity extends AppCompatActivity {
             try { y = Integer.parseInt(editYear.getText().toString().trim()); } catch (Throwable ignored) {}
 
             String ext = getFileExtension(sourceFilename);
+            String fullPath;
             if (isTvShow[0]) {
                 int s = 1;
                 int e = 1;
@@ -1037,13 +1088,22 @@ public final class MovieImportActivity extends AppCompatActivity {
                 try { e = Integer.parseInt(editEpisode.getText().toString().trim()); } catch (Throwable ignored) {}
                 String folder = MovieFilenameParser.buildSanitizedTvFolder(t, y, s);
                 String file = MovieFilenameParser.buildSanitizedTvFile(t, s, e, -1, ext);
-                String fullPath = MediaStorageManager.getInstance(this).getTvDir().getAbsolutePath() + "/" + folder + "/" + file;
-                lblTo.setText("TO (Jellyfin TV Shows):\n" + fullPath);
+                fullPath = MediaStorageManager.getInstance(this).getTvDir().getAbsolutePath() + "/" + folder + "/" + file;
+                lblTo.setText("TO (Fishbowl TV Shows):\n" + fullPath);
             } else {
                 String folder = MovieFilenameParser.buildSanitizedName(t, y, "");
                 String file = MovieFilenameParser.buildSanitizedName(t, y, ext);
-                String fullPath = MediaStorageManager.getInstance(this).getMoviesDir().getAbsolutePath() + "/" + folder + "/" + file;
-                lblTo.setText("TO (Jellyfin Movies):\n" + fullPath);
+                fullPath = MediaStorageManager.getInstance(this).getMoviesDir().getAbsolutePath() + "/" + folder + "/" + file;
+                lblTo.setText("TO (Fishbowl Movies):\n" + fullPath);
+            }
+            File destFileCheck = new File(fullPath);
+            if (destFileCheck.exists()) {
+                lblExistsWarning.setVisibility(View.VISIBLE);
+                lblExistsWarning.setText("⚠️ ALREADY IN LIBRARY: File exists (" + MediaStorageManager.formatBytes(destFileCheck.length()) + ")! Handled per conflict setting.");
+                lblTo.setTextColor(Color.parseColor("#F59E0B"));
+            } else {
+                lblExistsWarning.setVisibility(View.GONE);
+                lblTo.setTextColor(COLOR_ACCENT);
             }
         };
 
@@ -1132,8 +1192,53 @@ public final class MovieImportActivity extends AppCompatActivity {
         });
         content.addView(btnConflict, new LinearLayout.LayoutParams(-1, dp(38)));
 
+        // Keep Screen Awake Toggle Row
+        LinearLayout dlgScreenRow = new LinearLayout(this);
+        dlgScreenRow.setOrientation(LinearLayout.HORIZONTAL);
+        dlgScreenRow.setGravity(Gravity.CENTER_VERTICAL);
+        dlgScreenRow.setPadding(0, dp(12), 0, dp(6));
+
+        LinearLayout dlgScreenTextCol = new LinearLayout(this);
+        dlgScreenTextCol.setOrientation(LinearLayout.VERTICAL);
+
+        TextView dlgScreenTitle = new TextView(this);
+        dlgScreenTitle.setText("Keep Screen Awake");
+        dlgScreenTitle.setTextSize(12f);
+        dlgScreenTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        dlgScreenTitle.setTextColor(COLOR_TEXT_PRIMARY);
+        dlgScreenTextCol.addView(dlgScreenTitle);
+
+        TextView dlgScreenSub = new TextView(this);
+        dlgScreenSub.setText("Prevent screen sleep while copying or moving files");
+        dlgScreenSub.setTextSize(10.5f);
+        dlgScreenSub.setTextColor(COLOR_TEXT_MUTED);
+        dlgScreenTextCol.addView(dlgScreenSub);
+        dlgScreenRow.addView(dlgScreenTextCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        Switch dlgScreenSwitch = new Switch(this);
+        dlgScreenSwitch.setChecked(detectionManager.isKeepScreenOnEnabled());
+        dlgScreenSwitch.setOnCheckedChangeListener((b, isChecked) -> {
+            detectionManager.setKeepScreenOnEnabled(isChecked);
+        });
+        dlgScreenRow.addView(dlgScreenSwitch);
+        content.addView(dlgScreenRow);
+
         // START IMPORT BUTTON
+        LinearLayout dlgActionRow = new LinearLayout(this);
+        dlgActionRow.setOrientation(LinearLayout.HORIZONTAL);
+        dlgActionRow.setPadding(0, dp(14), 0, 0);
+
+        Button btnCancelDialog = createOutlineButton("CANCEL", COLOR_TEXT_MUTED);
+        btnCancelDialog.setOnClickListener(v -> dialog.dismiss());
+        dlgActionRow.addView(btnCancelDialog, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
+
+        View dlgBtnGap = new View(this);
+        dlgActionRow.addView(dlgBtnGap, new LinearLayout.LayoutParams(dp(8), 1));
+
         Button btnExecute = createButton("CONFIRM & START IMPORT", COLOR_ACCENT, Color.BLACK);
+        dlgActionRow.addView(btnExecute, new LinearLayout.LayoutParams(0, dp(40), 1.6f));
+
+        content.addView(dlgActionRow);
         btnExecute.setOnClickListener(v -> {
             dialog.dismiss();
 
@@ -1205,7 +1310,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         layout.setPadding(dp(22), dp(22), dp(22), dp(22));
 
         TextView title = new TextView(this);
-        String opName = isMove ? "MOVING MEDIA TO JELLYFIN" : "COPYING MEDIA TO JELLYFIN";
+        String opName = isMove ? "MOVING MEDIA TO FISHBOWL" : "COPYING MEDIA TO FISHBOWL";
         title.setText(opName);
         title.setTextSize(13.5f);
         title.setLetterSpacing(0.08f);
@@ -1232,15 +1337,24 @@ public final class MovieImportActivity extends AppCompatActivity {
         statsText.setPadding(0, dp(10), 0, dp(14));
         layout.addView(statsText);
 
-        Button btnCancel = createOutlineButton("CANCEL", COLOR_DANGER);
+        Button btnCancel = createOutlineButton("CANCEL MOVE", COLOR_DANGER);
         btnCancel.setOnClickListener(v -> {
             importManager.cancelCurrentImport();
-            statsText.setText("Cancelling...");
+            statsText.setText("Cancelling move & safely reverting...");
             btnCancel.setEnabled(false);
         });
         layout.addView(btnCancel, new LinearLayout.LayoutParams(-1, dp(38)));
 
         progressDialog.setContentView(layout);
+        progressDialog.setOnDismissListener(d -> {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        });
+        if (detectionManager != null && detectionManager.isKeepScreenOnEnabled()) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (progressDialog.getWindow() != null) {
+                progressDialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }
+        }
         progressDialog.show();
         if (progressDialog.getWindow() != null) {
             progressDialog.getWindow().setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.90), -2);
@@ -1282,8 +1396,8 @@ public final class MovieImportActivity extends AppCompatActivity {
                 // 2. Refresh Recent Imports list
                 refreshHistoryUI();
 
-                String msg = (isMove ? "Moved to Jellyfin:\n" : "Copied to Jellyfin:\n") + record.destinationPath;
-                if (jellyfinRefreshed) msg += "\n(Jellyfin library scan dispatched)";
+                String msg = (isMove ? "Moved to Fishbowl:\n" : "Copied to Fishbowl:\n") + record.destinationPath;
+                if (jellyfinRefreshed) msg += "\n(Fishbowl library scan dispatched)";
                 Toast.makeText(MovieImportActivity.this, msg, Toast.LENGTH_LONG).show();
             }
 
@@ -1368,5 +1482,11 @@ public final class MovieImportActivity extends AppCompatActivity {
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 }

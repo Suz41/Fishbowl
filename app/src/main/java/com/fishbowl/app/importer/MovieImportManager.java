@@ -99,6 +99,9 @@ public final class MovieImportManager {
         isRunning = true;
         isCancelled.set(false);
 
+        // Purge orphaned staging files from previous interrupted moves
+        cleanOrphanedStagingFiles(appContext);
+
         executor.execute(() -> {
             MovieImportJournal.ImportRecord record = new MovieImportJournal.ImportRecord();
             record.id = java.util.UUID.randomUUID().toString();
@@ -284,7 +287,7 @@ public final class MovieImportManager {
 
                 // 8. Handle MOVE: Delete source only after destination verified
                 if (isMoveOperation) {
-                    deleteSourceFile(sourceUri, record.sourcePath, record.sourceFilename);
+                    deleteSourceFile(sourceUri, record.sourcePath, record.sourceFilename, finalDestFile, sourceLength);
                 }
 
                 // Mark Completed
@@ -321,7 +324,11 @@ public final class MovieImportManager {
         });
     }
 
-    private void deleteSourceFile(Uri sourceUri, String sourcePath, String sourceFilename) {
+    private void deleteSourceFile(Uri sourceUri, String sourcePath, String sourceFilename, File verifiedDestFile, long expectedSize) {
+        if (verifiedDestFile == null || !verifiedDestFile.exists() || (expectedSize > 0 && verifiedDestFile.length() != expectedSize)) {
+            Log.e(TAG, "[SafetyGuard] Refusing to delete source file! Destination verification failed. Source file preserved: " + sourcePath);
+            return;
+        }
         ContentResolver resolver = appContext.getContentResolver();
 
         // 1. Delete direct POSIX file if path exists
@@ -415,6 +422,32 @@ public final class MovieImportManager {
             counter++;
         }
         return new File(folder, base + "_" + System.currentTimeMillis() + ext);
+    }
+
+    
+    public static void cleanOrphanedStagingFiles(Context ctx) {
+        if (ctx == null) return;
+        try {
+            MediaStorageManager sm = MediaStorageManager.getInstance(ctx);
+            cleanStagingInDir(sm.getMoviesDir());
+            cleanStagingInDir(sm.getTvDir());
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed cleaning orphaned staging files: " + t.getMessage());
+        }
+    }
+
+    private static void cleanStagingInDir(File dir) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) return;
+        File[] list = dir.listFiles();
+        if (list == null) return;
+        for (File f : list) {
+            if (f.isDirectory()) {
+                cleanStagingInDir(f);
+            } else if (f.getName().endsWith(".fishbowl_tmp")) {
+                Log.i(TAG, "Purging orphaned staging file from interrupted transfer: " + f.getAbsolutePath());
+                f.delete();
+            }
+        }
     }
 
     private String getFileExtension(String filename) {
