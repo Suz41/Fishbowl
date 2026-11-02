@@ -48,6 +48,7 @@ import com.termux.R;
 import com.fishbowl.app.StorageDriveHelper;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -755,14 +756,31 @@ public final class MovieImportActivity extends AppCompatActivity {
                     continue; // Already imported according to journal!
                 }
                 // Check if target file already exists in library on disk
+                File rootDir = new File(rootDest);
                 File destFile = new File(destPath);
+                boolean isDestContained = false;
+                try {
+                    String canonicalBase = rootDir.getCanonicalPath();
+                    if (!canonicalBase.endsWith(File.separator)) canonicalBase += File.separator;
+                    isDestContained = destFile.getCanonicalPath().startsWith(canonicalBase);
+                } catch (IOException ignored) {}
+                if (!isDestContained) {
+                    continue;
+                }
                 if (destFile.exists() && destFile.length() > 0) {
                     continue; // Already imported and present in Jellyfin library!
                 }
                 // Check if movie directory already exists in library with valid video
                 if (p.mediaType == MovieFilenameParser.MediaType.MOVIE && p.title != null && !p.title.isEmpty()) {
+                    File moviesRoot = new File(moviesLibPath);
                     File movieFolder = new File(moviesLibPath, p.proposedFolderName);
-                    if (movieFolder.exists() && movieFolder.isDirectory()) {
+                    boolean isFolderContained = false;
+                    try {
+                        String canonicalBase = moviesRoot.getCanonicalPath();
+                        if (!canonicalBase.endsWith(File.separator)) canonicalBase += File.separator;
+                        isFolderContained = movieFolder.getCanonicalPath().startsWith(canonicalBase);
+                    } catch (IOException ignored) {}
+                    if (isFolderContained && movieFolder.exists() && movieFolder.isDirectory()) {
                         File[] existingVideos = movieFolder.listFiles((dir, name) -> StorageDriveHelper.isVideoFile(name));
                         if (existingVideos != null && existingVideos.length > 0) {
                             continue; // Movie already exists in library!
@@ -1075,29 +1093,53 @@ public final class MovieImportActivity extends AppCompatActivity {
         // Update Destination Label dynamically
         Runnable updateDestLabel = () -> {
             String t = editTitle.getText().toString().trim();
+            if (t.contains("..") || t.contains("/") || t.contains("\\")) {
+                t = t.replace("..", "").replace("/", " ").replace("\\", " ").trim();
+            }
             if (t.isEmpty()) t = "Untitled";
             int y = 0;
             try { y = Integer.parseInt(editYear.getText().toString().trim()); } catch (Throwable ignored) {}
 
             String ext = getFileExtension(sourceFilename);
-            String fullPath;
+            if (!MovieFilenameParser.isSupportedMediaExtension(ext)) {
+                lblExistsWarning.setVisibility(View.GONE);
+                lblTo.setTextColor(COLOR_ACCENT);
+                return;
+            }
+
+            File baseDir = isTvShow[0] ? MediaStorageManager.getInstance(this).getTvDir() : MediaStorageManager.getInstance(this).getMoviesDir();
+            String folder;
+            String file;
             if (isTvShow[0]) {
                 int s = 1;
                 int e = 1;
                 try { s = Integer.parseInt(editSeason.getText().toString().trim()); } catch (Throwable ignored) {}
                 try { e = Integer.parseInt(editEpisode.getText().toString().trim()); } catch (Throwable ignored) {}
-                String folder = MovieFilenameParser.buildSanitizedTvFolder(t, y, s);
-                String file = MovieFilenameParser.buildSanitizedTvFile(t, s, e, -1, ext);
-                fullPath = MediaStorageManager.getInstance(this).getTvDir().getAbsolutePath() + "/" + folder + "/" + file;
-                lblTo.setText("TO (Fishbowl TV Shows):\n" + fullPath);
+                folder = MovieFilenameParser.buildSanitizedTvFolder(t, y, s);
+                file = MovieFilenameParser.buildSanitizedTvFile(t, s, e, -1, ext);
+                lblTo.setText("TO (Fishbowl TV Shows):\n" + baseDir.getAbsolutePath() + "/" + folder + "/" + file);
             } else {
-                String folder = MovieFilenameParser.buildSanitizedName(t, y, "");
-                String file = MovieFilenameParser.buildSanitizedName(t, y, ext);
-                fullPath = MediaStorageManager.getInstance(this).getMoviesDir().getAbsolutePath() + "/" + folder + "/" + file;
-                lblTo.setText("TO (Fishbowl Movies):\n" + fullPath);
+                folder = MovieFilenameParser.buildSanitizedName(t, y, "");
+                file = MovieFilenameParser.buildSanitizedName(t, y, ext);
+                lblTo.setText("TO (Fishbowl Movies):\n" + baseDir.getAbsolutePath() + "/" + folder + "/" + file);
             }
-            File destFileCheck = new File(fullPath);
-            if (destFileCheck.exists()) {
+
+            File destFolder = new File(baseDir, folder);
+            File destFileCheck = new File(destFolder, file);
+
+            boolean isContained = false;
+            try {
+                String canonicalBase = baseDir.getCanonicalPath();
+                if (!canonicalBase.endsWith(File.separator)) {
+                    canonicalBase += File.separator;
+                }
+                String canonicalDest = destFileCheck.getCanonicalPath();
+                if (canonicalDest.startsWith(canonicalBase) && MovieImportManager.isPathContained(baseDir, destFileCheck)) {
+                    isContained = true;
+                }
+            } catch (IOException ignored) {}
+
+            if (isContained && destFileCheck.exists()) {
                 lblExistsWarning.setVisibility(View.VISIBLE);
                 lblExistsWarning.setText("⚠️ ALREADY IN LIBRARY: File exists (" + MediaStorageManager.formatBytes(destFileCheck.length()) + ")! Handled per conflict setting.");
                 lblTo.setTextColor(Color.parseColor("#F59E0B"));
@@ -1243,6 +1285,9 @@ public final class MovieImportActivity extends AppCompatActivity {
             dialog.dismiss();
 
             String finalTitle = editTitle.getText().toString().trim();
+            if (finalTitle.contains("..") || finalTitle.contains("/") || finalTitle.contains("\\")) {
+                finalTitle = finalTitle.replace("..", "").replace("/", " ").replace("\\", " ").trim();
+            }
             if (finalTitle.isEmpty()) finalTitle = "Untitled";
             int finalYear = 0;
             try { finalYear = Integer.parseInt(editYear.getText().toString().trim()); } catch (Throwable ignored) {}
