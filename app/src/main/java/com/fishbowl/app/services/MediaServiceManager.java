@@ -27,6 +27,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -133,14 +134,24 @@ public class MediaServiceManager {
      */
     public synchronized void autoRevivePersistedServices(Context ctx) {
         Set<String> active = getPersistedActiveServices();
-        Log.i(TAG, "[LMKRecovery] Fast background cold-starting persisted active services: " + active);
-        for (String sid : active) {
-            if ("jellyfin".equalsIgnoreCase(sid)) continue;
-            ManagedService s = getService(sid);
-            if (s != null && s.isInstalled() && !s.isRunning()) {
-                startService(sid, ctx != null ? ctx : appContext);
+        Log.i(TAG, "[LMKRecovery] Scheduling staggered background cold-start for persisted services: " + active);
+        serviceExecutor.execute(() -> {
+            String[] startOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
+            for (String sid : startOrder) {
+                if (!active.contains(sid)) continue;
+                try {
+                    ManagedService s = getService(sid);
+                    if (s != null && s.isInstalled() && !s.isRunning()) {
+                        Log.i(TAG, "[LMKRecovery] Reviving " + sid + "...");
+                        startService(sid, ctx != null ? ctx : appContext);
+                        // Stagger by 1200ms to avoid memory/CPU spikes that trigger Android LMK
+                        Thread.sleep(1200);
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "[LMKRecovery] Error reviving " + sid + ": " + t.getMessage());
+                }
             }
-        }
+        });
     }
 
     /**
@@ -152,22 +163,36 @@ public class MediaServiceManager {
         try {
             File home = TermuxConstants.TERMUX_HOME_DIR;
             File servicesDir = new File(home, "services");
+            Set<String> allowedCompanions = new HashSet<>(Arrays.asList(
+                    "radarr", "sonarr", "prowlarr", "jackett", "transmission", "transmission-daemon", "seerr", "jellyseerr", "bazarr", "lidarr"
+            ));
             if (servicesDir.exists()) {
                 File[] subs = servicesDir.listFiles();
                 if (subs != null) {
+                    String canonicalServices = servicesDir.getCanonicalPath();
                     for (File f : subs) {
-                        if (!"jellyfin".equalsIgnoreCase(f.getName())) {
-                            deleteRecursive(f);
+                        String name = f.getName().toLowerCase(Locale.ROOT);
+                        if (allowedCompanions.contains(name) && !"jellyfin".equalsIgnoreCase(name)) {
+                            String canonicalSub = f.getCanonicalPath();
+                            if (canonicalSub.startsWith(canonicalServices + File.separator)) {
+                                deleteRecursive(f);
+                            }
                         }
                     }
                 }
             }
             File configDir = new File(home, ".config");
             if (configDir.exists()) {
-                String[] compConfigs = {"radarr", "sonarr", "prowlarr", "jackett", "transmission-daemon", "seerr", "bazarr", "lidarr"};
+                String canonicalConfig = configDir.getCanonicalPath();
+                String[] compConfigs = {"radarr", "sonarr", "prowlarr", "jackett", "transmission-daemon", "seerr", "bazarr", "lidarr", "Radarr", "Sonarr", "Prowlarr", "Jackett", "Lidarr"};
                 for (String c : compConfigs) {
                     File cf = new File(configDir, c);
-                    if (cf.exists()) deleteRecursive(cf);
+                    if (cf.exists()) {
+                        String canonicalSub = cf.getCanonicalPath();
+                        if (canonicalSub.startsWith(canonicalConfig + File.separator)) {
+                            deleteRecursive(cf);
+                        }
+                    }
                 }
             }
             for (ManagedService s : getAllServices()) {
@@ -176,7 +201,7 @@ public class MediaServiceManager {
                 }
             }
             clearPersistedActiveServices();
-            Log.i(TAG, "[StorageReclaim] All companion services uninstalled and cleaned.");
+            Log.i(TAG, "[StorageReclaim] All companion services safely uninstalled with strict allowlist.");
         } catch (Throwable t) {
             Log.w(TAG, "Failed to uninstall companion services: " + t.getMessage());
         }
@@ -992,18 +1017,19 @@ public class MediaServiceManager {
                     env.put("OPENSSL_CONF", "/dev/null");
                     env.put("SSL_CERT_FILE", new File(prefix, "etc/tls/cert.pem").getAbsolutePath());
                 }
+                String safeTrustedNetworks = "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10";
                 if ("radarr".equalsIgnoreCase(id)) {
                     env.put("RADARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("RADARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("RADARR__SERVER__TRUSTEDNETWORKS", safeTrustedNetworks);
                 } else if ("sonarr".equalsIgnoreCase(id)) {
                     env.put("SONARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("SONARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("SONARR__SERVER__TRUSTEDNETWORKS", safeTrustedNetworks);
                 } else if ("prowlarr".equalsIgnoreCase(id)) {
                     env.put("PROWLARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("PROWLARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("PROWLARR__SERVER__TRUSTEDNETWORKS", safeTrustedNetworks);
                 } else if ("lidarr".equalsIgnoreCase(id)) {
                     env.put("LIDARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("LIDARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("LIDARR__SERVER__TRUSTEDNETWORKS", safeTrustedNetworks);
                 } else if ("jackett".equalsIgnoreCase(id)) {
                     env.put("JACKETT_PORT", String.valueOf(port));
                     env.put("JACKETT_DATA_FOLDER", dataDir.getAbsolutePath());
@@ -1337,6 +1363,10 @@ public class MediaServiceManager {
             String canonical = f.getCanonicalPath();
             File home = TermuxConstants.TERMUX_HOME_DIR.getCanonicalFile();
             File filesDir = TermuxConstants.TERMUX_FILES_DIR.getCanonicalFile();
+            if (canonical.equals(home.getPath()) || canonical.equals(filesDir.getPath())) {
+                Log.e(TAG, "Refusing recursive deletion of app root directory: " + canonical);
+                return false;
+            }
             boolean isAllowed = canonical.startsWith(home.getPath() + File.separator) ||
                                 canonical.startsWith(filesDir.getPath() + File.separator);
             if (!isAllowed) {
@@ -1912,7 +1942,7 @@ public class MediaServiceManager {
                     "  <AuthenticationMethod>Forms</AuthenticationMethod>\n" +
                     "  <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>\n" +
                     "  <AllowedHosts>*</AllowedHosts>\n" +
-                    "  <TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32, ::1/128, ::/0</TrustedNetworks>\n" +
+                    "  <TrustedNetworks>127.0.0.1/32, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7, fe80::/10</TrustedNetworks>\n" +
                     "  <Branch>master</Branch>\n" +
                     "  <LogLevel>info</LogLevel>\n" +
                     "  <UrlBase></UrlBase>\n" +
@@ -1935,7 +1965,7 @@ public class MediaServiceManager {
         }
         if ("seerr".equalsIgnoreCase(serviceId)) {
             File seerrConfigDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/seerr");
-            if (!seerrConfigDir.exists()) seerrConfigDir.mkdirs();
+            sanitizeSeerrConfig(seerrConfigDir);
             return;
         }
         if ("bazarr".equalsIgnoreCase(serviceId)) {
@@ -1963,6 +1993,40 @@ public class MediaServiceManager {
             } else {
                 createInitialConfigXml(configXml, baseName, port);
             }
+        }
+    }
+
+    private void sanitizeSeerrConfig(File seerrConfigDir) {
+        try {
+            if (!seerrConfigDir.exists()) seerrConfigDir.mkdirs();
+            File settingsJson = new File(seerrConfigDir, "settings.json");
+            org.json.JSONObject root;
+            if (settingsJson.exists()) {
+                try {
+                    String text = readTextFile(settingsJson);
+                    root = (text != null && !text.trim().isEmpty()) ? new org.json.JSONObject(text) : new org.json.JSONObject();
+                } catch (Throwable t) {
+                    root = new org.json.JSONObject();
+                }
+            } else {
+                root = new org.json.JSONObject();
+            }
+            org.json.JSONObject main = root.optJSONObject("main");
+            if (main == null) {
+                main = new org.json.JSONObject();
+                root.put("main", main);
+            }
+            if (!main.has("apiKey") || main.optString("apiKey", "").trim().isEmpty()) {
+                main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
+            }
+            main.put("applicationTitle", "Fishbowl Requests");
+            main.put("applicationUrl", "http://127.0.0.1:5055");
+            main.put("trustProxy", false);
+            main.put("csrfProtection", true);
+            writeTextFile(settingsJson, root.toString(2));
+            Log.i(TAG, "[ConfigSanitizer] Sanitized Seerr settings.json with secure API authentication.");
+        } catch (Throwable t) {
+            Log.w(TAG, "[ConfigSanitizer] Error sanitizing Seerr config: " + t.getMessage());
         }
     }
 
@@ -2185,13 +2249,14 @@ public class MediaServiceManager {
                     updated = updated.replace("</Config>", "  <AllowedHosts>*</AllowedHosts>\n</Config>");
                 }
             }
+            String safeTrustedXml = "<TrustedNetworks>127.0.0.1/32, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7, fe80::/10</TrustedNetworks>";
             if (updated.contains("<TrustedNetworks>")) {
-                if (!updated.contains("192.0.0.0/8") || !updated.contains("::1/128")) {
-                    updated = updated.replaceAll("<TrustedNetworks>.*?</TrustedNetworks>", "<TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32, ::1/128, ::/0</TrustedNetworks>");
+                if (!updated.contains("fc00::/7") || !updated.contains("::1/128") || updated.contains("::/0") || updated.contains("0.0.0.0/0") || updated.contains("192.0.0.0/8")) {
+                    updated = updated.replaceAll("<TrustedNetworks>.*?</TrustedNetworks>", safeTrustedXml);
                 }
             } else {
                 if (updated.contains("</Config>")) {
-                    updated = updated.replace("</Config>", "  <TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32, ::1/128, ::/0</TrustedNetworks>\n</Config>");
+                    updated = updated.replace("</Config>", "  " + safeTrustedXml + "\n</Config>");
                 }
             }
 
@@ -4463,6 +4528,19 @@ public class MediaServiceManager {
                     String json = new String(java.nio.file.Files.readAllBytes(cfg.toPath()), StandardCharsets.UTF_8);
                     org.json.JSONObject obj = new org.json.JSONObject(json);
                     return obj.optString("APIKey", null);
+                } catch (Exception ignored) {}
+            }
+        }
+        if ("seerr".equals(id)) {
+            File cfg = new File(home, ".config/seerr/settings.json");
+            if (cfg.exists()) {
+                try {
+                    String text = readTextFile(cfg);
+                    if (text != null) {
+                        org.json.JSONObject obj = new org.json.JSONObject(text);
+                        org.json.JSONObject main = obj.optJSONObject("main");
+                        if (main != null) return main.optString("apiKey", null);
+                    }
                 } catch (Exception ignored) {}
             }
         }

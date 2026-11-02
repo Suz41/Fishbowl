@@ -1122,12 +1122,39 @@ public final class FishbowlActivity extends AppCompatActivity
 
         TextView sdcDetails = new TextView(this);
         String abiStr = Build.SUPPORTED_ABIS != null && Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "arm64-v8a";
-        sdcDetails.setText("• Architecture: " + abiStr + " (64-bit Compatible)\n• Core Port 8096: Available\n• Companion Ports (7878, 8989, 9696, 9117, 9091, 5055): Ready");
+        sdcDetails.setText("• Architecture: " + abiStr + " (64-bit)\n• Core Port 8096: Probing...\n• Companion Ports: Probing...");
         sdcDetails.setTextSize(11);
         sdcDetails.setTypeface(Typeface.MONOSPACE);
         sdcDetails.setTextColor(Color.parseColor("#D4D4D8"));
         sdcDetails.setPadding(0, dp(4), 0, 0);
         setupDiagCard.addView(sdcDetails);
+
+        new Thread(() -> {
+            boolean coreFree = false;
+            try (java.net.ServerSocket ss = new java.net.ServerSocket()) {
+                ss.setReuseAddress(true);
+                ss.bind(new java.net.InetSocketAddress("127.0.0.1", 8096));
+                coreFree = true;
+            } catch (Throwable t) {
+                coreFree = (controller != null && controller.isRunning());
+            }
+            int freeCount = 0;
+            int conflictCount = 0;
+            for (int p : new int[]{7878, 8989, 9696, 9117, 9091, 5055}) {
+                try (java.net.ServerSocket ss = new java.net.ServerSocket()) {
+                    ss.setReuseAddress(true);
+                    ss.bind(new java.net.InetSocketAddress("127.0.0.1", p));
+                    freeCount++;
+                } catch (Throwable t) {
+                    conflictCount++;
+                }
+            }
+            final String coreStatus = coreFree ? "Available" : "Port Conflict (In Use)";
+            final String compStatus = conflictCount == 0 ? "All 6 Ready (" + freeCount + " Free)" : conflictCount + " Conflict, " + freeCount + " Free";
+            runOnUiThread(() -> {
+                sdcDetails.setText("• Architecture: " + abiStr + " (64-bit)\n• Core Port 8096: " + coreStatus + "\n• Companion Ports: " + compStatus);
+            });
+        }).start();
 
         container.addView(setupDiagCard);
 

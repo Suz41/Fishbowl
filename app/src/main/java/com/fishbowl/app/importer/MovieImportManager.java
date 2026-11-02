@@ -25,6 +25,7 @@ import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Locale;
 
 /**
  * High-performance streaming media import engine supporting Movies and TV Series.
@@ -51,6 +52,7 @@ public final class MovieImportManager {
     }
 
     private static MovieImportManager instance;
+    private static volatile File activeStagingFile = null;
     private final Context appContext;
     private final MovieImportJournal journal;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -216,11 +218,16 @@ public final class MovieImportManager {
 
                 // 4. Temporary Staging Target for Atomic Write
                 tempStagingFile = new File(destFolder, finalDestFile.getName() + ".fishbowl_tmp");
+                activeStagingFile = tempStagingFile;
                 if (tempStagingFile.exists()) tempStagingFile.delete();
 
-                // 5. Streamed Buffer Copying
+                // 5. Streamed Buffer Copying & SHA-256 Digest Verification
                 long bytesCopied = 0;
                 long lastProgressTime = 0;
+                java.security.MessageDigest md = null;
+                try {
+                    md = java.security.MessageDigest.getInstance("SHA-256");
+                } catch (Throwable ignored) {}
 
                 try (InputStream in = resolver.openInputStream(sourceUri);
                      FileOutputStream out = new FileOutputStream(tempStagingFile)) {
@@ -242,10 +249,12 @@ public final class MovieImportManager {
                                 if (listener != null) listener.onCancelled(record);
                             });
                             isRunning = false;
+                            activeStagingFile = null;
                             return;
                         }
 
                         out.write(buffer, 0, read);
+                        if (md != null) md.update(buffer, 0, read);
                         bytesCopied += read;
 
                         long now = System.currentTimeMillis();
@@ -264,6 +273,15 @@ public final class MovieImportManager {
                     try {
                         out.getFD().sync();
                     } catch (Throwable ignored) {}
+                }
+
+                if (md != null) {
+                    byte[] digest = md.digest();
+                    StringBuilder hex = new StringBuilder();
+                    for (byte b : digest) {
+                        hex.append(String.format(Locale.ROOT, "%02x", b));
+                    }
+                    record.sourceChecksum = hex.toString();
                 }
 
                 // 6. Verification
@@ -319,6 +337,7 @@ public final class MovieImportManager {
                     if (listener != null) listener.onError(record, record.errorMessage);
                 });
             } finally {
+                activeStagingFile = null;
                 isRunning = false;
             }
         });
@@ -331,51 +350,53 @@ public final class MovieImportManager {
         }
         ContentResolver resolver = appContext.getContentResolver();
 
-        // 1. Delete direct POSIX file if path exists
-        if (sourcePath != null && !sourcePath.isEmpty()) {
+        // 1. Verified Direct POSIX Deletion: Strict identity, canonical verification, size parity
+        if (sourcePath != null && !sourcePath.trim().isEmpty()) {
             try {
-                File src = new File(sourcePath);
-                if (src.exists()) {
-                    src.delete();
+                File src = new File(sourcePath).getCanonicalFile();
+                if (src.exists() && src.isFile()) {
+                    // Refuse deletion if file length changed during transfer
+                    if (expectedSize > 0 && src.length() != expectedSize) {
+                        Log.e(TAG, "[SafetyGuard] Source file modified during transfer! Refusing deletion to prevent data loss: " + sourcePath);
+                        return;
+                    }
+                    // Refuse deletion if source path matches destination path
+                    if (src.getAbsolutePath().equals(verifiedDestFile.getCanonicalPath())) {
+                        Log.e(TAG, "[SafetyGuard] Source path equals destination path! Refusing deletion: " + sourcePath);
+                        return;
+                    }
+                    boolean deleted = src.delete();
+                    if (deleted) {
+                        Log.i(TAG, "[SafetyGuard] Safely deleted verified source file: " + src.getAbsolutePath());
+                        try {
+                            MediaScannerConnection.scanFile(appContext, new String[]{src.getAbsolutePath()}, null, null);
+                        } catch (Throwable ignored) {}
+                    }
                 }
             } catch (Throwable t) {
-                Log.w(TAG, "Failed deleting direct source path: " + t.getMessage());
+                Log.w(TAG, "Failed deleting verified direct source path: " + t.getMessage());
             }
         }
 
-        // 2. Check public Downloads folder by filename
-        try {
-            File dl = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), sourceFilename);
-            if (dl.exists()) {
-                dl.delete();
-            }
-        } catch (Throwable ignored) {}
-
-        // 3. Delete via URI
+        // 2. Targeted Document / Content URI Deletion (Delete strictly the verified specific source URI)
         if (sourceUri != null) {
-            try {
-                resolver.delete(sourceUri, null, null);
-            } catch (Throwable ignored) {}
-
-            try {
-                DocumentFile df = DocumentFile.fromSingleUri(appContext, sourceUri);
-                if (df != null && df.exists()) {
-                    df.delete();
+            String scheme = sourceUri.getScheme();
+            if (ContentResolver.SCHEME_CONTENT.equalsIgnoreCase(scheme)) {
+                try {
+                    DocumentFile df = DocumentFile.fromSingleUri(appContext, sourceUri);
+                    if (df != null && df.exists() && df.isFile()) {
+                        if (expectedSize <= 0 || df.length() == expectedSize) {
+                            df.delete();
+                            Log.i(TAG, "[SafetyGuard] Safely deleted source DocumentFile: " + sourceUri);
+                        }
+                    } else {
+                        resolver.delete(sourceUri, null, null);
+                        Log.i(TAG, "[SafetyGuard] Safely deleted source Content URI: " + sourceUri);
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "Failed deleting source Content URI: " + t.getMessage());
                 }
-            } catch (Throwable ignored) {}
-        }
-
-        // 4. Delete from MediaStore Video table
-        try {
-            resolver.delete(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                    MediaStore.Video.Media.DISPLAY_NAME + "=?", new String[]{sourceFilename});
-        } catch (Throwable ignored) {}
-
-        // 5. Trigger MediaScanner to drop deleted file
-        if (sourcePath != null && !sourcePath.isEmpty()) {
-            try {
-                MediaScannerConnection.scanFile(appContext, new String[]{sourcePath}, null, null);
-            } catch (Throwable ignored) {}
+            }
         }
     }
 
@@ -440,12 +461,21 @@ public final class MovieImportManager {
         if (dir == null || !dir.exists() || !dir.isDirectory()) return;
         File[] list = dir.listFiles();
         if (list == null) return;
+        long now = System.currentTimeMillis();
         for (File f : list) {
             if (f.isDirectory()) {
                 cleanStagingInDir(f);
             } else if (f.getName().endsWith(".fishbowl_tmp")) {
-                Log.i(TAG, "Purging orphaned staging file from interrupted transfer: " + f.getAbsolutePath());
-                f.delete();
+                // Safeguard: Never delete an actively transferring staging file
+                if (f.equals(activeStagingFile)) {
+                    continue;
+                }
+                // Safeguard: Only purge staging files older than 30 minutes to prevent race conditions
+                long age = now - f.lastModified();
+                if (age > 30 * 60 * 1000L) {
+                    Log.i(TAG, "Purging stale orphaned staging file (" + (age / 60000) + "m old): " + f.getAbsolutePath());
+                    f.delete();
+                }
             }
         }
     }
