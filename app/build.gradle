@@ -47,8 +47,8 @@ android {
         applicationId "com.fishbowl.app"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 101416
-        versionName "1.4.9-beta.1"
+        versionCode 101417
+        versionName "1.4.10-beta.1"
 
         if (project.hasProperty("appVersionCode")) {
             versionCode project.property("appVersionCode").toInteger()
@@ -104,14 +104,24 @@ android {
         release {
             // Secure production keystore resolution:
             // Prioritizes environment variables (CI secrets) or project properties.
-            // Safely falls back to testkey_untrusted.jks for local developer builds & CI validation.
+            // Refuses silent testkey fallback when running release tasks in CI.
+            def isCi = (System.getenv("CI") == "true" || System.getenv("GITHUB_ACTIONS") == "true" || project.hasProperty("CI") || project.hasProperty("FISHBOWL_CI"))
+            def isReleaseTask = gradle.startParameter.taskNames.any { it.contains("Release") }
             def releaseKeyStorePath = System.getenv("FISHBOWL_RELEASE_KEYSTORE_PATH") ?: (project.findProperty("FISHBOWL_RELEASE_KEYSTORE_PATH") ?: null)
+            def isReleaseValidation = project.hasProperty("validateReleaseCompilation") ||
+                                      project.hasProperty("FISHBOWL_VALIDATE_RELEASE") ||
+                                      (System.getenv("GITHUB_WORKFLOW") == "Build Bot")
             if (releaseKeyStorePath && file(releaseKeyStorePath).exists()) {
                 storeFile file(releaseKeyStorePath)
                 keyAlias System.getenv("FISHBOWL_RELEASE_KEY_ALIAS") ?: (project.findProperty("FISHBOWL_RELEASE_KEY_ALIAS") ?: 'alias')
                 storePassword System.getenv("FISHBOWL_RELEASE_STORE_PASSWORD") ?: (project.findProperty("FISHBOWL_RELEASE_STORE_PASSWORD") ?: '')
                 keyPassword System.getenv("FISHBOWL_RELEASE_KEY_PASSWORD") ?: (project.findProperty("FISHBOWL_RELEASE_KEY_PASSWORD") ?: '')
+            } else if (isCi && isReleaseTask && !isReleaseValidation) {
+                throw new GradleException("FISHBOWL_RELEASE_KEYSTORE_PATH must be configured in CI for release builds! Refusing to sign production release APK with untrusted debug testkey.")
             } else {
+                if (isCi && isReleaseTask) {
+                    logger.warn("[SECURITY NOTICE] Release compilation validation build in CI: FISHBOWL_RELEASE_KEYSTORE_PATH not configured. Signing with untrusted testkey for compilation validation only. This artifact must NOT be published as a production release!")
+                }
                 storeFile file('testkey_untrusted.jks')
                 keyAlias 'alias'
                 storePassword 'xrj45yWGLbsO7W0v'
@@ -186,6 +196,7 @@ android {
 dependencies {
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.robolectric:robolectric:4.17"
+    testImplementation "org.json:json:20231013"
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
 }
 
