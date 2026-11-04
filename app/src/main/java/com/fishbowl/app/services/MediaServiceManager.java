@@ -3,6 +3,7 @@ package com.fishbowl.app.services;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.system.Os;
 import android.util.Log;
 
 import com.fishbowl.app.JellyfinController;
@@ -137,12 +138,32 @@ public class MediaServiceManager {
     public boolean isMediaStackEnabled() {
         if (appContext == null) return true;
         try {
-            android.content.SharedPreferences sp = appContext.getSharedPreferences("fishbowl_prefs", Context.MODE_PRIVATE);
+            android.content.SharedPreferences sp = appContext.getSharedPreferences("fishbowl", Context.MODE_PRIVATE);
             return sp.getBoolean("media_stack_enabled", true);
         } catch (Throwable t) {
             return true;
         }
     }
+
+    public boolean isCompanionAutoStartEnabled() {
+        if (appContext == null) return false;
+        try {
+            return appContext.getSharedPreferences("fishbowl", Context.MODE_PRIVATE)
+                    .getBoolean("auto_start_companions", false);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    public void setCompanionAutoStartEnabled(boolean enabled) {
+        if (appContext == null) return;
+        try {
+            appContext.getSharedPreferences("fishbowl", Context.MODE_PRIVATE)
+                    .edit().putBoolean("auto_start_companions", enabled).apply();
+        } catch (Throwable ignored) {}
+    }
+
+
 
     public boolean isServiceHealthy(ManagedService s) {
         if (s == null) return false;
@@ -191,6 +212,10 @@ public class MediaServiceManager {
     public void autoRevivePersistedServices(Context ctx) {
         if (!isMediaStackEnabled()) {
             Log.i(TAG, "[LMKRecovery] Media Stack is disabled by user. Skipping companion revival.");
+            return;
+        }
+        if (!isCompanionAutoStartEnabled()) {
+            Log.i(TAG, "[LMKRecovery] Companion auto-start is disabled by user preference. Skipping companion revival.");
             return;
         }
         if (!isRevivingActive.compareAndSet(false, true)) {
@@ -900,28 +925,17 @@ public class MediaServiceManager {
                     Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " RUNNING (port already active & healthy)");
                     return;
                 } else {
-                    // Port is occupied but unresponsive: kill stale process on this port to recover
+                    // Port is occupied but unresponsive: reclaim port for this service
                     Log.w(TAG, "[ServiceManager] Port " + port + " is occupied by unresponsive process. Reclaiming port for " + ms.getDisplayName() + "...");
-                    if ("bazarr".equalsIgnoreCase(id)) {
-                        killProcessByPattern("bazarr");
-                        killProcessByPattern("main.py");
-                    } else if ("seerr".equalsIgnoreCase(id)) {
-                        killProcessByPattern("seerr");
-                    } else if ("jackett".equalsIgnoreCase(id)) {
-                        killProcessByPattern("jackett");
-                        killProcessByPattern("Jackett.dll");
-                        killProcessByPattern("jackett.dll");
-                    } else {
-                        String execPath = ms.getManifest().getExecutableOrDllPath();
-                        if (execPath != null && !execPath.trim().isEmpty()) {
-                            killProcessByPattern(new File(execPath).getName());
+                    boolean reclaimed = reclaimPort(port, id);
+                    if (!reclaimed && isPortOccupied(port)) {
+                        if (checkApiReadiness(ms)) {
+                            ms.setState(ServiceState.RUNNING);
+                            ms.setHealthy(true);
+                            ms.resetCrashCount();
+                            notifyListeners(id, ServiceState.RUNNING);
+                            return;
                         }
-                    }
-                    try {
-                        Thread.sleep(600);
-                    } catch (InterruptedException ignored) {}
-
-                    if (isPortOccupied(port)) {
                         ms.setLastError("PORT_CONFLICT: Port " + port + " is occupied by an external process.");
                         ms.setState(ServiceState.ERROR);
                         notifyListeners(id, ServiceState.ERROR);
@@ -1106,24 +1120,24 @@ public class MediaServiceManager {
                     env.put("NODE_ENV", "production");
                     env.put("OPENSSL_CONF", "/dev/null");
                     env.put("SSL_CERT_FILE", new File(prefix, "etc/tls/cert.pem").getAbsolutePath());
+                    env.put("NODE_OPTIONS", "--max-old-space-size=256");
                 }
-                String loopbackOnlyTrust = "127.0.0.1/32,::1/128";
+                if ("bazarr".equalsIgnoreCase(id)) {
+                    env.put("PYTHONOPTIMIZE", "1");
+                    env.put("PYTHONUNBUFFERED", "1");
+                }
                 if ("radarr".equalsIgnoreCase(id)) {
                     env.put("RADARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("RADARR__SERVER__AUTHENTICATIONREQUIRED", "Enabled");
-                    env.put("RADARR__SERVER__TRUSTEDNETWORKS", loopbackOnlyTrust);
+                    env.put("RADARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
                 } else if ("sonarr".equalsIgnoreCase(id)) {
                     env.put("SONARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("SONARR__SERVER__AUTHENTICATIONREQUIRED", "Enabled");
-                    env.put("SONARR__SERVER__TRUSTEDNETWORKS", loopbackOnlyTrust);
+                    env.put("SONARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
                 } else if ("prowlarr".equalsIgnoreCase(id)) {
                     env.put("PROWLARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("PROWLARR__SERVER__AUTHENTICATIONREQUIRED", "Enabled");
-                    env.put("PROWLARR__SERVER__TRUSTEDNETWORKS", loopbackOnlyTrust);
+                    env.put("PROWLARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
                 } else if ("lidarr".equalsIgnoreCase(id)) {
                     env.put("LIDARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("LIDARR__SERVER__AUTHENTICATIONREQUIRED", "Enabled");
-                    env.put("LIDARR__SERVER__TRUSTEDNETWORKS", loopbackOnlyTrust);
+                    env.put("LIDARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
                 } else if ("jackett".equalsIgnoreCase(id)) {
                     env.put("JACKETT_PORT", String.valueOf(port));
                     env.put("JACKETT_DATA_FOLDER", dataDir.getAbsolutePath());
@@ -1132,6 +1146,14 @@ public class MediaServiceManager {
                 }
                 env.put("ASPNETCORE_ALLOWEDHOSTS", "*");
                 env.put("AllowedHosts", "*");
+
+                // Multi-service Android optimization: Workstation GC & thread caps to prevent UI lag & OOM kills
+                env.put("DOTNET_gcServer", "0");
+                env.put("DOTNET_gcConcurrent", "1");
+                env.put("DOTNET_GCHighMemPercent", "75");
+                env.put("DOTNET_ThreadPool_MinThreads", "2");
+                env.put("DOTNET_ThreadPool_MaxThreads", "20");
+                env.put("DOTNET_EnableWriteXorExecute", "0");
 
                 String nativeLibDir = appContext.getApplicationInfo().nativeLibraryDir;
                 String prefixLib = new File(prefix, "lib").getAbsolutePath();
@@ -1164,6 +1186,14 @@ public class MediaServiceManager {
                 Process process = pb.start();
                 long pid = extractPid(process);
                 ms.setProcessPid(pid);
+                if (pid > 0) {
+                    try {
+                        android.os.Process.setThreadPriority((int) pid, android.os.Process.THREAD_PRIORITY_BACKGROUND);
+                        Log.i(TAG, "[Optimization] Set background thread priority (BACKGROUND) for " + ms.getDisplayName() + " (PID " + pid + ")");
+                    } catch (Throwable t) {
+                        Log.w(TAG, "[Optimization] Could not set thread priority: " + t.getMessage());
+                    }
+                }
                 activeProcesses.put(id, process);
                 ms.setState(ServiceState.PROCESS_READY);
                 notifyListeners(id, ServiceState.PROCESS_READY);
@@ -1418,26 +1448,8 @@ public class MediaServiceManager {
                 } catch (Throwable ignored) {}
             }
 
-            if ("bazarr".equalsIgnoreCase(id)) {
-                killProcessByPattern("bazarr");
-                killProcessByPattern("main.py");
-                for (int i = 0; i < 25; i++) {
-                    if (!isPortOccupied(6767)) break;
-                    try { Thread.sleep(100); } catch (InterruptedException ignored) {}
-                }
-            } else {
-                int port = ms.getManifest().getDefaultPort();
-                if (isPortOccupied(port)) {
-                    String execPath = ms.getManifest().getExecutableOrDllPath();
-                    if (execPath != null && !execPath.trim().isEmpty()) {
-                        String execName = new File(execPath).getName();
-                        killProcessByPattern(execName);
-                        if ("jackett".equalsIgnoreCase(id)) {
-                            killProcessByPattern("Jackett.dll");
-                        }
-                    }
-                }
-            }
+            int defaultPort = ms.getManifest().getDefaultPort();
+            reclaimPort(defaultPort, id);
 
             if (ms.getState() != ServiceState.NOT_INSTALLED) {
                 ms.setState(ServiceState.STOPPED);
@@ -1758,6 +1770,127 @@ public class MediaServiceManager {
         return 0;
     }
 
+    public static int findPidListeningOnPort(int targetPort) {
+        String hexPort = String.format(Locale.ROOT, "%04X", targetPort);
+        Set<String> inodes = new HashSet<>();
+
+        for (String tcpPath : new String[]{"/proc/net/tcp", "/proc/net/tcp6"}) {
+            File tcpFile = new File(tcpPath);
+            if (!tcpFile.exists() || !tcpFile.canRead()) continue;
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(tcpFile), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    line = line.trim();
+                    String[] tokens = line.split("\\s+");
+                    if (tokens.length >= 10) {
+                        String localAddr = tokens[1];
+                        String state = tokens[3];
+                        if ("0A".equalsIgnoreCase(state) && localAddr.toUpperCase(Locale.ROOT).endsWith(":" + hexPort)) {
+                            String inode = tokens[9];
+                            if (!"0".equals(inode)) {
+                                inodes.add(inode);
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        if (inodes.isEmpty()) return 0;
+
+        int myPid = android.os.Process.myPid();
+        File procDir = new File("/proc");
+        File[] procFiles = procDir.listFiles();
+        if (procFiles == null) return 0;
+
+        for (File f : procFiles) {
+            if (!f.isDirectory()) continue;
+            String name = f.getName();
+            if (!name.matches("\\d+")) continue;
+            int pid;
+            try {
+                pid = Integer.parseInt(name);
+            } catch (Exception ignored) { continue; }
+            if (pid == myPid) continue;
+
+            File fdDir = new File(f, "fd");
+            File[] fds = fdDir.listFiles();
+            if (fds == null) continue;
+            for (File fd : fds) {
+                try {
+                    String target = Os.readlink(fd.getAbsolutePath());
+                    for (String inode : inodes) {
+                        if (target != null && target.contains("socket:[" + inode + "]")) {
+                            return pid;
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
+        }
+        return 0;
+    }
+
+    public boolean reclaimPort(int port, String serviceId) {
+        if (!isPortOccupied(port)) return true;
+
+        Log.w(TAG, "[PortReclaimer] Port " + port + " is occupied. Reclaiming for " + serviceId + "...");
+
+        // 1. Target by known process name / patterns
+        if (serviceId != null) {
+            killProcessByPattern(serviceId);
+            if ("radarr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("Radarr.dll");
+                killProcessByPattern("radarr");
+            } else if ("sonarr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("Sonarr.dll");
+                killProcessByPattern("sonarr");
+            } else if ("prowlarr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("Prowlarr.dll");
+                killProcessByPattern("prowlarr");
+            } else if ("lidarr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("Lidarr.dll");
+                killProcessByPattern("lidarr");
+            } else if ("jackett".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("jackett");
+                killProcessByPattern("Jackett.dll");
+                killProcessByPattern("jackett.dll");
+            } else if ("bazarr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("bazarr");
+                killProcessByPattern("main.py");
+            } else if ("transmission".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("transmission-daemon");
+            } else if ("seerr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("seerr");
+                killProcessByPattern("dist/index.js");
+            }
+        }
+
+        // 2. Target specific listening PID
+        int listeningPid = findPidListeningOnPort(port);
+        if (listeningPid > 0 && listeningPid != android.os.Process.myPid()) {
+            Log.i(TAG, "[PortReclaimer] Identified PID " + listeningPid + " on port " + port + ". Terminating...");
+            try {
+                android.os.Process.sendSignal(listeningPid, 15);
+                android.os.Process.killProcess(listeningPid);
+                android.os.Process.sendSignal(listeningPid, 9);
+                java.lang.Runtime.getRuntime().exec(new String[]{"/system/bin/kill", "-9", String.valueOf(listeningPid)});
+            } catch (Throwable ignored) {}
+        }
+
+        // 3. Poll for port release up to 2500ms
+        for (int i = 0; i < 10; i++) {
+            try {
+                Thread.sleep(250);
+            } catch (InterruptedException ignored) {}
+            if (!isPortOccupied(port)) {
+                Log.i(TAG, "[PortReclaimer] Port " + port + " released successfully after " + ((i + 1) * 250) + "ms.");
+                return true;
+            }
+        }
+
+        return !isPortOccupied(port);
+    }
+
     private void stopTransmissionGracefully(Process p, ManagedService ms) {
         if (ms != null) ms.appendLog("Sending Transmission session-close RPC to flush resume data...");
         try {
@@ -2034,9 +2167,9 @@ public class MediaServiceManager {
                     "  <LaunchBrowser>False</LaunchBrowser>\n" +
                     "  <ApiKey>" + apiKey + "</ApiKey>\n" +
                     "  <AuthenticationMethod>Forms</AuthenticationMethod>\n" +
-                    "  <AuthenticationRequired>Enabled</AuthenticationRequired>\n" +
+                    "  <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>\n" +
                     "  <AllowedHosts>*</AllowedHosts>\n" +
-                    "  <TrustedNetworks>127.0.0.1/32, ::1/128</TrustedNetworks>\n" +
+                    "  <TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32</TrustedNetworks>\n" +
                     "  <Branch>master</Branch>\n" +
                     "  <LogLevel>info</LogLevel>\n" +
                     "  <UrlBase></UrlBase>\n" +
@@ -2217,6 +2350,10 @@ public class MediaServiceManager {
                     content = content.replaceAll("(?m)^(sonarr:\\s*\\n\\s*apikey:).*$", "$1 '" + sonarrKey + "'");
                     changed = true;
                 }
+                if (content.contains("type: form") || content.contains("type: basic")) {
+                    content = content.replaceAll("(?m)^(\\s*type:).*$", "$1 null");
+                    changed = true;
+                }
                 if (changed) {
                     try (FileOutputStream fos = new FileOutputStream(configFile)) {
                         fos.write(content.getBytes(StandardCharsets.UTF_8));
@@ -2309,6 +2446,10 @@ public class MediaServiceManager {
                 cfg.put("FlareSolverrUrl", "http://127.0.0.1:8191");
                 changed = true;
             }
+            if (cfg.has("AdminPassword") && !cfg.optString("AdminPassword").isEmpty()) {
+                cfg.put("AdminPassword", "");
+                changed = true;
+            }
 
             if (changed || !configFile.exists()) {
                 try (FileOutputStream fos = new FileOutputStream(configFile)) {
@@ -2345,7 +2486,11 @@ public class MediaServiceManager {
         }
     }
 
-    private void sanitizeConfigXml(File configXml) {
+    public void sanitizeConfigXml(File configXml) {
+        sanitizeConfigXml(configXml, false);
+    }
+
+    public static void sanitizeConfigXml(File configXml, boolean unused) {
         try {
             if (!configXml.exists()) return;
             StringBuilder sb = new StringBuilder();
@@ -2360,16 +2505,26 @@ public class MediaServiceManager {
 
             if (updated.contains("<BindAddress>*</BindAddress>")) {
                 updated = updated.replace("<BindAddress>*</BindAddress>", "<BindAddress>0.0.0.0</BindAddress>");
+            } else if (updated.contains("<BindAddress>localhost</BindAddress>")) {
+                updated = updated.replace("<BindAddress>localhost</BindAddress>", "<BindAddress>0.0.0.0</BindAddress>");
+            } else if (updated.contains("<BindAddress>127.0.0.1</BindAddress>")) {
+                updated = updated.replace("<BindAddress>127.0.0.1</BindAddress>", "<BindAddress>0.0.0.0</BindAddress>");
             }
+
             if (updated.matches("(?s).*<AuthenticationMethod>.*?</AuthenticationMethod>.*") &&
                 !updated.contains("<AuthenticationMethod>Forms</AuthenticationMethod>") &&
                 !updated.contains("<AuthenticationMethod>External</AuthenticationMethod>")) {
                 updated = updated.replaceAll("<AuthenticationMethod>.*?</AuthenticationMethod>", "<AuthenticationMethod>Forms</AuthenticationMethod>");
             }
             if (updated.matches("(?s).*<AuthenticationRequired>.*?</AuthenticationRequired>.*") &&
-                !updated.contains("<AuthenticationRequired>Enabled</AuthenticationRequired>")) {
-                updated = updated.replaceAll("<AuthenticationRequired>.*?</AuthenticationRequired>", "<AuthenticationRequired>Enabled</AuthenticationRequired>");
+                !updated.contains("<AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>")) {
+                updated = updated.replaceAll("<AuthenticationRequired>.*?</AuthenticationRequired>", "<AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>");
+            } else if (!updated.contains("<AuthenticationRequired>")) {
+                if (updated.contains("</Config>")) {
+                    updated = updated.replace("</Config>", "  <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>\n</Config>");
+                }
             }
+
             if (updated.contains("<AllowedHosts>")) {
                 if (!updated.contains("<AllowedHosts>*</AllowedHosts>")) {
                     updated = updated.replaceAll("<AllowedHosts>.*?</AllowedHosts>", "<AllowedHosts>*</AllowedHosts>");
@@ -2379,14 +2534,15 @@ public class MediaServiceManager {
                     updated = updated.replace("</Config>", "  <AllowedHosts>*</AllowedHosts>\n</Config>");
                 }
             }
-            String safeTrustedXml = "<TrustedNetworks>127.0.0.1/32, ::1/128</TrustedNetworks>";
+
+            String broadTrustedNetworks = "<TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32</TrustedNetworks>";
             if (updated.contains("<TrustedNetworks>")) {
-                if (!updated.contains("127.0.0.1/32") || !updated.contains("::1/128") || updated.contains("::/0") || updated.contains("0.0.0.0/0") || updated.contains("192.") || updated.contains("10.")) {
-                    updated = updated.replaceAll("<TrustedNetworks>.*?</TrustedNetworks>", safeTrustedXml);
+                if (!updated.contains("192.0.0.0/8") || !updated.contains("192.168.0.0/16")) {
+                    updated = updated.replaceAll("<TrustedNetworks>.*?</TrustedNetworks>", broadTrustedNetworks);
                 }
             } else {
                 if (updated.contains("</Config>")) {
-                    updated = updated.replace("</Config>", "  " + safeTrustedXml + "\n</Config>");
+                    updated = updated.replace("</Config>", "  " + broadTrustedNetworks + "\n</Config>");
                 }
             }
 
@@ -2394,7 +2550,7 @@ public class MediaServiceManager {
                 try (FileOutputStream fos = new FileOutputStream(configXml)) {
                     fos.write(updated.getBytes(StandardCharsets.UTF_8));
                 }
-                Log.i(TAG, "[ConfigSanitizer] Sanitized auth, allowed hosts & trusted networks in " + configXml.getAbsolutePath());
+                Log.i(TAG, "[ConfigSanitizer] Sanitized auth (DisabledForLocalAddresses), allowed hosts & trusted networks in " + configXml.getAbsolutePath());
             }
         } catch (Throwable t) {
             Log.w(TAG, "[ConfigSanitizer] Error sanitizing " + configXml.getAbsolutePath() + ": " + t.getMessage());
@@ -2445,6 +2601,7 @@ public class MediaServiceManager {
                 org.json.JSONObject conf = new org.json.JSONObject(sbJson.toString());
                 conf.put("rpc-whitelist-enabled", false);
                 conf.put("rpc-host-whitelist-enabled", false);
+                conf.put("rpc-authentication-required", false);
                 conf.put("dht-enabled", true);
                 conf.put("pex-enabled", true);
                 conf.put("lpd-enabled", false);
@@ -2652,7 +2809,7 @@ public class MediaServiceManager {
                 startService(serviceId);
             }
 
-            long effectiveTimeout = "bazarr".equalsIgnoreCase(serviceId) ? Math.max(timeoutMs, 150000L) : timeoutMs;
+            long effectiveTimeout = "bazarr".equalsIgnoreCase(serviceId) ? Math.max(timeoutMs, 150000L) : Math.max(timeoutMs, 60000L);
             long deadline = System.currentTimeMillis() + effectiveTimeout;
             while (System.currentTimeMillis() < deadline) {
                 if (ms.isReady()) {
@@ -2662,6 +2819,17 @@ public class MediaServiceManager {
                     String targetUrl = "http://127.0.0.1:" + port + (webPath.equals("/") ? "" : webPath);
                     mainHandler.post(() -> callback.onReady(targetUrl));
                     return;
+                }
+                int defaultPort = ms.getManifest().getDefaultPort();
+                if ((ms.getState() == ServiceState.SOCKET_READY || ms.getState() == ServiceState.UNHEALTHY) && isPortOccupied(defaultPort)) {
+                    if (checkApiReadiness(ms)) {
+                        ms.setState(ServiceState.API_READY);
+                        String webPath = ms.getManifest().getWebPath();
+                        if (webPath == null) webPath = "/";
+                        String targetUrl = "http://127.0.0.1:" + defaultPort + (webPath.equals("/") ? "" : webPath);
+                        mainHandler.post(() -> callback.onReady(targetUrl));
+                        return;
+                    }
                 }
                 if (ms.getState() == ServiceState.ERROR || ms.getState() == ServiceState.FAILED
                         || ms.getState() == ServiceState.CRASH_LOOP_PROTECTION) {
@@ -4846,6 +5014,11 @@ public class MediaServiceManager {
             json.put("minimumFreeSpaceWhenImporting", 100);
             json.put("deleteEmptyFolders", true);
             json.put("importExtraFiles", true);
+            if (port == 7878) {
+                json.put("autoUnmonitorPreviouslyDownloadedMovies", true);
+            } else if (port == 8989) {
+                json.put("autoUnmonitorPreviouslyDownloadedEpisodes", true);
+            }
             if (port != 8686) {
                 json.put("extraFileExtensions", "srt");
             }

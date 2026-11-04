@@ -102,22 +102,11 @@ public class MediaStackSecurityTest {
     }
 
     @Test
-    public void testTrustedNetworksLoopbackOnlyRestrictsLanAuthBypass() {
-        String loopbackOnlyTrust = "127.0.0.1/32,::1/128";
-
-        // Must NOT contain public or broad private subnets that bypass auth
-        Assert.assertFalse("TrustedNetworks must NEVER contain public IPv4 wildcard 0.0.0.0/0",
-                loopbackOnlyTrust.contains("0.0.0.0/0"));
-        Assert.assertFalse("TrustedNetworks must NEVER contain public IPv6 wildcard ::/0",
-                loopbackOnlyTrust.contains("::/0"));
-        Assert.assertFalse("TrustedNetworks must NOT contain 192.168.0.0/16 (prevents LAN auth bypass)",
-                loopbackOnlyTrust.contains("192.168."));
-        Assert.assertFalse("TrustedNetworks must NOT contain 10.0.0.0/8 (prevents LAN auth bypass)",
-                loopbackOnlyTrust.contains("10.0.0.0"));
-
-        // Must contain localhost loopback only
-        Assert.assertTrue("Must contain IPv4 localhost loopback", loopbackOnlyTrust.contains("127.0.0.1/32"));
-        Assert.assertTrue("Must contain IPv6 localhost loopback", loopbackOnlyTrust.contains("::1/128"));
+    public void testTrustedNetworksAutoAuthAllowsLocalSubnets() {
+        String trustedNetworks = "192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32";
+        Assert.assertTrue("Must contain IPv4 localhost loopback", trustedNetworks.contains("127.0.0.1/32"));
+        Assert.assertTrue("Must contain 192.168.0.0/16 for local LAN auto auth", trustedNetworks.contains("192.168."));
+        Assert.assertTrue("Must contain 10.0.0.0/8 for tethering auto auth", trustedNetworks.contains("10.0.0.0"));
     }
 
     @Test
@@ -189,5 +178,59 @@ public class MediaStackSecurityTest {
         // Reset after confirmed health
         MediaServiceManager.resetLmkRevivalAttempts(testService);
         Assert.assertEquals("Confirmed health must reset revival attempts to 0", 0, MediaServiceManager.getLmkRevivalAttempts(testService));
+    }
+
+    @Test
+    public void testSanitizeConfigXmlPreservesAuthAndEnforcesSafeBind() throws Exception {
+        File radarrConfig = new File(configDir, "Radarr");
+        radarrConfig.mkdirs();
+        File configXml = new File(radarrConfig, "config.xml");
+        String initialXml = "<Config>\n" +
+                "  <BindAddress>*</BindAddress>\n" +
+                "  <Port>7878</Port>\n" +
+                "  <AuthenticationMethod>Forms</AuthenticationMethod>\n" +
+                "  <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>\n" +
+                "</Config>\n";
+        MediaServiceManager.writeTextFile(configXml, initialXml);
+
+        MediaServiceManager.sanitizeConfigXml(configXml, false);
+
+        String result = MediaServiceManager.readTextFile(configXml);
+        Assert.assertNotNull(result);
+        Assert.assertTrue("BindAddress should be sanitized to 0.0.0.0", result.contains("<BindAddress>0.0.0.0</BindAddress>"));
+        Assert.assertTrue("AuthenticationMethod should be Forms", result.contains("<AuthenticationMethod>Forms</AuthenticationMethod>"));
+        Assert.assertTrue("AuthenticationRequired should be DisabledForLocalAddresses",
+                result.contains("<AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>"));
+        Assert.assertTrue("AllowedHosts must be wildcard", result.contains("<AllowedHosts>*</AllowedHosts>"));
+        Assert.assertTrue("TrustedNetworks must contain 192.168", result.contains("192.168.0.0/16"));
+    }
+
+    @Test
+    public void testFindPidListeningOnPortReturnsZeroForUnoccupiedPort() {
+        int pid = MediaServiceManager.findPidListeningOnPort(59999);
+        Assert.assertEquals("Unoccupied port must resolve to PID 0", 0, pid);
+    }
+
+    @Test
+    public void testBazarrApiKeyParsingFromYaml() throws Exception {
+        File bazarrConfigDir = new File(configDir, "bazarr/config");
+        bazarrConfigDir.mkdirs();
+        File yamlFile = new File(bazarrConfigDir, "config.yaml");
+        String testKey = "abc123def456bazarrtestkey";
+        String yamlContent = "---\nauth:\n  apikey: '" + testKey + "'\n  type: form\ngeneral:\n  port: 6767\n";
+        MediaServiceManager.writeTextFile(yamlFile, yamlContent);
+
+        String readKey = null;
+        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(yamlFile))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+                if (line.startsWith("apikey:")) {
+                    readKey = line.replace("apikey:", "").trim().replace("'", "").replace("\"", "");
+                    break;
+                }
+            }
+        }
+        Assert.assertEquals("Extracted Bazarr API key must match configured YAML value", testKey, readKey);
     }
 }

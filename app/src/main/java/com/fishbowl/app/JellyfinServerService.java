@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -95,7 +96,7 @@ public class JellyfinServerService extends Service implements JellyfinController
             serviceManager.addListener(this);
         }
         acquireLocks();
-        promoteToForeground(buildNotification("Fishbowl Media Stack", "Starting services...", false));
+        promoteToForeground(buildNotification("Jellyfin Server", "Starting...", false));
     }
 
     @Override
@@ -107,10 +108,9 @@ public class JellyfinServerService extends Service implements JellyfinController
                 if (serviceManager != null) {
                     serviceManager.recordServiceActive("jellyfin", true);
                 }
-                setStackActivePref(true);
                 hasStarted = true;
                 acquireLocks();
-                promoteToForeground(buildNotification("Fishbowl Media Stack", "Starting Jellyfin...", false));
+                promoteToForeground(buildNotification("Jellyfin Server", "Starting...", false));
                 controller.start(getApplicationContext());
                 updateNotificationState();
             } else if (ACTION_STOP_JELLYFIN.equals(action)) {
@@ -125,7 +125,7 @@ public class JellyfinServerService extends Service implements JellyfinController
                 setStackActivePref(true);
                 hasStarted = true;
                 acquireLocks();
-                promoteToForeground(buildNotification("Fishbowl Media Stack", "Starting stack...", false));
+                promoteToForeground(buildNotification("Jellyfin Server", "Starting services...", false));
                 if (serviceManager != null) {
                     serviceManager.startAllServices();
                 } else {
@@ -160,9 +160,9 @@ public class JellyfinServerService extends Service implements JellyfinController
                 // LMK Revival: Fast background cold-start of server & auto-revival of all previously active services
                 hasStarted = true;
                 acquireLocks();
-                promoteToForeground(buildNotification("Fishbowl Media Stack", "Fast recovering Jellyfin & companion services...", false));
+                promoteToForeground(buildNotification("Jellyfin Server", "Recovering...", false));
                 controller.start(getApplicationContext());
-                if (serviceManager != null) {
+                if (serviceManager != null && serviceManager.isCompanionAutoStartEnabled()) {
                     serviceManager.autoRevivePersistedServices(getApplicationContext());
                 }
                 updateNotificationState();
@@ -224,6 +224,7 @@ public class JellyfinServerService extends Service implements JellyfinController
     @Override
     public void onServerChanged(final JellyfinController.State state) {
         updateNotificationState();
+        FishbowlQuickSettingsTileService.requestTileUpdate(this);
     }
 
     @Override
@@ -239,22 +240,20 @@ public class JellyfinServerService extends Service implements JellyfinController
     private void updateNotificationState() {
         new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
             JellyfinController.State jfState = controller != null ? controller.getState() : JellyfinController.State.STOPPED;
-            List<String> activeServices = new ArrayList<>();
+            boolean jfRunning = (jfState == JellyfinController.State.RUNNING);
+            List<String> activeCompanions = new ArrayList<>();
 
-            if (jfState == JellyfinController.State.RUNNING) {
-                activeServices.add("Jellyfin");
-            }
             if (serviceManager != null) {
                 for (ManagedService ms : serviceManager.getAllServices()) {
                     if (!ms.getManifest().isCore() && ms.isRunning()) {
-                        activeServices.add(ms.getDisplayName());
+                        activeCompanions.add(ms.getDisplayName());
                     }
                 }
             }
 
             boolean isInitializing = (jfState == JellyfinController.State.INITIALIZING);
             boolean isStarting = (jfState == JellyfinController.State.STARTING || isInitializing);
-            boolean anyRunning = !activeServices.isEmpty();
+            boolean anyRunning = jfRunning || !activeCompanions.isEmpty();
             boolean isFailed = (jfState == JellyfinController.State.FAILED || jfState == JellyfinController.State.CRASHED || jfState == JellyfinController.State.CRASH_LOOP);
 
             if (anyRunning) {
@@ -271,37 +270,49 @@ public class JellyfinServerService extends Service implements JellyfinController
 
                 String lan = getLanAddress();
                 String fullUrl = (lan != null) ? lan : "http://127.0.0.1:8096";
-                String cleanEp = fullUrl.replaceFirst("^https?://", "");
 
                 String title;
                 String shortText;
-                StringBuilder expanded = new StringBuilder();
+                String expandedText;
+                String subText;
+                int iconRes;
 
                 if (isInitializing) {
                     int pct = controller != null ? controller.getBootstrapProgressPercent() : 0;
                     String bMsg = controller != null ? controller.getBootstrapProgressMessage() : "Extracting runtime...";
                     int displayPct = Math.max(5, pct);
-                    title = "Fishbowl • Setup (" + displayPct + "%)";
+                    title = "Jellyfin Setup (" + displayPct + "%)";
                     shortText = (bMsg != null && !bMsg.isEmpty()) ? bMsg : "Configuring server environment...";
-                    expanded.append("Initial installation in progress (").append(displayPct).append("%)\n");
-                    expanded.append(shortText).append("\n\n");
-                    expanded.append("Please keep Fishbowl open while runtime setup completes.");
-                } else if (isStarting && activeServices.isEmpty()) {
-                    title = "Fishbowl Media Server";
-                    shortText = "Starting media stack...";
-                    expanded.append("Initializing server runtime and companion services...");
-                } else {
-                    title = "Fishbowl Media Server";
-                    shortText = "Stream: " + fullUrl;
-                    expanded.append("Local Stream: ").append(fullUrl).append("\n");
-                    expanded.append("Active Services (").append(activeServices.size()).append(" running):\n");
-                    for (int i = 0; i < activeServices.size(); i++) {
-                        expanded.append("● ").append(activeServices.get(i));
-                        if (i < activeServices.size() - 1) expanded.append("\n");
+                    expandedText = shortText;
+                    subText = displayPct + "%";
+                    iconRes = R.drawable.ic_notification_jellyfin;
+                } else if (isStarting && !anyRunning) {
+                    title = "Jellyfin Server";
+                    shortText = "Starting server...";
+                    expandedText = "Starting server...";
+                    subText = "Starting";
+                    iconRes = R.drawable.ic_notification_jellyfin;
+                } else if (jfRunning) {
+                    title = "Jellyfin Server";
+                    shortText = fullUrl;
+                    if (!activeCompanions.isEmpty()) {
+                        subText = "Online • " + activeCompanions.size() + " Active";
+                        expandedText = fullUrl + "\nServices: " + android.text.TextUtils.join(", ", activeCompanions);
+                    } else {
+                        subText = "Online";
+                        expandedText = fullUrl;
                     }
+                    iconRes = R.drawable.ic_notification_jellyfin;
+                } else {
+                    // Only companions are running; Jellyfin is stopped
+                    title = "Fishbowl Services";
+                    shortText = activeCompanions.size() + " active: " + android.text.TextUtils.join(", ", activeCompanions);
+                    expandedText = "Running services:\n• " + android.text.TextUtils.join("\n• ", activeCompanions);
+                    subText = activeCompanions.size() + " Active";
+                    iconRes = R.drawable.ic_fishbowl_logo;
                 }
 
-                Notification notification = buildNotification(title, shortText, expanded.toString(), anyRunning, isInitializing, isFailed);
+                Notification notification = buildNotification(title, shortText, expandedText, subText, iconRes, jfRunning, anyRunning, isInitializing, isFailed);
                 promoteToForeground(notification);
                 com.fishbowl.app.widget.FishbowlWidgetProvider.updateAllWidgets(getApplicationContext());
             } else if (isFailed && hasStarted) {
@@ -309,8 +320,8 @@ public class JellyfinServerService extends Service implements JellyfinController
                 serviceStartTimeMs = 0;
                 releaseLocks();
                 String err = (controller != null && controller.getLastError() != null) ? controller.getLastError() : "Server stopped unexpectedly";
-                String title = (jfState == JellyfinController.State.CRASH_LOOP) ? "Fishbowl: Crash Loop" : "Fishbowl: Server Error";
-                Notification failNotif = buildNotification(title, err, "Failure details: " + err + "\nTap to open Fishbowl dashboard.", false, false, true);
+                String title = (jfState == JellyfinController.State.CRASH_LOOP) ? "Jellyfin: Crash Loop" : "Jellyfin: Server Error";
+                Notification failNotif = buildNotification(title, err, err, "Error", R.drawable.ic_notification_jellyfin, false, false, false, true);
                 promoteToForeground(failNotif);
                 com.fishbowl.app.widget.FishbowlWidgetProvider.updateAllWidgets(getApplicationContext());
             } else if (hasStarted) {
@@ -415,14 +426,19 @@ public class JellyfinServerService extends Service implements JellyfinController
     // -- Notification helpers --------------------------------------------------
 
     private Notification buildNotification(String title, String text, boolean isRunning) {
-        return buildNotification(title, text, null, isRunning, false, false);
+        return buildNotification(title, text, null, isRunning ? "Online" : "Starting", R.drawable.ic_notification_jellyfin, isRunning, isRunning, false, false);
     }
 
     private Notification buildNotification(String title, String shortText, String expandedText, boolean isRunning) {
-        return buildNotification(title, shortText, expandedText, isRunning, false, false);
+        return buildNotification(title, shortText, expandedText, isRunning ? "Online" : "Starting", R.drawable.ic_notification_jellyfin, isRunning, isRunning, false, false);
     }
 
     private Notification buildNotification(String title, String shortText, String expandedText, boolean isRunning, boolean isInitializing, boolean isFailed) {
+        String subText = isFailed ? "Error" : (isInitializing ? "Installing" : (isRunning ? "Online" : "Starting"));
+        return buildNotification(title, shortText, expandedText, subText, R.drawable.ic_notification_jellyfin, isRunning, isRunning, isInitializing, isFailed);
+    }
+
+    private Notification buildNotification(String title, String shortText, String expandedText, String subText, int iconRes, boolean isJfRunning, boolean isAnyRunning, boolean isInitializing, boolean isFailed) {
         Intent openIntent = new Intent(this, FishbowlActivity.class);
         openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent openPi = PendingIntent.getActivity(
@@ -438,31 +454,31 @@ public class JellyfinServerService extends Service implements JellyfinController
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(shortText)
-                .setSmallIcon(R.drawable.ic_notification_jellyfin)
+                .setSmallIcon(iconRes != 0 ? iconRes : R.drawable.ic_notification_jellyfin)
                 .setContentIntent(openPi)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT);
 
-        if (isRunning) {
+        if (subText != null && !subText.isEmpty()) {
+            builder.setSubText(subText);
+        }
+
+        if (isAnyRunning) {
             builder.setColor(Color.parseColor("#10B981")); // Emerald green for active stack
-            builder.setSubText("Online • Port 8096");
             if (serviceStartTimeMs > 0) {
                 builder.setWhen(serviceStartTimeMs);
                 builder.setUsesChronometer(true);
             }
         } else if (isInitializing) {
             builder.setColor(Color.parseColor("#38BDF8")); // Electric sky blue for setup
-            builder.setSubText("Installing");
             int pct = controller != null ? controller.getBootstrapProgressPercent() : 0;
             builder.setProgress(100, Math.max(5, pct), false);
         } else if (isFailed) {
             builder.setColor(Color.parseColor("#EF4444")); // Crimson for error
-            builder.setSubText("Error");
         } else {
             builder.setColor(Color.parseColor("#F59E0B")); // Amber for starting
-            builder.setSubText("Starting");
         }
 
         if (expandedText != null && !expandedText.isEmpty()) {
@@ -471,25 +487,27 @@ public class JellyfinServerService extends Service implements JellyfinController
                     .bigText(expandedText));
         }
 
-        if (isRunning) {
+        if (isJfRunning) {
             Intent webIntent = new Intent(this, JellyfinWebActivity.class);
             webIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             PendingIntent webPi = PendingIntent.getActivity(
                     this, 2, webIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            builder.addAction(R.drawable.ic_open_in_browser, "Open Web UI", webPi);
+            builder.addAction(R.drawable.ic_open_in_browser, "Open", webPi);
+            builder.addAction(R.drawable.ic_stop, "Stop", stopPi);
+        } else if (isAnyRunning) {
+            // Companions running, but Jellyfin stopped
             builder.addAction(R.drawable.ic_fishbowl_logo, "Dashboard", openPi);
-            builder.addAction(R.drawable.ic_stop, "Stop Server", stopPi);
+            builder.addAction(R.drawable.ic_stop, "Stop All", stopPi);
         } else if (isFailed) {
             Intent retryIntent = new Intent(this, JellyfinServerService.class);
             retryIntent.setAction(ACTION_START);
             PendingIntent retryPi = PendingIntent.getService(
                     this, 3, retryIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            builder.addAction(R.drawable.ic_restart, "Retry Start", retryPi);
+            builder.addAction(R.drawable.ic_restart, "Retry", retryPi);
             builder.addAction(R.drawable.ic_fishbowl_logo, "Dashboard", openPi);
         } else {
-            builder.addAction(R.drawable.ic_fishbowl_logo, "Dashboard", openPi);
             builder.addAction(R.drawable.ic_stop, "Stop", stopPi);
         }
 
@@ -506,10 +524,10 @@ public class JellyfinServerService extends Service implements JellyfinController
             }
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
-                    "Fishbowl Media Server",
+                    "Jellyfin Media Server",
                     NotificationManager.IMPORTANCE_DEFAULT
             );
-            channel.setDescription("Fishbowl media stack & background supervision");
+            channel.setDescription("Jellyfin media server and background supervision");
             channel.setShowBadge(false);
             channel.enableVibration(false);
             channel.setSound(null, null);
@@ -525,11 +543,16 @@ public class JellyfinServerService extends Service implements JellyfinController
             while (interfaces.hasMoreElements()) {
                 NetworkInterface intf = interfaces.nextElement();
                 if (!intf.isUp() || intf.isLoopback()) continue;
+                String name = intf.getName() != null ? intf.getName().toLowerCase(Locale.ROOT) : "";
+                if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("dummy")) continue;
                 Enumeration<java.net.InetAddress> addrs = intf.getInetAddresses();
                 while (addrs.hasMoreElements()) {
                     java.net.InetAddress addr = addrs.nextElement();
                     if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
-                        return "http://" + addr.getHostAddress() + ":8096";
+                        String host = addr.getHostAddress();
+                        if (host != null && !host.startsWith("192.0.0.")) {
+                            return "http://" + host + ":8096";
+                        }
                     }
                 }
             }
