@@ -139,6 +139,10 @@ Fishbowl runs **Jellyfin Server 12.4.0** natively on compatible ARM64 Android de
 - **Quick Settings:** Added native Android Quick Settings tile with Fishbowl branding for Jellyfin server control.
 - **Movie Importer:** Added keep-screen-awake toggle, two-phase replacement commit, and SHA-256 integrity checks.
 - **UI:** Upgraded lockscreen notifications, added top-right "X" progress dialog cancel, and relocated batch controls.
+- **Fixes:**
+  - **Issue #46:** Resolved Seerr and companion services not responding / connection refused on Android 15 under multi-service load.
+  - **Radarr Sync:** Resolved movie remaining with missing tag in Radarr when deleted in Jellyfin.
+  - **Jackett Branding:** Restored Jackett icon scale and typography to standard dimensions.
 
 > Universal package: [`Fishbowl-v1.4.10-beta.1-release-universal.apk`](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.10-beta.1) | SHA-256: `fd79f0ed93e0a413ebd2f84fcf10fff1a1f7c749dd10d1ac28ce703bcbb03ab9`
 
