@@ -43,6 +43,7 @@ public final class MovieImportJournal {
         public long timestampMs;
         public String errorMessage;
         public boolean retainOriginal;
+        public String sourceChecksum;
 
         public ImportRecord() {}
 
@@ -65,6 +66,7 @@ public final class MovieImportJournal {
                 obj.put("timestampMs", timestampMs);
                 obj.put("errorMessage", errorMessage != null ? errorMessage : "");
                 obj.put("retainOriginal", retainOriginal);
+                obj.put("sourceChecksum", sourceChecksum != null ? sourceChecksum : "");
             } catch (Throwable ignored) {}
             return obj;
         }
@@ -88,6 +90,7 @@ public final class MovieImportJournal {
             r.timestampMs = obj.optLong("timestampMs", System.currentTimeMillis());
             r.errorMessage = obj.optString("errorMessage", "");
             r.retainOriginal = obj.optBoolean("retainOriginal", true);
+            r.sourceChecksum = obj.optString("sourceChecksum", "");
             return r;
         }
     }

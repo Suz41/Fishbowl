@@ -1,6 +1,10 @@
 package com.fishbowl.app.importer;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -14,6 +18,32 @@ import java.util.regex.Pattern;
 public final class MovieFilenameParser {
 
     private MovieFilenameParser() {}
+
+    public static final Set<String> ALLOWED_MEDIA_EXTENSIONS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "mkv", "mp4", "avi", "mov", "webm", "m4v", "ts", "m2ts", "wmv", "flv", "iso", "mpg", "mpeg", "3gp", "vob", "ogv"
+    )));
+
+    public static boolean isSupportedMediaExtension(String ext) {
+        if (ext == null) return false;
+        if (ext.indexOf('\0') >= 0 || ext.contains("/") || ext.contains("\\") || ext.contains("..")) {
+            return false;
+        }
+        String s = ext.trim();
+        if (s.startsWith(".")) s = s.substring(1).trim();
+        if (s.isEmpty() || s.length() > 6) return false;
+        if (!s.matches("^[a-zA-Z0-9]{2,6}$")) return false;
+        return ALLOWED_MEDIA_EXTENSIONS.contains(s.toLowerCase(Locale.ROOT));
+    }
+
+    public static String normalizeMediaExtension(String ext) {
+        if (!isSupportedMediaExtension(ext)) {
+            throw new IllegalArgumentException("Unsupported or unsafe media extension: " + ext);
+        }
+        String s = ext.trim();
+        if (s.startsWith(".")) s = s.substring(1).trim();
+        return s.toLowerCase(Locale.ROOT);
+    }
+
 
     public enum MediaType {
         MOVIE,
@@ -187,8 +217,10 @@ public final class MovieFilenameParser {
         int lastDot = clean.lastIndexOf('.');
         if (lastDot > 0 && lastDot < clean.length() - 1) {
             String candidateExt = clean.substring(lastDot + 1);
-            if (candidateExt.length() <= 5 && !candidateExt.matches(".*\\d{3,}.*")) {
-                extension = candidateExt;
+            if (isSupportedMediaExtension(candidateExt)) {
+                extension = normalizeMediaExtension(candidateExt);
+                clean = clean.substring(0, lastDot);
+            } else if (candidateExt.length() <= 5 && !candidateExt.matches(".*\\d{3,}.*")) {
                 clean = clean.substring(0, lastDot);
             }
         }

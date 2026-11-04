@@ -14,6 +14,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Typeface;
+import android.app.ActivityManager;
 import android.app.Dialog;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
@@ -36,6 +37,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.PowerManager;
+import android.os.StatFs;
+import java.nio.charset.StandardCharsets;
 import android.os.SystemClock;
 import android.os.Handler;
 import android.os.Looper;
@@ -47,6 +50,7 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -65,8 +69,12 @@ import java.util.HashMap;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.Locale;
 import java.text.SimpleDateFormat;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -513,15 +521,26 @@ public final class FishbowlActivity extends AppCompatActivity
         }
     }
 
-    private final MediaServiceManager.ServiceListener serviceListener = (id, state) -> {
-        runOnUiThread(() -> {
+    private final android.os.Handler serviceUiThrottleHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable serviceUiThrottleRunnable = null;
+
+    private void requestThrottledServicesTabRefresh() {
+        if (serviceUiThrottleRunnable != null) {
+            serviceUiThrottleHandler.removeCallbacks(serviceUiThrottleRunnable);
+        }
+        serviceUiThrottleRunnable = () -> {
             refreshServicesTabUI();
             refreshHomeServicesBadge();
             if (activeTab == 2) {
                 refreshLogServiceChips();
                 refreshUnifiedLogsDisplay();
             }
-        });
+        };
+        serviceUiThrottleHandler.postDelayed(serviceUiThrottleRunnable, 120);
+    }
+
+    private final MediaServiceManager.ServiceListener serviceListener = (id, state) -> {
+        runOnUiThread(this::requestThrottledServicesTabRefresh);
     };
 
     @Override
@@ -547,7 +566,7 @@ public final class FishbowlActivity extends AppCompatActivity
             controller.reconcileStateAsync();
         }
         MediaServiceManager.getInstance(this).reconcileRunningServices();
-        MediaServiceManager.getInstance(this).autoWireStack(null);
+        MediaServiceManager.getInstance(this).scheduleAutoWireDebounced(4000);
         refreshUpdateUI();
         refreshHomeServicesBadge();
         healthHandler.removeCallbacks(healthPollRunnable);
@@ -844,7 +863,9 @@ public final class FishbowlActivity extends AppCompatActivity
 
         // Icon-Only 4-Tab Bottom Navigation: Home (0), Media Stack & Downloads (1), Activity (2), Settings (3)
         addNavTab(nav, 0, R.drawable.ic_home);
-        addNavTab(nav, 1, R.drawable.ic_services);
+        if (isMediaStackEnabled()) {
+            addNavTab(nav, 1, R.drawable.ic_services);
+        }
         addNavTab(nav, 2, R.drawable.ic_activity);
         addNavTab(nav, 3, R.drawable.ic_settings);
 
@@ -853,6 +874,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private void addNavTab(LinearLayout parent, int tabIndex, int iconRes) {
         FrameLayout tab = new FrameLayout(this);
+        tab.setTag(tabIndex);
         tab.setPadding(0, dp(4), 0, dp(4));
         tab.setOnClickListener(v -> {
             if (activeTab != tabIndex) {
@@ -885,8 +907,10 @@ public final class FishbowlActivity extends AppCompatActivity
             if (!(child instanceof FrameLayout)) continue;
             FrameLayout tab = (FrameLayout) child;
             ImageView icon = tab.findViewWithTag("icon");
+            Object tagVal = tab.getTag();
+            int tabIndex = (tagVal instanceof Integer) ? (Integer) tagVal : i;
 
-            boolean selected = (i == activeTab);
+            boolean selected = (tabIndex == activeTab);
             int color = selected ? Color.WHITE : Color.parseColor("#71717A");
             if (icon != null) {
                 icon.setColorFilter(color);
@@ -938,7 +962,7 @@ public final class FishbowlActivity extends AppCompatActivity
             updateLogLevelChips();
             refreshUnifiedLogsDisplay();
             if (autoScrollEnabled && logsScrollView != null) {
-                logsScrollView.post(() -> logsScrollView.fullScroll(View.FOCUS_DOWN));
+                logsScrollView.postDelayed(() -> logsScrollView.fullScroll(View.FOCUS_DOWN), 30);
             }
         } else if (activeTab == 3) {
             updateStorageInfoText();
@@ -1098,6 +1122,61 @@ public final class FishbowlActivity extends AppCompatActivity
         progressCard.addView(row5);
 
         container.addView(progressCard);
+
+        // Pre-Flight Diagnostics Card (Shown on first install)
+        LinearLayout setupDiagCard = new LinearLayout(this);
+        setupDiagCard.setOrientation(LinearLayout.VERTICAL);
+        setupDiagCard.setPadding(dp(16), dp(12), dp(16), dp(12));
+        setupDiagCard.setBackground(createBorderedRoundedDrawable(Color.parseColor("#0B0D12"), Color.parseColor("#1B222C"), dp(1), dp(12)));
+        LinearLayout.LayoutParams sdcParams = new LinearLayout.LayoutParams(-1, -2);
+        sdcParams.bottomMargin = dp(12);
+        setupDiagCard.setLayoutParams(sdcParams);
+
+        TextView sdcTitle = new TextView(this);
+        sdcTitle.setText("SYSTEM & PORT PRE-FLIGHT CHECK");
+        sdcTitle.setTextSize(11);
+        sdcTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        sdcTitle.setTextColor(Color.parseColor("#38BDF8"));
+        setupDiagCard.addView(sdcTitle);
+
+        TextView sdcDetails = new TextView(this);
+        String abiStr = Build.SUPPORTED_ABIS != null && Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "arm64-v8a";
+        sdcDetails.setText("• Architecture: " + abiStr + " (64-bit)\n• Core Port 8096: Probing...\n• Companion Ports: Probing...");
+        sdcDetails.setTextSize(11);
+        sdcDetails.setTypeface(Typeface.MONOSPACE);
+        sdcDetails.setTextColor(Color.parseColor("#D4D4D8"));
+        sdcDetails.setPadding(0, dp(4), 0, 0);
+        setupDiagCard.addView(sdcDetails);
+
+        new Thread(() -> {
+            boolean coreFree = false;
+            try (java.net.ServerSocket ss = new java.net.ServerSocket()) {
+                ss.setReuseAddress(true);
+                ss.bind(new java.net.InetSocketAddress("127.0.0.1", 8096));
+                coreFree = true;
+            } catch (Throwable t) {
+                coreFree = (controller != null && controller.isRunning());
+            }
+            int freeCount = 0;
+            int conflictCount = 0;
+            for (int p : new int[]{7878, 8989, 9696, 9117, 9091, 5055}) {
+                try (java.net.ServerSocket ss = new java.net.ServerSocket()) {
+                    ss.setReuseAddress(true);
+                    ss.bind(new java.net.InetSocketAddress("127.0.0.1", p));
+                    freeCount++;
+                } catch (Throwable t) {
+                    conflictCount++;
+                }
+            }
+            final String coreStatus = coreFree ? "Available" : "Port Conflict (In Use)";
+            final String compStatus = conflictCount == 0 ? "All 6 Ready (" + freeCount + " Free)" : conflictCount + " Conflict, " + freeCount + " Free";
+            runOnUiThread(() -> {
+                sdcDetails.setText("• Architecture: " + abiStr + " (64-bit)\n• Core Port 8096: " + coreStatus + "\n• Companion Ports: " + compStatus);
+            });
+        }).start();
+
+        container.addView(setupDiagCard);
+
 
         // Live Log Preview Box
         LinearLayout logCard = new LinearLayout(this);
@@ -2093,7 +2172,7 @@ public final class FishbowlActivity extends AppCompatActivity
         tiles.add(new HomeServiceTileSpec("jellyfin", "Jellyfin", R.drawable.ic_service_jellyfin, Color.WHITE));
 
         // 2. Installed Companion Service Tiles (ordered consistently)
-        if (!isMovieStreamerModeEnabled()) {
+        if (!isMovieStreamerModeEnabled() && isMediaStackEnabled()) {
             MediaServiceManager mgr = MediaServiceManager.getInstance(this);
             String[] preferredOrder = new String[] {
                     "radarr", "sonarr", "prowlarr", "jackett", "transmission", "seerr", "bazarr", "lidarr"
@@ -2311,7 +2390,8 @@ public final class FishbowlActivity extends AppCompatActivity
             case "prowlarr":
             case "prr":          return Color.parseColor("#FFFC8C");
             case "jackett":
-            case "jkt":          return Color.parseColor("#FF6D00");
+            case "jkt":
+            case "jk":           return Color.parseColor("#F97316");
             case "transmission":
             case "trr":          return Color.parseColor("#FF788D");
             case "seerr":
@@ -2336,7 +2416,9 @@ public final class FishbowlActivity extends AppCompatActivity
             case "radarr":       return R.drawable.ic_service_radarr;
             case "sonarr":       return R.drawable.ic_service_sonarr;
             case "prowlarr":     return R.drawable.ic_service_prowlarr;
-            case "jackett":      return R.drawable.ic_service_jackett;
+            case "jackett":
+            case "jkt":
+            case "jk":           return R.drawable.ic_service_jackett;
             case "transmission": return R.drawable.ic_service_transmission;
             case "seerr":        return R.drawable.ic_service_seerr;
             case "bazarr":       return R.drawable.ic_service_bazarr;
@@ -2565,22 +2647,6 @@ public final class FishbowlActivity extends AppCompatActivity
         pAuto.rightMargin = dp(4);
         controlsRow.addView(btnToggleAutoScroll, pAuto);
 
-        // Log Source Toggle Button (Server Disk Log vs Launcher Live Stream)
-        final Button btnLogSource = createPixelButton(showingDiskLog ? "SOURCE: SERVER" : "SOURCE: LAUNCHER",
-                getSurfaceElevatedColor(),
-                showingDiskLog ? Color.parseColor("#38BDF8") : Color.parseColor("#F59E0B"));
-        btnLogSource.setTextSize(9);
-        btnLogSource.setPadding(dp(6), dp(2), dp(6), dp(2));
-        btnLogSource.setOnClickListener(v -> {
-            showingDiskLog = !showingDiskLog;
-            btnLogSource.setText(showingDiskLog ? "SOURCE: SERVER" : "SOURCE: LAUNCHER");
-            btnLogSource.setTextColor(showingDiskLog ? Color.parseColor("#38BDF8") : Color.parseColor("#F59E0B"));
-            refreshUnifiedLogsDisplay();
-        });
-        LinearLayout.LayoutParams pSource = new LinearLayout.LayoutParams(-2, dp(26));
-        pSource.rightMargin = dp(4);
-        controlsRow.addView(btnLogSource, pSource);
-
         // Copy Button
         Button btnCopy = createPixelButton("COPY", getSurfaceElevatedColor(), getPrimaryTextColor());
         btnCopy.setTextSize(9);
@@ -2617,6 +2683,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 ManagedService s = mgr.getService(selectedLogService.toLowerCase(Locale.ROOT));
                 if (s != null) s.clearLogs();
             }
+            if (logsOutputText != null) logsOutputText.setText("--- No logs recorded for [" + selectedLogService + "] ---");
             refreshUnifiedLogsDisplay();
             Toast.makeText(this, "Cleared " + selectedLogService + " logs", Toast.LENGTH_SHORT).show();
         });
@@ -3411,7 +3478,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 return;
             }
             if (logsStatusSubtitle != null) {
-                logsStatusSubtitle.setText(showingDiskLog ? "[JELLYFIN] - Reading Server Disk Log" : "[JELLYFIN] - Reading Launcher Live Stream");
+                logsStatusSubtitle.setText("[JELLYFIN] - Live Stream & Disk Log Output");
             }
             if (controller != null) {
                 String raw = showingDiskLog ? controller.getDiskLogs() : controller.getLogs();
@@ -3471,8 +3538,307 @@ public final class FishbowlActivity extends AppCompatActivity
         }
 
         if (autoScrollEnabled && logsScrollView != null) {
-            logsScrollView.post(() -> logsScrollView.fullScroll(View.FOCUS_DOWN));
+            logsScrollView.postDelayed(() -> {
+                if (logsScrollView != null) {
+                    View child = logsScrollView.getChildAt(0);
+                    if (child != null) {
+                        int diff = child.getBottom() - (logsScrollView.getHeight() + logsScrollView.getScrollY());
+                        if (diff <= dp(140)) {
+                            logsScrollView.fullScroll(View.FOCUS_DOWN);
+                        }
+                    } else {
+                        logsScrollView.fullScroll(View.FOCUS_DOWN);
+                    }
+                }
+            }, 40);
         }
+    }
+
+    
+    public boolean isMediaStackEnabled() {
+        return getFishbowlPrefs().getBoolean("media_stack_enabled", true);
+    }
+
+    public void setMediaStackEnabled(boolean enabled) {
+        getFishbowlPrefs().edit().putBoolean("media_stack_enabled", enabled).apply();
+        if (!enabled) {
+            try {
+                MediaServiceManager.getInstance(this).uninstallAllCompanionServices();
+            } catch (Throwable ignored) {}
+            if (activeTab == 1) {
+                activeTab = 0;
+            }
+        }
+        refreshBottomNavBar();
+        rebuildHomeServiceTiles();
+        renderActiveTab();
+    }
+
+    private void refreshBottomNavBar() {
+        if (bottomNavLayout == null) return;
+        bottomNavLayout.removeAllViews();
+        addNavTab(bottomNavLayout, 0, R.drawable.ic_home);
+        if (isMediaStackEnabled()) {
+            addNavTab(bottomNavLayout, 1, R.drawable.ic_services);
+        }
+        addNavTab(bottomNavLayout, 2, R.drawable.ic_activity);
+        addNavTab(bottomNavLayout, 3, R.drawable.ic_settings);
+        updateBottomNavSelection();
+    }
+
+    public static class DiagnosticItem {
+        public final String name;
+        public final String category;
+        public final String detail;
+        public final String statusText;
+        public final int statusColor;
+
+        public DiagnosticItem(String name, String category, String detail, String statusText, int statusColor) {
+            this.name = name;
+            this.category = category;
+            this.detail = detail;
+            this.statusText = statusText;
+            this.statusColor = statusColor;
+        }
+    }
+
+    public List<DiagnosticItem> performSystemDiagnostics() {
+        List<DiagnosticItem> results = new ArrayList<>();
+
+        // 1. Device Architecture & ABI Check
+        String primaryAbi = Build.SUPPORTED_ABIS != null && Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "unknown";
+        boolean is64Bit = primaryAbi.contains("arm64") || primaryAbi.contains("aarch64");
+        results.add(new DiagnosticItem(
+                "Processor Architecture",
+                "SYSTEM COMPATIBILITY",
+                "Device ABI: " + primaryAbi + (is64Bit ? " (64-bit Bionic)" : " (32-bit legacy)"),
+                is64Bit ? "COMPATIBLE" : "INCOMPATIBLE",
+                is64Bit ? Color.parseColor("#34D399") : Color.parseColor("#EF4444")
+        ));
+
+        // 2. Storage Free Space Check
+        try {
+            File dataDir = getFilesDir();
+            android.os.StatFs stat = new android.os.StatFs(dataDir.getAbsolutePath());
+            long availBytes = stat.getAvailableBytes();
+            long totalBytes = stat.getTotalBytes();
+            boolean hasEnough = availBytes >= (500L * 1024L * 1024L); // 500MB
+            boolean isOptimal = availBytes >= (2L * 1024L * 1024L * 1024L); // 2GB
+            String statText = isOptimal ? "EXCELLENT" : (hasEnough ? "ADEQUATE" : "LOW SPACE");
+            int statColor = isOptimal ? Color.parseColor("#34D399") : (hasEnough ? Color.parseColor("#F59E0B") : Color.parseColor("#EF4444"));
+            results.add(new DiagnosticItem(
+                    "Internal Storage Headroom",
+                    "STORAGE",
+                    MediaStorageManager.formatBytes(availBytes) + " free of " + MediaStorageManager.formatBytes(totalBytes),
+                    statText,
+                    statColor
+            ));
+        } catch (Throwable t) {
+            results.add(new DiagnosticItem("Storage Check", "STORAGE", "Error: " + t.getMessage(), "UNKNOWN", Color.parseColor("#71717A")));
+        }
+
+        // 3. Service Port Occupancy & Collision Checks
+        MediaServiceManager mgr = MediaServiceManager.getInstance(this);
+        int[][] servicePortMap = {
+                {8096, 0}, // Jellyfin (core)
+                {7878, 1}, // Radarr
+                {8989, 2}, // Sonarr
+                {9696, 3}, // Prowlarr
+                {9117, 4}, // Jackett
+                {9091, 5}, // Transmission
+                {5055, 6}, // Seerr
+                {6767, 7}, // Bazarr
+                {8686, 8}  // Lidarr
+        };
+        String[] serviceNames = {
+                "Jellyfin Core", "Radarr", "Sonarr", "Prowlarr", "Jackett",
+                "Transmission", "Seerr", "Bazarr", "Lidarr"
+        };
+        String[] serviceIds = {
+                "jellyfin", "radarr", "sonarr", "prowlarr", "jackett",
+                "transmission", "seerr", "bazarr", "lidarr"
+        };
+
+        for (int i = 0; i < servicePortMap.length; i++) {
+            int port = servicePortMap[i][0];
+            String sName = serviceNames[i];
+            String sId = serviceIds[i];
+
+            boolean isRunning = false;
+            if ("jellyfin".equals(sId)) {
+                isRunning = (controller != null && controller.isRunning());
+            } else {
+                ManagedService inst = mgr.getService(sId);
+                isRunning = (inst != null && inst.isRunning());
+            }
+
+            boolean canBind = false;
+            try (java.net.ServerSocket ss = new java.net.ServerSocket()) {
+                ss.setReuseAddress(true);
+                ss.bind(new java.net.InetSocketAddress("127.0.0.1", port));
+                canBind = true;
+            } catch (Throwable ignored) {
+                canBind = false;
+            }
+
+            String portStatus;
+            int portColor;
+            String portDetail;
+
+            if (isRunning) {
+                portStatus = "ONLINE";
+                portColor = Color.parseColor("#34D399"); // Green
+                portDetail = "Port " + port + " is active and bound by Fishbowl.";
+            } else if (canBind) {
+                portStatus = "PORT FREE";
+                portColor = Color.parseColor("#38BDF8"); // Sky Blue
+                portDetail = "Port " + port + " is unoccupied and available.";
+            } else {
+                portStatus = "PORT CONFLICT";
+                portColor = Color.parseColor("#EF4444"); // Red warning
+                portDetail = "Port " + port + " is in use by an external or zombie process!";
+            }
+
+            results.add(new DiagnosticItem(
+                    sName,
+                    "SERVICE PORTS",
+                    portDetail,
+                    portStatus,
+                    portColor
+            ));
+        }
+
+        return results;
+    }
+
+    public void showDiagnosticsModal() {
+        android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(getBgColor());
+        scroll.setPadding(dp(20), dp(16), dp(20), dp(32));
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+
+        // Header
+        LinearLayout hdr = new LinearLayout(this);
+        hdr.setOrientation(LinearLayout.HORIZONTAL);
+        hdr.setGravity(Gravity.CENTER_VERTICAL);
+        hdr.setPadding(0, dp(10), 0, dp(14));
+
+        LinearLayout titleCol = new LinearLayout(this);
+        titleCol.setOrientation(LinearLayout.VERTICAL);
+
+        TextView title = new TextView(this);
+        title.setText("DIAGNOSTICS CENTRE");
+        title.setTextSize(18);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        title.setTextColor(Color.WHITE);
+        titleCol.addView(title);
+
+        TextView sub = new TextView(this);
+        sub.setText("Hardware architecture, port collision, and disk health audit.");
+        sub.setTextSize(11);
+        sub.setTextColor(Color.parseColor("#71717A"));
+        titleCol.addView(sub);
+        hdr.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        Button btnClose = createPixelButton("CLOSE", getSurfaceElevatedColor(), Color.WHITE);
+        btnClose.setTextSize(10);
+        btnClose.setOnClickListener(v -> dialog.dismiss());
+        hdr.addView(btnClose, new LinearLayout.LayoutParams(-2, dp(34)));
+        content.addView(hdr);
+
+        // Report Container
+        LinearLayout reportContainer = new LinearLayout(this);
+        reportContainer.setOrientation(LinearLayout.VERTICAL);
+        content.addView(reportContainer);
+
+        Runnable runAudit = () -> {
+            reportContainer.removeAllViews();
+            TextView scanning = new TextView(this);
+            scanning.setText("Running hardware & network diagnostics...");
+            scanning.setTextColor(Color.parseColor("#71717A"));
+            scanning.setTextSize(12);
+            scanning.setPadding(0, dp(10), 0, dp(10));
+            reportContainer.addView(scanning);
+
+            new Thread(() -> {
+                List<DiagnosticItem> items = performSystemDiagnostics();
+                runOnUiThread(() -> {
+                    reportContainer.removeAllViews();
+                    String lastCategory = "";
+                    for (DiagnosticItem item : items) {
+                        if (!item.category.equals(lastCategory)) {
+                            lastCategory = item.category;
+                            TextView catHeader = new TextView(this);
+                            catHeader.setText(lastCategory);
+                            catHeader.setTextSize(10.5f);
+                            catHeader.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+                            catHeader.setTextColor(Color.parseColor("#A1A1AA"));
+                            catHeader.setLetterSpacing(0.08f);
+                            catHeader.setPadding(0, dp(14), 0, dp(6));
+                            reportContainer.addView(catHeader);
+                        }
+
+                        LinearLayout itemCard = new LinearLayout(this);
+                        itemCard.setOrientation(LinearLayout.HORIZONTAL);
+                        itemCard.setGravity(Gravity.CENTER_VERTICAL);
+                        itemCard.setBackground(createBorderedRoundedDrawable(
+                                Color.parseColor("#0E1015"),
+                                Color.parseColor("#1C2028"),
+                                dp(1),
+                                dp(10)
+                        ));
+                        itemCard.setPadding(dp(14), dp(10), dp(14), dp(10));
+                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                        lp.bottomMargin = dp(8);
+                        itemCard.setLayoutParams(lp);
+
+                        LinearLayout leftCol = new LinearLayout(this);
+                        leftCol.setOrientation(LinearLayout.VERTICAL);
+                        TextView nameView = new TextView(this);
+                        nameView.setText(item.name);
+                        nameView.setTextSize(13);
+                        nameView.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+                        nameView.setTextColor(Color.WHITE);
+                        leftCol.addView(nameView);
+
+                        TextView detailView = new TextView(this);
+                        detailView.setText(item.detail);
+                        detailView.setTextSize(10.5f);
+                        detailView.setTextColor(Color.parseColor("#71717A"));
+                        detailView.setPadding(0, dp(2), 0, 0);
+                        leftCol.addView(detailView);
+                        itemCard.addView(leftCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+                        TextView statusBadge = new TextView(this);
+                        statusBadge.setText(item.statusText);
+                        statusBadge.setTextSize(9.5f);
+                        statusBadge.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+                        statusBadge.setTextColor(item.statusColor);
+                        statusBadge.setBackground(createRoundedDrawable(Color.argb(35, Color.red(item.statusColor), Color.green(item.statusColor), Color.blue(item.statusColor)), dp(6)));
+                        statusBadge.setPadding(dp(8), dp(4), dp(8), dp(4));
+                        itemCard.addView(statusBadge);
+
+                        reportContainer.addView(itemCard);
+                    }
+                });
+            }).start();
+        };
+
+        // Re-run Button
+        Button btnRefresh = createOutlinePixelButton("RE-SCAN DIAGNOSTICS", Color.parseColor("#38BDF8"), Color.parseColor("#38BDF8"));
+        btnRefresh.setTextSize(10.5f);
+        btnRefresh.setOnClickListener(v -> runAudit.run());
+        LinearLayout.LayoutParams prParams = new LinearLayout.LayoutParams(-1, dp(40));
+        prParams.topMargin = dp(16);
+        content.addView(btnRefresh, prParams);
+
+        scroll.addView(content);
+        dialog.setContentView(scroll);
+        dialog.show();
+        runAudit.run();
     }
 
     private void renderTimelineEvents() {
@@ -3546,39 +3912,45 @@ public final class FishbowlActivity extends AppCompatActivity
 
         header.addView(masterRow);
 
-        // Quick Stack Presets: MOVIES (Radarr + Transmission + Prowlarr) & SERIES (Sonarr + Transmission + Prowlarr)
-        LinearLayout presetsRow = new LinearLayout(this);
-        presetsRow.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams prLp = new LinearLayout.LayoutParams(-1, -2);
-        prLp.topMargin = dp(4);
-        prLp.bottomMargin = dp(2);
-        presetsRow.setLayoutParams(prLp);
-
-        Button btnMovies = createOutlinePixelButton("MOVIES", Color.parseColor("#38BDF8"), Color.parseColor("#38BDF8"));
-        btnMovies.setTextSize(10.5f);
-        btnMovies.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        btnMovies.setLetterSpacing(0.06f);
-        btnMovies.setOnClickListener(v -> launchMoviesStack());
-        presetsRow.addView(btnMovies, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
-
-        View presetGap = new View(this);
-        presetsRow.addView(presetGap, new LinearLayout.LayoutParams(dp(8), 1));
-
-        Button btnSeries = createOutlinePixelButton("TV SHOWS / SERIES", Color.parseColor("#818CF8"), Color.parseColor("#818CF8"));
-        btnSeries.setTextSize(10.5f);
-        btnSeries.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        btnSeries.setLetterSpacing(0.06f);
-        btnSeries.setOnClickListener(v -> launchSeriesStack());
-        presetsRow.addView(btnSeries, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
-
-        header.addView(presetsRow);
-
         // 1dp Hairline Divider
         View hDiv = new View(this);
         hDiv.setBackgroundColor(Color.argb(10, 255, 255, 255));
         LinearLayout.LayoutParams hDivLp = new LinearLayout.LayoutParams(-1, dp(1));
-        hDivLp.topMargin = dp(12);
+        hDivLp.topMargin = dp(10);
         header.addView(hDiv, hDivLp);
+
+        // Clean Section Header above cards with compact [+ INSTALL] and [− UNINSTALL] actions
+        LinearLayout cardsHeader = new LinearLayout(this);
+        cardsHeader.setOrientation(LinearLayout.HORIZONTAL);
+        cardsHeader.setGravity(Gravity.CENTER_VERTICAL);
+        cardsHeader.setPadding(dp(2), dp(12), dp(2), dp(2));
+
+        TextView cardsTitle = new TextView(this);
+        cardsTitle.setText("COMPANION SERVICES");
+        cardsTitle.setTextSize(11f);
+        cardsTitle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        cardsTitle.setLetterSpacing(0.08f);
+        cardsTitle.setTextColor(Color.parseColor("#71717A"));
+        cardsHeader.addView(cardsTitle, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        Button btnInstallBatch = createOutlinePixelButton("+ INSTALL", Color.parseColor("#38BDF8"), Color.parseColor("#38BDF8"));
+        btnInstallBatch.setTextSize(9f);
+        btnInstallBatch.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        btnInstallBatch.setPadding(dp(10), 0, dp(10), 0);
+        btnInstallBatch.setOnClickListener(v -> showSelectiveInstallDialog());
+        cardsHeader.addView(btnInstallBatch, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(28)));
+
+        View batchGap = new View(this);
+        cardsHeader.addView(batchGap, new LinearLayout.LayoutParams(dp(8), 1));
+
+        Button btnUninstallBatch = createOutlinePixelButton("− UNINSTALL", Color.parseColor("#EF4444"), Color.parseColor("#EF4444"));
+        btnUninstallBatch.setTextSize(9f);
+        btnUninstallBatch.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        btnUninstallBatch.setPadding(dp(10), 0, dp(10), 0);
+        btnUninstallBatch.setOnClickListener(v -> showSelectiveUninstallDialog());
+        cardsHeader.addView(btnUninstallBatch, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(28)));
+
+        header.addView(cardsHeader);
 
         layout.addView(header);
 
@@ -3607,6 +3979,44 @@ public final class FishbowlActivity extends AppCompatActivity
     private void refreshServicesTabUI() {
         if (servicesCardsContainer == null) return;
         servicesCardsContainer.removeAllViews();
+
+        if (!isMediaStackEnabled()) {
+            LinearLayout disabledCard = new LinearLayout(this);
+            disabledCard.setOrientation(LinearLayout.VERTICAL);
+            disabledCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+            disabledCard.setBackground(createBorderedRoundedDrawable(
+                    Color.parseColor("#0C0D10"),
+                    Color.parseColor("#27272A"),
+                    dp(1),
+                    dp(12)
+            ));
+            LinearLayout.LayoutParams dcp = new LinearLayout.LayoutParams(-1, -2);
+            dcp.bottomMargin = dp(14);
+            disabledCard.setLayoutParams(dcp);
+
+            TextView dTitle = new TextView(this);
+            dTitle.setText("MEDIA STACK IS PAUSED");
+            dTitle.setTextSize(12f);
+            dTitle.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+            dTitle.setTextColor(Color.parseColor("#F59E0B"));
+            disabledCard.addView(dTitle);
+
+            TextView dSub = new TextView(this);
+            dSub.setText("Fishbowl is currently operating in standalone Jellyfin mode to conserve storage and RAM. Companion services are paused.");
+            dSub.setTextSize(10.5f);
+            dSub.setTextColor(Color.parseColor("#A1A1AA"));
+            dSub.setPadding(0, dp(4), 0, dp(12));
+            disabledCard.addView(dSub);
+
+            Button btnEnable = createPixelButton("ENABLE COMPANION SERVICES", Color.parseColor("#18191E"), Color.parseColor("#38BDF8"));
+            btnEnable.setTextSize(10f);
+            btnEnable.setOnClickListener(v -> setMediaStackEnabled(true));
+            disabledCard.addView(btnEnable, new LinearLayout.LayoutParams(-1, dp(36)));
+
+            servicesCardsContainer.addView(disabledCard);
+            return;
+        }
+
 
         MediaServiceManager mgr = MediaServiceManager.getInstance(this);
         List<ManagedService> allServices = mgr.getAllServices();
@@ -3887,6 +4297,9 @@ public final class FishbowlActivity extends AppCompatActivity
             } else if (isRunning) {
                 stText = "RUNNING";
                 stColor = Color.parseColor("#34D399");
+            } else if (svc.getState() == com.fishbowl.app.model.ServiceState.RECOVERING) {
+                stText = "RETRYING";
+                stColor = Color.parseColor("#FB923C");
             } else if (isStarting) {
                 stText = "WAIT";
                 stColor = getWarningColor();
@@ -4031,8 +4444,18 @@ public final class FishbowlActivity extends AppCompatActivity
             btnInstall.setTextSize(9.5f);
             btnInstall.setOnClickListener(v -> showServiceInstallCompatibilityDialog(svc));
             bottomRow.addView(btnInstall, new LinearLayout.LayoutParams(-1, -1));
+        } else if (svc.getState() == com.fishbowl.app.model.ServiceState.CRASH_LOOP_PROTECTION) {
+            Button btnReset = createOutlinePixelButton("RESET CRASH LOOP", Color.parseColor("#E11D48"), Color.parseColor("#E11D48"));
+            btnReset.setTextSize(9f);
+            btnReset.setOnClickListener(v -> {
+                MediaServiceManager.getInstance(this).resetCrashLoop(svc.getId());
+                refreshServicesTabUI();
+                refreshHomeServicesBadge();
+            });
+            bottomRow.addView(btnReset, new LinearLayout.LayoutParams(-1, -1));
         } else if (!isRunning) {
-            Button btnStart = createOutlinePixelButton("START", Color.WHITE, Color.WHITE);
+            String startLabel = (svc.getState() == com.fishbowl.app.model.ServiceState.RECOVERING) ? "RETRY NOW" : "START";
+            Button btnStart = createOutlinePixelButton(startLabel, Color.WHITE, Color.WHITE);
             btnStart.setTextSize(9.5f);
             btnStart.setOnClickListener(v -> {
                 if (isJellyfin) {
@@ -4130,15 +4553,69 @@ public final class FishbowlActivity extends AppCompatActivity
         headerRow.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         TextView stateBadge = new TextView(this);
-        stateBadge.setText(isRunning ? "● RUNNING" : (installed ? "● STOPPED" : "● AVAILABLE"));
+        String stBadgeText;
+        int stBadgeColor;
+        if (svc.isBlocked()) {
+            stBadgeText = "● BLOCKED";
+            stBadgeColor = getDangerColor();
+        } else if (svc.getState() == com.fishbowl.app.model.ServiceState.CRASH_LOOP_PROTECTION) {
+            stBadgeText = "● CRASH LOOP";
+            stBadgeColor = getDangerColor();
+        } else if (svc.getState() == com.fishbowl.app.model.ServiceState.ERROR || svc.getState() == com.fishbowl.app.model.ServiceState.FAILED) {
+            stBadgeText = "● ERROR";
+            stBadgeColor = getDangerColor();
+        } else if (svc.getState() == com.fishbowl.app.model.ServiceState.RECOVERING) {
+            stBadgeText = "● RETRYING";
+            stBadgeColor = Color.parseColor("#FB923C");
+        } else if (svc.isStarting()) {
+            stBadgeText = "● STARTING";
+            stBadgeColor = getWarningColor();
+        } else if (isRunning) {
+            stBadgeText = "● RUNNING";
+            stBadgeColor = Color.parseColor("#34D399");
+        } else if (installed) {
+            stBadgeText = "● STOPPED";
+            stBadgeColor = Color.parseColor("#71717A");
+        } else {
+            stBadgeText = "● AVAILABLE";
+            stBadgeColor = Color.parseColor("#38BDF8");
+        }
+        stateBadge.setText(stBadgeText);
         stateBadge.setTextSize(9f);
         stateBadge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        stateBadge.setTextColor(isRunning ? Color.parseColor("#34D399") : (installed ? Color.parseColor("#71717A") : Color.parseColor("#38BDF8")));
+        stateBadge.setTextColor(stBadgeColor);
         stateBadge.setPadding(dp(8), dp(4), dp(8), dp(4));
-        stateBadge.setBackground(createBorderedRoundedDrawable(Color.BLACK, isRunning ? Color.parseColor("#34D399") : Color.parseColor("#27272A"), dp(1), dp(4)));
+        stateBadge.setBackground(createBorderedRoundedDrawable(Color.BLACK, stBadgeColor, dp(1), dp(4)));
         headerRow.addView(stateBadge);
 
         root.addView(headerRow);
+
+        if (!isJellyfin && svc.getLastError() != null && !svc.getLastError().trim().isEmpty() && !isRunning) {
+            LinearLayout errBox = new LinearLayout(this);
+            errBox.setOrientation(LinearLayout.VERTICAL);
+            errBox.setPadding(dp(12), dp(10), dp(12), dp(10));
+            errBox.setBackground(createBorderedRoundedDrawable(Color.parseColor("#1C0A0E"), Color.parseColor("#E11D48"), dp(1), dp(8)));
+            LinearLayout.LayoutParams ebLp = new LinearLayout.LayoutParams(-1, -2);
+            ebLp.topMargin = dp(10);
+            errBox.setLayoutParams(ebLp);
+
+            TextView errTitle = new TextView(this);
+            errTitle.setText("DIAGNOSTIC NOTICE");
+            errTitle.setTextSize(9f);
+            errTitle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            errTitle.setTextColor(Color.parseColor("#FB7185"));
+            errBox.addView(errTitle);
+
+            TextView errDesc = new TextView(this);
+            errDesc.setText(svc.getLastError());
+            errDesc.setTextSize(10f);
+            errDesc.setTypeface(Typeface.MONOSPACE);
+            errDesc.setTextColor(Color.parseColor("#FECDD3"));
+            errDesc.setPadding(0, dp(2), 0, 0);
+            errBox.addView(errDesc);
+
+            root.addView(errBox);
+        }
 
         // Divider
         View div1 = new View(this);
@@ -4373,6 +4850,17 @@ public final class FishbowlActivity extends AppCompatActivity
             }
 
             if (!isJellyfin) {
+                View spBLog = new View(this);
+                actionRow.addView(spBLog, new LinearLayout.LayoutParams(dp(6), 1));
+
+                Button btnLogs = createOutlinePixelButton("LOGS", Color.parseColor("#38BDF8"), Color.parseColor("#38BDF8"));
+                btnLogs.setTextSize(9.5f);
+                btnLogs.setOnClickListener(v -> {
+                    d.dismiss();
+                    showServiceLogsDialog(svc);
+                });
+                actionRow.addView(btnLogs, new LinearLayout.LayoutParams(0, dp(36), 0.9f));
+
                 View spB2 = new View(this);
                 actionRow.addView(spB2, new LinearLayout.LayoutParams(dp(6), 1));
 
@@ -4452,26 +4940,342 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private void showServiceLogsDialog(ManagedService svc) {
+        Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        d.setCancelable(true);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(16), dp(16), dp(16));
+        root.setBackground(createBorderedRoundedDrawable(Color.BLACK, Color.parseColor("#27272A"), dp(1), dp(14)));
+
+        // Title row with "✕" close button
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout titleCol = new LinearLayout(this);
+        titleCol.setOrientation(LinearLayout.VERTICAL);
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText((svc != null ? svc.getDisplayName() : "Service") + " Logs");
+        titleTv.setTextSize(14f);
+        titleTv.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        titleTv.setTextColor(Color.WHITE);
+        titleCol.addView(titleTv);
+
+        TextView subTv = new TextView(this);
+        subTv.setText("Errors, crashes & diagnostics");
+        subTv.setTextSize(10.5f);
+        subTv.setTextColor(Color.parseColor("#71717A"));
+        titleCol.addView(subTv);
+
+        titleRow.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        TextView closeBtn = new TextView(this);
+        closeBtn.setText("✕");
+        closeBtn.setTextSize(13f);
+        closeBtn.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        closeBtn.setTextColor(Color.parseColor("#A1A1AA"));
+        closeBtn.setGravity(Gravity.CENTER);
+        closeBtn.setBackground(createBorderedRoundedDrawable(Color.parseColor("#18181B"), Color.parseColor("#3F3F46"), dp(1), dp(6)));
+        closeBtn.setClickable(true);
+        closeBtn.setFocusable(true);
+        closeBtn.setOnClickListener(v -> d.dismiss());
+        titleRow.addView(closeBtn, new LinearLayout.LayoutParams(dp(28), dp(28)));
+
+        root.addView(titleRow);
+
+        // Filter Toggle Bar: [ERRORS & CRASHES] (Active by default) | [ALL LOGS]
+        LinearLayout toggleBar = new LinearLayout(this);
+        toggleBar.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams tbLp = new LinearLayout.LayoutParams(-1, dp(30));
+        tbLp.topMargin = dp(10);
+        tbLp.bottomMargin = dp(8);
+        toggleBar.setLayoutParams(tbLp);
+
+        Button btnErrors = createOutlinePixelButton("ERRORS & CRASHES", Color.parseColor("#EF4444"), Color.parseColor("#EF4444"));
+        btnErrors.setTextSize(9f);
+        btnErrors.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        toggleBar.addView(btnErrors, new LinearLayout.LayoutParams(0, -1, 1.0f));
+
+        View toggleGap = new View(this);
+        toggleBar.addView(toggleGap, new LinearLayout.LayoutParams(dp(8), 1));
+
+        Button btnAllLogs = createOutlinePixelButton("ALL LOGS", Color.parseColor("#3F3F46"), Color.parseColor("#71717A"));
+        btnAllLogs.setTextSize(9f);
+        btnAllLogs.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        toggleBar.addView(btnAllLogs, new LinearLayout.LayoutParams(0, -1, 1.0f));
+
+        root.addView(toggleBar);
+
+        // Scrollable Log Console View
         ScrollView scroll = new ScrollView(this);
-        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setVerticalScrollBarEnabled(true);
         scroll.setHorizontalScrollBarEnabled(false);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        TextView tv = new TextView(this);
-        tv.setPadding(0, dp(4), 0, dp(4));
-        tv.setTextSize(10.5f);
-        tv.setTypeface(Typeface.MONOSPACE);
-        tv.setTextColor(Color.parseColor("#D4D4D8"));
-        tv.setText(svc.getRecentLogs(100));
-        scroll.addView(tv);
+        scroll.setBackground(createRoundedDrawable(Color.parseColor("#09090B"), dp(8)));
+        scroll.setPadding(dp(10), dp(10), dp(10), dp(10));
+        LinearLayout.LayoutParams scLp = new LinearLayout.LayoutParams(-1, dp(230));
+        scLp.bottomMargin = dp(12);
+        scroll.setLayoutParams(scLp);
 
-        showOledDialog(svc.getDisplayName() + " Logs", "Recent process log output", scroll,
-                "COPY", getAccentColor(), () -> {
-                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                    if (clipboard != null) {
-                        clipboard.setPrimaryClip(ClipData.newPlainText(svc.getId() + "_logs", svc.getRecentLogs(500)));
-                        Toast.makeText(this, "Copied " + svc.getDisplayName() + " logs to clipboard", Toast.LENGTH_SHORT).show();
-                    }
-                }, "CLOSE", null);
+        TextView tvLogs = new TextView(this);
+        tvLogs.setTextSize(10f);
+        tvLogs.setTypeface(Typeface.MONOSPACE);
+        tvLogs.setTextIsSelectable(true);
+        scroll.addView(tvLogs);
+
+        root.addView(scroll);
+
+        // State holder for current log text
+        final String[] currentLogHolder = new String[1];
+        final boolean[] isErrorViewHolder = new boolean[]{true};
+
+        Runnable updateLogDisplay = () -> {
+            if (isErrorViewHolder[0]) {
+                btnErrors.setTextColor(Color.parseColor("#EF4444"));
+                btnErrors.setBackground(createBorderedRoundedDrawable(Color.argb(30, 239, 68, 68), Color.parseColor("#EF4444"), dp(1), dp(6)));
+                btnAllLogs.setTextColor(Color.parseColor("#71717A"));
+                btnAllLogs.setBackground(createBorderedRoundedDrawable(Color.parseColor("#121215"), Color.parseColor("#27272A"), dp(1), dp(6)));
+
+                String errorLogs = svc != null ? svc.getErrorAndCrashLogs(200) : "";
+                if (errorLogs.trim().isEmpty()) {
+                    tvLogs.setTextColor(Color.parseColor("#34D399"));
+                    String noErrText = "✔ No errors or crashes recorded for " + (svc != null ? svc.getDisplayName() : "this service") + ".\n\n"
+                            + "Process is running normally with 0 error events.\n"
+                            + "Tap [ALL LOGS] above to inspect routine operational output.";
+                    tvLogs.setText(noErrText);
+                    currentLogHolder[0] = noErrText;
+                } else {
+                    tvLogs.setTextColor(Color.parseColor("#FCA5A5"));
+                    tvLogs.setText(errorLogs);
+                    currentLogHolder[0] = errorLogs;
+                }
+            } else {
+                btnAllLogs.setTextColor(Color.parseColor("#38BDF8"));
+                btnAllLogs.setBackground(createBorderedRoundedDrawable(Color.argb(30, 56, 189, 248), Color.parseColor("#38BDF8"), dp(1), dp(6)));
+                btnErrors.setTextColor(Color.parseColor("#71717A"));
+                btnErrors.setBackground(createBorderedRoundedDrawable(Color.parseColor("#121215"), Color.parseColor("#27272A"), dp(1), dp(6)));
+
+                String allLogs = svc != null ? svc.getRecentLogs(200) : "";
+                tvLogs.setTextColor(Color.parseColor("#D4D4D8"));
+                tvLogs.setText(allLogs);
+                currentLogHolder[0] = allLogs;
+            }
+        };
+
+        btnErrors.setOnClickListener(v -> {
+            isErrorViewHolder[0] = true;
+            updateLogDisplay.run();
+        });
+
+        btnAllLogs.setOnClickListener(v -> {
+            isErrorViewHolder[0] = false;
+            updateLogDisplay.run();
+        });
+
+        updateLogDisplay.run();
+
+        // Action Buttons Row: [COPY LOGS] | [EXPORT .TXT] | [REPORT ISSUE]
+        LinearLayout actionsRow = new LinearLayout(this);
+        actionsRow.setOrientation(LinearLayout.HORIZONTAL);
+        actionsRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        Button btnCopy = createOutlinePixelButton("COPY", Color.parseColor("#3F3F46"), Color.WHITE);
+        btnCopy.setTextSize(9f);
+        btnCopy.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        btnCopy.setOnClickListener(v -> {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) {
+                String copyText = currentLogHolder[0] != null ? currentLogHolder[0] : "";
+                cm.setPrimaryClip(ClipData.newPlainText("fishbowl_logs", copyText));
+                Toast.makeText(this, "Copied logs to clipboard", Toast.LENGTH_SHORT).show();
+            }
+        });
+        actionsRow.addView(btnCopy, new LinearLayout.LayoutParams(0, dp(34), 1.0f));
+
+        View aGap1 = new View(this);
+        actionsRow.addView(aGap1, new LinearLayout.LayoutParams(dp(6), 1));
+
+        Button btnExportTxt = createOutlinePixelButton("EXPORT .TXT", Color.parseColor("#38BDF8"), Color.parseColor("#38BDF8"));
+        btnExportTxt.setTextSize(9f);
+        btnExportTxt.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        btnExportTxt.setOnClickListener(v -> {
+            String fullReport = generateDiagnosticReport(svc);
+            exportReportAsTxtFile(fullReport, svc != null ? svc.getId() : "system");
+        });
+        actionsRow.addView(btnExportTxt, new LinearLayout.LayoutParams(0, dp(34), 1.3f));
+
+        View aGap2 = new View(this);
+        actionsRow.addView(aGap2, new LinearLayout.LayoutParams(dp(6), 1));
+
+        Button btnReport = createOutlinePixelButton("REPORT ISSUE", Color.parseColor("#F59E0B"), Color.parseColor("#F59E0B"));
+        btnReport.setTextSize(9f);
+        btnReport.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        btnReport.setOnClickListener(v -> {
+            String fullReport = generateDiagnosticReport(svc);
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) {
+                cm.setPrimaryClip(ClipData.newPlainText("fishbowl_issue_report", fullReport));
+            }
+            Toast.makeText(this, "Diagnostic report copied to clipboard!", Toast.LENGTH_LONG).show();
+            try {
+                String svcName = svc != null ? svc.getDisplayName() : "Service";
+                String url = "https://github.com/Suz41/Fishbowl/issues/new?title="
+                        + Uri.encode("[" + svcName + "] Issue Report - " + Build.MODEL);
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            } catch (Throwable ignored) {}
+        });
+        actionsRow.addView(btnReport, new LinearLayout.LayoutParams(0, dp(34), 1.4f));
+
+        root.addView(actionsRow);
+
+        d.setContentView(root);
+        if (d.getWindow() != null) {
+            d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            d.getWindow().setDimAmount(0.85f);
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
+            lp.copyFrom(d.getWindow().getAttributes());
+            lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.94);
+            lp.height = WindowManager.LayoutParams.WRAP_CONTENT;
+            d.getWindow().setAttributes(lp);
+        }
+        d.show();
+    }
+
+    private void exportReportAsTxtFile(String reportText, String serviceName) {
+        try {
+            File reportsDir = new File(getCacheDir(), "reports");
+            if (!reportsDir.exists()) reportsDir.mkdirs();
+            String cleanName = (serviceName != null ? serviceName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "_") : "system");
+            String fileName = "fishbowl_report_" + cleanName + "_" + System.currentTimeMillis() + ".txt";
+            File reportFile = new File(reportsDir, fileName);
+            try (FileOutputStream fos = new FileOutputStream(reportFile)) {
+                fos.write(reportText.getBytes(StandardCharsets.UTF_8));
+            }
+
+            Uri uri = androidx.core.content.FileProvider.getUriForFile(
+                    this,
+                    getPackageName() + ".fileprovider",
+                    reportFile
+            );
+
+            Intent shareIntent = new Intent(Intent.ACTION_SEND);
+            shareIntent.setType("text/plain");
+            shareIntent.putExtra(Intent.EXTRA_STREAM, uri);
+            shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Fishbowl Diagnostic Report - " + (serviceName != null ? serviceName : "System"));
+            shareIntent.putExtra(Intent.EXTRA_TEXT, "Fishbowl Media Stack diagnostic report attached.");
+            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(shareIntent, "Save or Share Diagnostic Report"));
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to export report as txt: " + t.getMessage(), t);
+            Toast.makeText(this, "Failed to create .txt file: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    public String generateDiagnosticReport(ManagedService targetSvc) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("======================================================================\n");
+        sb.append("FISHBOWL MEDIA STACK - DIAGNOSTIC SYSTEM & ERROR REPORT\n");
+        sb.append("Generated: ").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n");
+        if (targetSvc != null) {
+            sb.append("Target Service: ").append(targetSvc.getDisplayName()).append(" (v").append(targetSvc.getManifest().getVersion()).append(")\n");
+            sb.append("State: ").append(targetSvc.getState()).append(" | Port: ").append(targetSvc.getManifest().getDefaultPort()).append("\n");
+        }
+        sb.append("======================================================================\n\n");
+
+        // [1] Device & OS Info
+        sb.append("[1] DEVICE & SYSTEM INFORMATION\n");
+        sb.append("• Manufacturer: ").append(Build.MANUFACTURER).append("\n");
+        sb.append("• Model: ").append(Build.MODEL).append(" (").append(Build.DEVICE).append(")\n");
+        sb.append("• Board: ").append(Build.BOARD).append("\n");
+        sb.append("• Android OS: ").append(Build.VERSION.RELEASE).append(" (API ").append(Build.VERSION.SDK_INT).append(")\n");
+        sb.append("• CPU ABIs: ").append(java.util.Arrays.toString(Build.SUPPORTED_ABIS)).append("\n");
+        sb.append("• Build Fingerprint: ").append(Build.DISPLAY).append("\n\n");
+
+        // [2] Memory & Storage Diagnostics
+        sb.append("[2] MEMORY & STORAGE DIAGNOSTICS\n");
+        try {
+            ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            if (am != null) {
+                ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
+                am.getMemoryInfo(mi);
+                double totalRamGb = mi.totalMem / (1024.0 * 1024.0 * 1024.0);
+                double availRamGb = mi.availMem / (1024.0 * 1024.0 * 1024.0);
+                sb.append(String.format(Locale.US, "• System RAM: %.2f GB total | %.2f GB available (Low Memory Flag: %s)\n", totalRamGb, availRamGb, mi.lowMemory ? "YES" : "NO"));
+            }
+        } catch (Throwable ignored) {}
+
+        try {
+            File filesDir = getFilesDir();
+            StatFs stat = new StatFs(filesDir.getAbsolutePath());
+            long freeBytes = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) ? stat.getAvailableBytes() : (long) stat.getAvailableBlocks() * stat.getBlockSize();
+            long totalBytes = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) ? stat.getTotalBytes() : (long) stat.getBlockCount() * stat.getBlockSize();
+            double freeGb = freeBytes / (1024.0 * 1024.0 * 1024.0);
+            double totalGb = totalBytes / (1024.0 * 1024.0 * 1024.0);
+            sb.append(String.format(Locale.US, "• Internal Storage: %.2f GB free / %.2f GB total\n", freeGb, totalGb));
+        } catch (Throwable ignored) {}
+
+        try {
+            StorageDriveHelper.DriveInfo extDrive = StorageDriveHelper.getPrimaryExternalDrive(this);
+            if (extDrive != null && extDrive.totalBytes > 0) {
+                sb.append("• External Storage: ").append(extDrive.name).append(" - ").append(StorageDriveHelper.formatCapacity(extDrive.freeBytes, extDrive.totalBytes)).append(" (Mounted)\n");
+            } else if (extDrive != null) {
+                sb.append("• External Storage: ").append(extDrive.name).append(" (Mounted)\n");
+            } else {
+                sb.append("• External Storage: None connected\n");
+            }
+        } catch (Throwable ignored) {}
+        sb.append("\n");
+
+        // [3] Complete Services Status Matrix
+        sb.append("[3] COMPLETE SERVICES STATUS MATRIX\n");
+        JellyfinController jf = JellyfinController.getInstance();
+        if (jf != null) {
+            JellyfinController.ServerHealth jfHealth = jf.getServerHealth();
+            long sec = jfHealth != null ? jfHealth.uptimeSeconds : 0;
+            long h = sec / 3600;
+            long m = (sec % 3600) / 60;
+            long s = sec % 60;
+            String jfUptime = (h > 0) ? String.format(Locale.US, "%dh %02dm", h, m) : String.format(Locale.US, "%dm %02ds", m, s);
+            sb.append("• Jellyfin:       [").append(jf.getState()).append("]  Port: 8096 | Uptime: ")
+                    .append(jfUptime)
+                    .append(jf.getLastError() != null ? " | Error: " + jf.getLastError() : "")
+                    .append("\n");
+        }
+
+        MediaServiceManager mgr = MediaServiceManager.getInstance(this);
+        if (mgr != null) {
+            for (ManagedService s : mgr.getAllServices()) {
+                if ("jellyfin".equalsIgnoreCase(s.getId())) continue;
+                String padName = String.format(Locale.US, "%-14s", s.getDisplayName() + ":");
+                sb.append("• ").append(padName).append(" [").append(s.getState()).append("]  Port: ")
+                        .append(s.getManifest().getDefaultPort())
+                        .append(" | Uptime: ").append(s.getUptimeFormatted())
+                        .append(" | Crashes: ").append(s.getCrashCount())
+                        .append(s.getLastError() != null && !s.getLastError().isEmpty() ? " | Error: " + s.getLastError() : "")
+                        .append("\n");
+            }
+        }
+        sb.append("\n");
+
+        // [4] Target Service Specific Error Logs
+        sb.append("[4] SERVICE ERROR & CRASH LOGS\n");
+        if (targetSvc != null) {
+            String errLogs = targetSvc.getErrorAndCrashLogs(150);
+            if (!errLogs.trim().isEmpty()) {
+                sb.append(errLogs).append("\n");
+            } else {
+                sb.append("(No active error or crash logs recorded for ").append(targetSvc.getDisplayName()).append(")\n");
+                sb.append("\n[RECENT SERVICE LOGS (LAST 30 LINES)]\n");
+                sb.append(targetSvc.getRecentLogs(30)).append("\n");
+            }
+        } else {
+            sb.append("(No specific target service selected)\n");
+        }
+        sb.append("======================================================================\n");
+        return sb.toString();
     }
 
     private void showServiceInstallInfo(ManagedService svc) {
@@ -4661,20 +5465,54 @@ public final class FishbowlActivity extends AppCompatActivity
         private final TextView messageTv;
         private final ProgressBar progressBar;
         private final TextView pctTv;
+        private final TextView cancelBtn;
+        private final java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean(false);
+        private Runnable onCancelListener;
 
-        public OledProgressDialog(Dialog dialog, TextView titleTv, TextView messageTv, ProgressBar progressBar, TextView pctTv) {
+        public OledProgressDialog(Dialog dialog, TextView titleTv, TextView messageTv, ProgressBar progressBar, TextView pctTv, TextView cancelBtn) {
             this.dialog = dialog;
             this.titleTv = titleTv;
             this.messageTv = messageTv;
             this.progressBar = progressBar;
             this.pctTv = pctTv;
+            this.cancelBtn = cancelBtn;
+            if (this.cancelBtn != null) {
+                this.cancelBtn.setOnClickListener(v -> cancel());
+            }
+        }
+
+        public void setOnCancelListener(Runnable listener) {
+            this.onCancelListener = listener;
+        }
+
+        public void cancel() {
+            if (cancelled.compareAndSet(false, true)) {
+                if (messageTv != null) messageTv.setText("Cancelling installation...");
+                if (cancelBtn != null) {
+                    cancelBtn.setEnabled(false);
+                    cancelBtn.setAlpha(0.3f);
+                }
+                if (onCancelListener != null) {
+                    try { onCancelListener.run(); } catch (Throwable ignored) {}
+                }
+            }
+        }
+
+        public boolean isCancelled() {
+            return cancelled.get();
+        }
+
+        public void setTitle(String title) {
+            if (titleTv != null) titleTv.setText(title);
         }
 
         public void setMessage(String msg) {
+            if (isCancelled()) return;
             if (messageTv != null) messageTv.setText(msg);
         }
 
         public void setProgress(int pct) {
+            if (isCancelled()) return;
             if (progressBar != null) progressBar.setProgress(pct);
             if (pctTv != null) pctTv.setText(pct + "%");
         }
@@ -4687,6 +5525,10 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private OledProgressDialog showOledProgressDialog(String title, String initialMessage) {
+        return showOledProgressDialog(title, initialMessage, true);
+    }
+
+    private OledProgressDialog showOledProgressDialog(String title, String initialMessage, boolean cancellable) {
         Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
         d.setCancelable(false);
@@ -4696,12 +5538,31 @@ public final class FishbowlActivity extends AppCompatActivity
         root.setPadding(dp(18), dp(18), dp(18), dp(18));
         root.setBackground(createBorderedRoundedDrawable(Color.BLACK, Color.parseColor("#27272A"), dp(1), dp(14)));
 
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+
         TextView titleTv = new TextView(this);
         titleTv.setText(title);
         titleTv.setTextSize(13.5f);
         titleTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         titleTv.setTextColor(Color.WHITE);
-        root.addView(titleTv);
+        titleRow.addView(titleTv, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        TextView cancelBtn = null;
+        if (cancellable) {
+            cancelBtn = new TextView(this);
+            cancelBtn.setText("✕");
+            cancelBtn.setTextSize(13f);
+            cancelBtn.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+            cancelBtn.setTextColor(Color.parseColor("#A1A1AA"));
+            cancelBtn.setGravity(Gravity.CENTER);
+            cancelBtn.setBackground(createBorderedRoundedDrawable(Color.parseColor("#18181B"), Color.parseColor("#3F3F46"), dp(1), dp(6)));
+            cancelBtn.setClickable(true);
+            cancelBtn.setFocusable(true);
+            titleRow.addView(cancelBtn, new LinearLayout.LayoutParams(dp(28), dp(28)));
+        }
+        root.addView(titleRow);
 
         TextView msgTv = new TextView(this);
         msgTv.setText(initialMessage);
@@ -4717,14 +5578,20 @@ public final class FishbowlActivity extends AppCompatActivity
         pb.setIndeterminate(false);
         root.addView(pb, new LinearLayout.LayoutParams(-1, dp(6)));
 
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        footer.setPadding(0, dp(8), 0, 0);
+
         TextView pctTv = new TextView(this);
         pctTv.setText("0%");
         pctTv.setTextSize(9.5f);
         pctTv.setTypeface(Typeface.MONOSPACE);
         pctTv.setTextColor(Color.parseColor("#71717A"));
         pctTv.setGravity(Gravity.END);
-        pctTv.setPadding(0, dp(4), 0, 0);
-        root.addView(pctTv);
+        footer.addView(pctTv, new LinearLayout.LayoutParams(-1, -2));
+
+        root.addView(footer);
 
         d.setContentView(root);
         if (d.getWindow() != null) {
@@ -4737,7 +5604,7 @@ public final class FishbowlActivity extends AppCompatActivity
             d.getWindow().setAttributes(lp);
         }
         d.show();
-        return new OledProgressDialog(d, titleTv, msgTv, pb, pctTv);
+        return new OledProgressDialog(d, titleTv, msgTv, pb, pctTv, cancelBtn);
     }
 
     private void showServiceInstallCompatibilityDialog(ManagedService svc) {
@@ -4921,6 +5788,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
     public interface DownloadProgressCallback {
         void onProgress(long currentBytes, long totalBytes);
+        default boolean isCancelled() { return false; }
     }
 
     private static void downloadWithRedirects(String initialUrl, File destFile, DownloadProgressCallback cb) throws Exception {
@@ -4929,6 +5797,9 @@ public final class FishbowlActivity extends AppCompatActivity
         HttpURLConnection conn = null;
         try {
             while (hops < 10) {
+                if (cb != null && cb.isCancelled()) {
+                    throw new InterruptedException("Download cancelled by user");
+                }
                 URL u = new URL(currentUrl);
                 conn = (HttpURLConnection) u.openConnection();
                 conn.setConnectTimeout(25000);
@@ -4977,6 +5848,9 @@ public final class FishbowlActivity extends AppCompatActivity
                     long downloaded = 0;
                     long lastReportTime = 0;
                     while ((len = in.read(buf)) > 0) {
+                        if (cb != null && cb.isCancelled()) {
+                            throw new InterruptedException("Download cancelled by user");
+                        }
                         out.write(buf, 0, len);
                         downloaded += len;
                         long now = SystemClock.uptimeMillis();
@@ -4986,6 +5860,9 @@ public final class FishbowlActivity extends AppCompatActivity
                         }
                     }
                     out.flush();
+                } catch (InterruptedException ie) {
+                    if (destFile.exists()) destFile.delete();
+                    throw ie;
                 }
 
                 if (destFile.length() < 1024) {
@@ -5151,14 +6028,22 @@ public final class FishbowlActivity extends AppCompatActivity
         TERMUX_POOL_MAP.put("natpmpc", "pool/main/n/natpmpc/natpmpc_20230423-2_aarch64.deb");
         TERMUX_POOL_MAP.put("libc++", "pool/main/libc/libc++/libc++_30_aarch64.deb");
         TERMUX_POOL_MAP.put("7zip", "pool/main/7/7zip/7zip_26.05_aarch64.deb");
-        TERMUX_POOL_MAP.put("nodejs-lts", "pool/main/n/nodejs-lts/nodejs-lts_24.22.1_aarch64.deb");
+        TERMUX_POOL_MAP.put("nodejs-lts", "pool/main/n/nodejs-lts/nodejs-lts_24.22.2_aarch64.deb");
+        TERMUX_POOL_MAP.put("zlib", "pool/main/z/zlib/zlib_1.3.2_aarch64.deb");
+        TERMUX_POOL_MAP.put("openssl", "pool/main/o/openssl/openssl_1:3.6.5_aarch64.deb");
+        TERMUX_POOL_MAP.put("libicu", "pool/main/libi/libicu/libicu_78.3_aarch64.deb");
+        TERMUX_POOL_MAP.put("libcrypt", "pool/main/libc/libcrypt/libcrypt_0.2-6_aarch64.deb");
+        TERMUX_POOL_MAP.put("libandroid-posix-semaphore", "pool/main/liba/libandroid-posix-semaphore/libandroid-posix-semaphore_0.1-4_aarch64.deb");
+        TERMUX_POOL_MAP.put("ncurses-ui-libs", "pool/main/n/ncurses-ui-libs/ncurses-ui-libs_6.6.20260307+really6.5.20250830_aarch64.deb");
+        TERMUX_POOL_MAP.put("zstd", "pool/main/z/zstd/zstd_1.5.7-1_aarch64.deb");
         TERMUX_POOL_MAP.put("c-ares", "pool/main/c/c-ares/c-ares_1.34.9_aarch64.deb");
         TERMUX_POOL_MAP.put("python", "pool/main/p/python/python_3.14.8_aarch64.deb");
         TERMUX_POOL_MAP.put("libbz2", "pool/main/libb/libbz2/libbz2_1.0.8-8_aarch64.deb");
-        TERMUX_POOL_MAP.put("libexpat", "pool/main/libe/libexpat/libexpat_2.9.0_aarch64.deb");
+        TERMUX_POOL_MAP.put("libexpat", "pool/main/libe/libexpat/libexpat_2.10.0_aarch64.deb");
+        TERMUX_POOL_MAP.put("libevent", "pool/main/libe/libevent/libevent_2.1.13_aarch64.deb");
         TERMUX_POOL_MAP.put("libffi", "pool/main/libf/libffi/libffi_3.8.0_aarch64.deb");
         TERMUX_POOL_MAP.put("liblzma", "pool/main/libl/liblzma/liblzma_5.8.4_aarch64.deb");
-        TERMUX_POOL_MAP.put("libsqlite", "pool/main/libs/libsqlite/libsqlite_3.54.1_aarch64.deb");
+        TERMUX_POOL_MAP.put("libsqlite", "pool/main/libs/libsqlite/libsqlite_3.54.1-1_aarch64.deb");
         TERMUX_POOL_MAP.put("libandroid-support", "pool/main/liba/libandroid-support/libandroid-support_29-1_aarch64.deb");
         TERMUX_POOL_MAP.put("ncurses", "pool/main/n/ncurses/ncurses_6.6.20260307+really6.5.20250830_aarch64.deb");
         TERMUX_POOL_MAP.put("readline", "pool/main/r/readline/readline_8.3.6_aarch64.deb");
@@ -5180,31 +6065,72 @@ public final class FishbowlActivity extends AppCompatActivity
             }
             return resolved;
         }
-        File localPkgList = new File(TermuxConstants.TERMUX_PREFIX_DIR, "var/lib/apt/lists/packages-cf.termux.dev_apt_termux-main_dists_stable_main_binary-aarch64_Packages");
-        if (localPkgList.exists()) {
-            try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(localPkgList), java.nio.charset.StandardCharsets.UTF_8))) {
-                String line;
-                String currentPkg = null;
-                while ((line = reader.readLine()) != null) {
-                    line = line.trim();
-                    if (line.startsWith("Package: ")) {
-                        currentPkg = line.substring(9).trim();
-                    } else if (line.startsWith("Filename: ") && pkgName.equalsIgnoreCase(currentPkg)) {
-                        String fn = line.substring(10).trim();
-                        String resolved = "https://packages-cf.termux.dev/apt/termux-main/" + fn;
+        return fetchDynamicTermuxDebUrl(pkgName);
+    }
+
+    private static String fetchDynamicTermuxDebUrl(String pkgName) {
+        if (pkgName == null || pkgName.trim().isEmpty()) return null;
+        try {
+            File localPkgList = new File(TermuxConstants.TERMUX_PREFIX_DIR, "var/lib/apt/lists/packages-cf.termux.dev_apt_termux-main_dists_stable_main_binary-aarch64_Packages");
+            if (localPkgList.exists()) {
+                try (InputStream in = new FileInputStream(localPkgList)) {
+                    String match = parseDebFilenameFromPackages(in, pkgName);
+                    if (match != null) {
+                        String fullUrl = "https://packages-cf.termux.dev/apt/termux-main/" + match;
                         synchronized (sDynamicDebUrlCache) {
-                            sDynamicDebUrlCache.put(pkgName, resolved);
+                            sDynamicDebUrlCache.put(pkgName, fullUrl);
                         }
-                        return resolved;
+                        return fullUrl;
                     }
                 }
-            } catch (Throwable ignored) {}
+            }
+            URL url = new URL("https://packages-cf.termux.dev/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(12000);
+            conn.setRequestProperty("User-Agent", "Fishbowl-Installer/1.0");
+            if (conn.getResponseCode() == 200) {
+                try (java.util.zip.GZIPInputStream gzis = new java.util.zip.GZIPInputStream(conn.getInputStream())) {
+                    String match = parseDebFilenameFromPackages(gzis, pkgName);
+                    if (match != null) {
+                        String fullUrl = "https://packages-cf.termux.dev/apt/termux-main/" + match;
+                        synchronized (sDynamicDebUrlCache) {
+                            sDynamicDebUrlCache.put(pkgName, fullUrl);
+                        }
+                        return fullUrl;
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Dynamic deb lookup failed for " + pkgName + ": " + t.getMessage());
+        }
+        return null;
+    }
+
+    private static String parseDebFilenameFromPackages(InputStream in, String pkgName) throws IOException {
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8))) {
+            String line;
+            String curPkg = null;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.startsWith("Package: ")) {
+                    curPkg = line.substring(9).trim();
+                } else if (line.startsWith("Filename: ") && pkgName.equalsIgnoreCase(curPkg)) {
+                    return line.substring(10).trim();
+                }
+            }
         }
         return null;
     }
 
     private void downloadAndInstallDebPackage(String pkgName, File prefixDir, OledProgressDialog progress, String stepDescription) throws Exception {
+        if (progress != null && progress.isCancelled()) {
+            throw new InterruptedException("Installation cancelled");
+        }
         String debUrl = resolveTermuxDebUrl(this, pkgName);
+        if (debUrl == null) {
+            debUrl = fetchDynamicTermuxDebUrl(pkgName);
+        }
         if (debUrl == null) {
             throw new IOException("Unable to resolve debian package URL for: " + pkgName);
         }
@@ -5213,257 +6139,415 @@ public final class FishbowlActivity extends AppCompatActivity
         }
         File cacheDeb = new File(getCacheDir(), pkgName + ".deb");
         final int[] lastReported = new int[]{-1};
-        downloadWithRedirects(debUrl, cacheDeb, (current, total) -> {
-            if (total > 0 && progress != null) {
-                int pct = (int) ((current * 100) / total);
-                if (pct != lastReported[0]) {
-                    lastReported[0] = pct;
-                    runOnUiThread(() -> progress.setProgress(pct));
+        try {
+            downloadWithRedirects(debUrl, cacheDeb, new DownloadProgressCallback() {
+                @Override
+                public void onProgress(long current, long total) {
+                    if (total > 0 && progress != null) {
+                        int pct = (int) ((current * 100) / total);
+                        if (pct != lastReported[0]) {
+                            lastReported[0] = pct;
+                            runOnUiThread(() -> progress.setProgress(pct));
+                        }
+                    }
                 }
+                @Override
+                public boolean isCancelled() {
+                    return progress != null && progress.isCancelled();
+                }
+            });
+        } catch (InterruptedException ie) {
+            if (cacheDeb.exists()) cacheDeb.delete();
+            throw ie;
+        } catch (Exception dlErr) {
+            if (progress != null && progress.isCancelled()) {
+                if (cacheDeb.exists()) cacheDeb.delete();
+                throw new InterruptedException("Installation cancelled");
             }
-        });
+            Log.w(TAG, "Download failed for " + debUrl + ": " + dlErr.getMessage() + ". Retrying with dynamic package discovery...");
+            synchronized (sDynamicDebUrlCache) {
+                sDynamicDebUrlCache.remove(pkgName);
+            }
+            String dynamicUrl = fetchDynamicTermuxDebUrl(pkgName);
+            if (dynamicUrl != null && !dynamicUrl.equals(debUrl)) {
+                debUrl = dynamicUrl;
+                downloadWithRedirects(debUrl, cacheDeb, new DownloadProgressCallback() {
+                    @Override
+                    public void onProgress(long current, long total) {
+                        if (total > 0 && progress != null) {
+                            int pct = (int) ((current * 100) / total);
+                            if (pct != lastReported[0]) {
+                                lastReported[0] = pct;
+                                runOnUiThread(() -> progress.setProgress(pct));
+                            }
+                        }
+                    }
+                    @Override
+                    public boolean isCancelled() {
+                        return progress != null && progress.isCancelled();
+                    }
+                });
+            } else {
+                throw dlErr;
+            }
+        }
+        if (progress != null && progress.isCancelled()) {
+            if (cacheDeb.exists()) cacheDeb.delete();
+            throw new InterruptedException("Installation cancelled");
+        }
         extractDebPackage(cacheDeb, prefixDir);
         cacheDeb.delete();
     }
 
-    private void installServiceAutomatically(ManagedService svc) {
-        OledProgressDialog progress = showOledProgressDialog("INSTALLING " + svc.getDisplayName().toUpperCase(Locale.ROOT), "Preparing runtime environment...");
+    private void performServiceInstallSync(ManagedService svc, OledProgressDialog progress) throws Exception {
+        if (progress != null && progress.isCancelled()) {
+            throw new InterruptedException("Installation cancelled");
+        }
 
-        new Thread(() -> {
-            try {
-                File home = TermuxConstants.TERMUX_HOME_DIR;
-                File prefix = TermuxConstants.TERMUX_PREFIX_DIR;
-                File servicesDir = new File(home, "services");
-                if (!servicesDir.exists()) servicesDir.mkdirs();
+        File home = TermuxConstants.TERMUX_HOME_DIR;
+        File prefix = TermuxConstants.TERMUX_PREFIX_DIR;
+        File servicesDir = new File(home, "services");
+        if (!servicesDir.exists()) servicesDir.mkdirs();
 
-                String id = svc.getId().toLowerCase(Locale.ROOT);
+        String id = svc.getId().toLowerCase(Locale.ROOT);
 
-                if ("seerr".equalsIgnoreCase(id)) {
-                    File nodeBin = new File(prefix, "bin/node");
-                    if (!nodeBin.exists()) {
-                        String[] nodeDeps = {"libc++", "c-ares", "nodejs-lts"};
-                        for (String dep : nodeDeps) {
-                            downloadAndInstallDebPackage(dep, prefix, progress, "Installing Node.js runtime (" + dep + ")...");
-                        }
-                        if (nodeBin.exists()) {
-                            nodeBin.setExecutable(true, false);
-                            try { android.system.Os.chmod(nodeBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                        }
+        if ("seerr".equalsIgnoreCase(id)) {
+            File nodeBin = new File(prefix, "bin/node");
+            File libssl = new File(prefix, "lib/libssl.so.3");
+            File libicu = new File(prefix, "lib/libicuuc.so");
+            if (!nodeBin.exists() || !libssl.exists() || !libicu.exists()) {
+                String[] nodeDeps = {"libc++", "zlib", "openssl", "c-ares", "libicu", "libsqlite", "nodejs-lts"};
+                for (String dep : nodeDeps) {
+                    if (progress != null && progress.isCancelled()) {
+                        throw new InterruptedException("Installation cancelled");
                     }
-
-                    runOnUiThread(() -> progress.setMessage("Deploying Seerr Request Engine..."));
-                    MediaServiceManager.getInstance(this).deploySeerrService(true);
-                    MediaServiceManager.getInstance(this).autoWireStack(null);
-                    runOnUiThread(() -> {
-                        progress.dismiss();
-                        svc.reconcileInstalledState();
-                        refreshServicesTabUI();
-                        refreshHomeServicesBadge();
-                        Toast.makeText(this, "Seerr deployed and ready!", Toast.LENGTH_LONG).show();
-                    });
-                    return;
+                    downloadAndInstallDebPackage(dep, prefix, progress, "Installing Node.js runtime (" + dep + ")...");
                 }
-
-                if ("bazarr".equalsIgnoreCase(id)) {
-                    File pythonBin = new File(prefix, "bin/python3");
-                    if (!pythonBin.exists()) {
-                        String[] pyDeps = {
-                            "libc++", "libbz2", "libexpat", "libffi", "liblzma", "libsqlite",
-                            "libandroid-support", "ncurses", "readline", "python"
-                        };
-                        for (String dep : pyDeps) {
-                            downloadAndInstallDebPackage(dep, prefix, progress, "Setting up Python 3 runtime (" + dep + ")...");
-                        }
-                        if (pythonBin.exists()) {
-                            pythonBin.setExecutable(true, false);
-                            try { android.system.Os.chmod(pythonBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                        }
-                    }
-
-                    File sevenZipBin = new File(prefix, "bin/7z");
-                    if (!sevenZipBin.exists()) {
-                        downloadAndInstallDebPackage("7zip", prefix, progress, "Setting up 7-Zip archiver utility...");
-                    }
-
-                    runOnUiThread(() -> progress.setMessage("Downloading Bazarr release..."));
-                    File cacheZip = new File(getCacheDir(), "bazarr.zip");
-                    String bzUrl = "https://github.com/morpheus65535/bazarr/releases/latest/download/bazarr.zip";
-                    final int[] lastReportedBz = new int[]{-1};
-                    downloadWithRedirects(bzUrl, cacheZip, (current, total) -> {
-                        if (total > 0) {
-                            int pct = (int) ((current * 100) / total);
-                            if (pct != lastReportedBz[0]) {
-                                lastReportedBz[0] = pct;
-                                runOnUiThread(() -> progress.setProgress(pct));
-                            }
-                        }
-                    });
-
-                    runOnUiThread(() -> progress.setMessage("Extracting Bazarr packages..."));
-                    File bzTarget = new File(servicesDir, "bazarr");
-                    if (!bzTarget.exists()) bzTarget.mkdirs();
-                    extractZipArchive(cacheZip, bzTarget);
-                    cacheZip.delete();
-
-                    MediaServiceManager.getInstance(this).ensureServiceConfigSanitized("bazarr");
-                    MediaServiceManager.getInstance(this).autoWireStack(null);
-
-                    runOnUiThread(() -> {
-                        progress.dismiss();
-                        svc.reconcileInstalledState();
-                        refreshServicesTabUI();
-                        refreshHomeServicesBadge();
-                        Toast.makeText(this, "Bazarr installed successfully!", Toast.LENGTH_LONG).show();
-                    });
-                    return;
+                if (nodeBin.exists()) {
+                    nodeBin.setExecutable(true, false);
+                    try { android.system.Os.chmod(nodeBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
                 }
+            }
 
-                if ("transmission".equalsIgnoreCase(id)) {
-                    String[] trDeps = {"libc++", "libpsl", "libidn2", "miniupnpc", "natpmpc", "transmission"};
-                    for (String dep : trDeps) {
-                        downloadAndInstallDebPackage(dep, prefix, progress, "Installing Transmission (" + dep + ")...");
+            if (progress != null && progress.isCancelled()) {
+                throw new InterruptedException("Installation cancelled");
+            }
+
+            runOnUiThread(() -> {
+                if (progress != null) progress.setMessage("Deploying Seerr Request Engine...");
+            });
+            MediaServiceManager.getInstance(this).deploySeerrService(true);
+            MediaServiceManager.getInstance(this).autoWireStack(null);
+            svc.reconcileInstalledState();
+            return;
+        }
+
+        if ("bazarr".equalsIgnoreCase(id)) {
+            File pythonBin = new File(prefix, "bin/python3");
+            File bzLibSsl = new File(prefix, "lib/libssl.so.3");
+            File bzLibSqlite = new File(prefix, "lib/libsqlite3.so");
+            if (!pythonBin.exists() || !bzLibSsl.exists() || !bzLibSqlite.exists()) {
+                String[] pyDeps = {
+                    "libc++", "zlib", "openssl", "libbz2", "libcrypt", "libexpat", "libffi",
+                    "liblzma", "libsqlite", "libandroid-support", "libandroid-posix-semaphore",
+                    "ncurses", "ncurses-ui-libs", "readline", "zstd", "python"
+                };
+                for (String dep : pyDeps) {
+                    if (progress != null && progress.isCancelled()) {
+                        throw new InterruptedException("Installation cancelled");
                     }
-
-                    File daemon = new File(prefix, "bin/transmission-daemon");
-                    if (daemon.exists()) {
-                        daemon.setExecutable(true, false);
-                        try {
-                            android.system.Os.chmod(daemon.getAbsolutePath(), 0755);
-                        } catch (Throwable ignored) {}
-                    }
-
-                    MediaServiceManager.getInstance(this).ensureServiceConfigSanitized("transmission");
-                    MediaServiceManager.getInstance(this).autoWireStack(null);
-
-                    runOnUiThread(() -> {
-                        progress.dismiss();
-                        svc.reconcileInstalledState();
-                        refreshServicesTabUI();
-                        refreshHomeServicesBadge();
-                        Toast.makeText(this, "Transmission installed successfully!", Toast.LENGTH_LONG).show();
-                    });
-                    return;
+                    downloadAndInstallDebPackage(dep, prefix, progress, "Setting up Python 3 runtime (" + dep + ")...");
                 }
-
-                                // Servarr applications (.NET 10.0 ARM64): Radarr, Sonarr, Prowlarr, Lidarr, Jackett
-                String downloadUrl;
-                if ("sonarr".equalsIgnoreCase(id)) {
-                    downloadUrl = "https://services.sonarr.tv/v1/download/main/latest?version=4&os=linux&arch=arm64";
-                } else if ("prowlarr".equalsIgnoreCase(id)) {
-                    downloadUrl = "https://prowlarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
-                } else if ("radarr".equalsIgnoreCase(id)) {
-                    downloadUrl = "https://radarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
-                } else if ("lidarr".equalsIgnoreCase(id)) {
-                    downloadUrl = "https://lidarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
-                } else if ("jackett".equalsIgnoreCase(id)) {
-                    downloadUrl = "https://github.com/Jackett/Jackett/releases/download/v0.24.2932/Jackett.Binaries.LinuxARM64.tar.gz";
-                } else {
-                    runOnUiThread(progress::dismiss);
-                    return;
+                if (pythonBin.exists()) {
+                    pythonBin.setExecutable(true, false);
+                    try { android.system.Os.chmod(pythonBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
                 }
+            }
 
-                runOnUiThread(() -> progress.setMessage("Downloading " + svc.getDisplayName() + "..."));
-                File cacheTar = new File(getCacheDir(), id + ".tar.gz");
-                final int[] lastReportedSv = new int[]{-1};
-                downloadWithRedirects(downloadUrl, cacheTar, (current, total) -> {
-                    if (total > 0) {
+            File sevenZipBin = new File(prefix, "bin/7z");
+            if (!sevenZipBin.exists()) {
+                downloadAndInstallDebPackage("7zip", prefix, progress, "Setting up 7-Zip archiver utility...");
+            }
+
+            if (progress != null && progress.isCancelled()) {
+                throw new InterruptedException("Installation cancelled");
+            }
+
+            runOnUiThread(() -> {
+                if (progress != null) progress.setMessage("Downloading Bazarr release...");
+            });
+            File cacheZip = new File(getCacheDir(), "bazarr.zip");
+            String bzUrl = "https://github.com/morpheus65535/bazarr/releases/latest/download/bazarr.zip";
+            final int[] lastReportedBz = new int[]{-1};
+            downloadWithRedirects(bzUrl, cacheZip, new DownloadProgressCallback() {
+                @Override
+                public void onProgress(long current, long total) {
+                    if (total > 0 && progress != null) {
                         int pct = (int) ((current * 100) / total);
-                        if (pct != lastReportedSv[0]) {
-                            lastReportedSv[0] = pct;
+                        if (pct != lastReportedBz[0]) {
+                            lastReportedBz[0] = pct;
                             runOnUiThread(() -> progress.setProgress(pct));
                         }
                     }
-                });
-
-                runOnUiThread(() -> progress.setMessage("Extracting & configuring binaries..."));
-                File targetDir = new File(servicesDir, id);
-                if (targetDir.exists()) {
-                    deleteRecursive(targetDir);
                 }
-
-                extractTarGzArchive(cacheTar, servicesDir);
-                cacheTar.delete();
-
-                String capName = id.substring(0, 1).toUpperCase(Locale.ROOT) + id.substring(1);
-                File capDir = new File(servicesDir, capName);
-                if (capDir.exists() && !capDir.equals(targetDir)) {
-                    capDir.renameTo(targetDir);
+                @Override
+                public boolean isCancelled() {
+                    return progress != null && progress.isCancelled();
                 }
+            });
 
-                File dll = new File(svc.getManifest().getExecutableOrDllPath());
-                if ("jackett".equalsIgnoreCase(id) || !dll.exists()) {
-                    File checkDll = new File(targetDir, "jackett.dll");
-                    if (checkDll.exists()) {
-                        dll = checkDll;
-                    } else {
-                        File checkCapDll = new File(targetDir, "Jackett.dll");
-                        if (checkCapDll.exists()) dll = checkCapDll;
+            if (progress != null && progress.isCancelled()) {
+                if (cacheZip.exists()) cacheZip.delete();
+                throw new InterruptedException("Installation cancelled");
+            }
+
+            runOnUiThread(() -> {
+                if (progress != null) progress.setMessage("Extracting Bazarr packages...");
+            });
+            File bzTarget = new File(servicesDir, "bazarr");
+            if (!bzTarget.exists()) bzTarget.mkdirs();
+            extractZipArchive(cacheZip, bzTarget);
+            cacheZip.delete();
+
+            MediaServiceManager.getInstance(this).ensureServiceConfigSanitized("bazarr");
+            MediaServiceManager.getInstance(this).autoWireStack(null);
+            svc.reconcileInstalledState();
+            return;
+        }
+
+        if ("transmission".equalsIgnoreCase(id)) {
+            String[] trDeps = {"libc++", "libpsl", "libidn2", "libevent", "miniupnpc", "natpmpc", "transmission"};
+            for (String dep : trDeps) {
+                if (progress != null && progress.isCancelled()) {
+                    throw new InterruptedException("Installation cancelled");
+                }
+                downloadAndInstallDebPackage(dep, prefix, progress, "Installing Transmission (" + dep + ")...");
+            }
+
+            File daemon = new File(prefix, "bin/transmission-daemon");
+            if (daemon.exists()) {
+                daemon.setExecutable(true, false);
+                try {
+                    android.system.Os.chmod(daemon.getAbsolutePath(), 0755);
+                } catch (Throwable ignored) {}
+            }
+
+            MediaServiceManager.getInstance(this).ensureServiceConfigSanitized("transmission");
+            MediaServiceManager.getInstance(this).autoWireStack(null);
+            svc.reconcileInstalledState();
+            return;
+        }
+
+        // Servarr applications (.NET 10.0 ARM64): Radarr, Sonarr, Prowlarr, Lidarr, Jackett
+        String downloadUrl;
+        if ("sonarr".equalsIgnoreCase(id)) {
+            downloadUrl = "https://services.sonarr.tv/v1/download/main/latest?version=4&os=linux&arch=arm64";
+        } else if ("prowlarr".equalsIgnoreCase(id)) {
+            downloadUrl = "https://prowlarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
+        } else if ("radarr".equalsIgnoreCase(id)) {
+            downloadUrl = "https://radarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
+        } else if ("lidarr".equalsIgnoreCase(id)) {
+            downloadUrl = "https://lidarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
+        } else if ("jackett".equalsIgnoreCase(id)) {
+            downloadUrl = "https://github.com/Jackett/Jackett/releases/download/v0.24.2932/Jackett.Binaries.LinuxARM64.tar.gz";
+        } else {
+            return;
+        }
+
+        if (progress != null && progress.isCancelled()) {
+            throw new InterruptedException("Installation cancelled");
+        }
+
+        runOnUiThread(() -> {
+            if (progress != null) progress.setMessage("Downloading " + svc.getDisplayName() + "...");
+        });
+        File cacheTar = new File(getCacheDir(), id + ".tar.gz");
+        final int[] lastReportedSv = new int[]{-1};
+        downloadWithRedirects(downloadUrl, cacheTar, new DownloadProgressCallback() {
+            @Override
+            public void onProgress(long current, long total) {
+                if (total > 0 && progress != null) {
+                    int pct = (int) ((current * 100) / total);
+                    if (pct != lastReportedSv[0]) {
+                        lastReportedSv[0] = pct;
+                        runOnUiThread(() -> progress.setProgress(pct));
                     }
                 }
-                File jackettBin = new File(targetDir, "jackett");
-                if (jackettBin.exists()) {
-                    jackettBin.setExecutable(true, false);
-                    try { android.system.Os.chmod(jackettBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
+            @Override
+            public boolean isCancelled() {
+                return progress != null && progress.isCancelled();
+            }
+        });
+
+        if (progress != null && progress.isCancelled()) {
+            if (cacheTar.exists()) cacheTar.delete();
+            throw new InterruptedException("Installation cancelled");
+        }
+
+        runOnUiThread(() -> {
+            if (progress != null) progress.setMessage("Extracting & configuring binaries...");
+        });
+        File targetDir = new File(servicesDir, id);
+        if (targetDir.exists()) {
+            deleteRecursive(targetDir);
+        }
+
+        extractTarGzArchive(cacheTar, servicesDir);
+        cacheTar.delete();
+
+        String capName = id.substring(0, 1).toUpperCase(Locale.ROOT) + id.substring(1);
+        File capDir = new File(servicesDir, capName);
+        if (capDir.exists() && !capDir.equals(targetDir)) {
+            if (!capDir.renameTo(targetDir)) {
+                try {
+                    BackupRestoreManager.copyDirectory(capDir, targetDir);
+                    deleteRecursive(capDir);
+                } catch (Throwable t) {
+                    Log.w(TAG, "Directory fallback copy failed: " + t.getMessage());
                 }
-                if (dll.exists()) {
-                    File parent = dll.getParentFile();
-                    String name = dll.getName();
-                    int dot = name.lastIndexOf('.');
-                    String baseName = dot > 0 ? name.substring(0, dot) : name;
-                    File depsJson = new File(parent, baseName + ".deps.json");
-                    File depsJsonBak = new File(parent, baseName + ".deps.json.bak");
-                    if (depsJson.exists() && !depsJsonBak.exists()) depsJson.renameTo(depsJsonBak);
+            }
+        }
 
-                    String[] glibcLibs = {
-                        "libcoreclr.so", "libhostpolicy.so", "libhostfxr.so",
-                        "libclrjit.so", "libclrgc.so", "libclrgcexp.so", "libcoreclrtraceptprovider.so",
-                        "libmscordaccore.so", "libmscordbi.so", "libMono.Unix.so",
-                        "libSystem.Native.so", "libSystem.Globalization.Native.so",
-                        "libSystem.IO.Compression.Native.so", "libSystem.Net.Security.Native.so",
-                        "libSystem.Security.Cryptography.Native.OpenSsl.so"
-                    };
-                    for (String glibcLib : glibcLibs) {
-                        File f = new File(parent, glibcLib);
-                        if (f.exists()) f.delete();
-                    }
-
-                    File prefixEsqlite = new File(prefix, "lib/libe_sqlite3.so");
-                    File targetEsqlite = new File(parent, "libe_sqlite3.so");
-                    if (prefixEsqlite.exists()) copyFile(prefixEsqlite, targetEsqlite);
-                    if (targetEsqlite.exists()) {
-                        targetEsqlite.setReadable(true, false);
-                        targetEsqlite.setExecutable(true, false);
-                        try { android.system.Os.chmod(targetEsqlite.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                    }
-
-                    File prefixMono = new File(prefix, "lib/libMonoPosixHelper.so");
-                    if (!prefixMono.exists()) {
-                        try (InputStream in = getAssets().open("libMonoPosixHelper.so");
-                             OutputStream out = new FileOutputStream(prefixMono)) {
-                            byte[] buf = new byte[8192];
-                            int r;
-                            while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
-                        } catch (Throwable ignored) {}
-                        if (prefixMono.exists()) {
-                            try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                        }
-                    }
-                    File targetMono = new File(parent, "libMonoPosixHelper.so");
-                    if (prefixMono.exists()) copyFile(prefixMono, targetMono);
-                    if (targetMono.exists()) {
-                        targetMono.setReadable(true, false);
-                        targetMono.setExecutable(true, false);
-                        try { android.system.Os.chmod(targetMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                    }
-
-                    File jfConfig = new File(prefix, "lib/jellyfin/jellyfin.runtimeconfig.json");
-                    File targetCfg = new File(parent, baseName + ".runtimeconfig.json");
-                    if (jfConfig.exists()) copyFile(jfConfig, targetCfg);
+        File dll = new File(svc.getManifest().getExecutableOrDllPath());
+        if ("jackett".equalsIgnoreCase(id) || !dll.exists()) {
+            File checkDll = new File(targetDir, "jackett.dll");
+            if (checkDll.exists()) {
+                dll = checkDll;
+            } else {
+                File checkCapDll = new File(targetDir, "Jackett.dll");
+                if (checkCapDll.exists()) dll = checkCapDll;
+            }
+        }
+        File jackettBin = new File(targetDir, "jackett");
+        if (jackettBin.exists()) {
+            jackettBin.setExecutable(true, false);
+            try { android.system.Os.chmod(jackettBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+        }
+        if (!dll.exists() && !"jackett".equalsIgnoreCase(id)) {
+            File checkCap = new File(targetDir, capName + ".dll");
+            if (checkCap.exists()) {
+                dll = checkCap;
+            } else {
+                File checkLow = new File(targetDir, id + ".dll");
+                if (checkLow.exists()) dll = checkLow;
+            }
+        }
+        if (!dll.exists() && !("jackett".equalsIgnoreCase(id) && jackettBin.exists())) {
+            throw new IllegalStateException("Service binary not found after extraction: " + svc.getManifest().getExecutableOrDllPath());
+        }
+        if (dll.exists()) {
+            File parent = dll.getParentFile();
+            String name = dll.getName();
+            int dot = name.lastIndexOf('.');
+            String baseName = dot > 0 ? name.substring(0, dot) : name;
+            File depsJson = new File(parent, baseName + ".deps.json");
+            File depsJsonBak = new File(parent, baseName + ".deps.json.bak");
+            if (depsJson.exists()) {
+                if (!depsJsonBak.exists()) {
+                    depsJson.renameTo(depsJsonBak);
+                } else {
+                    depsJson.delete();
                 }
+            }
 
-                MediaServiceManager.getInstance(this).ensureServiceConfigSanitized(id);
-                MediaServiceManager.getInstance(this).autoWireStack(null);
+            String[] glibcLibs = {
+                "libcoreclr.so", "libhostpolicy.so", "libhostfxr.so",
+                "libclrjit.so", "libclrgc.so", "libclrgcexp.so", "libcoreclrtraceptprovider.so",
+                "libmscordaccore.so", "libmscordbi.so", "libMono.Unix.so",
+                "libSystem.Native.so", "libSystem.Globalization.Native.so",
+                "libSystem.IO.Compression.Native.so", "libSystem.Net.Security.Native.so",
+                "libSystem.Security.Cryptography.Native.OpenSsl.so"
+            };
+            for (String glibcLib : glibcLibs) {
+                File f = new File(parent, glibcLib);
+                if (f.exists()) f.delete();
+            }
 
+            File prefixEsqlite = new File(prefix, "lib/libe_sqlite3.so");
+            File targetEsqlite = new File(parent, "libe_sqlite3.so");
+            if (prefixEsqlite.exists()) copyFile(prefixEsqlite, targetEsqlite);
+            if (targetEsqlite.exists()) {
+                targetEsqlite.setReadable(true, false);
+                targetEsqlite.setExecutable(true, false);
+                try { android.system.Os.chmod(targetEsqlite.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
+
+            File prefixMono = new File(prefix, "lib/libMonoPosixHelper.so");
+            if (!prefixMono.exists()) {
+                try (InputStream in = getAssets().open("libMonoPosixHelper.so");
+                     OutputStream out = new FileOutputStream(prefixMono)) {
+                    byte[] buf = new byte[8192];
+                    int r;
+                    while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+                } catch (Throwable ignored) {}
+                if (prefixMono.exists()) {
+                    try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                }
+            }
+            File targetMono = new File(parent, "libMonoPosixHelper.so");
+            if (prefixMono.exists()) copyFile(prefixMono, targetMono);
+            if (targetMono.exists()) {
+                targetMono.setReadable(true, false);
+                targetMono.setExecutable(true, false);
+                try { android.system.Os.chmod(targetMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
+
+            File jfConfig = new File(prefix, "lib/jellyfin/jellyfin.runtimeconfig.json");
+            File targetCfg = new File(parent, baseName + ".runtimeconfig.json");
+            if (jfConfig.exists()) {
+                copyFile(jfConfig, targetCfg);
+            } else if (!targetCfg.exists() || targetCfg.length() == 0) {
+                String minimalConfig = "{\n" +
+                        "  \"runtimeOptions\": {\n" +
+                        "    \"tfm\": \"net10.0\",\n" +
+                        "    \"rollForward\": \"Major\",\n" +
+                        "    \"frameworks\": [\n" +
+                        "      {\n" +
+                        "        \"name\": \"Microsoft.NETCore.App\",\n" +
+                        "        \"version\": \"10.0.0\"\n" +
+                        "      },\n" +
+                        "      {\n" +
+                        "        \"name\": \"Microsoft.AspNetCore.App\",\n" +
+                        "        \"version\": \"10.0.0\"\n" +
+                        "      }\n" +
+                        "    ],\n" +
+                        "    \"configProperties\": {\n" +
+                        "      \"System.GC.Server\": false,\n" +
+                        "      \"System.Reflection.Metadata.MetadataUpdater.IsSupported\": false,\n" +
+                        "      \"System.Reflection.NullabilityInfoContext.IsSupported\": true,\n" +
+                        "      \"System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization\": false\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}\n";
+                try (FileOutputStream fos = new FileOutputStream(targetCfg)) {
+                    fos.write(minimalConfig.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+            }
+        }
+
+        MediaServiceManager.getInstance(this).ensureServiceConfigSanitized(id);
+        MediaServiceManager.getInstance(this).autoWireStack(null);
+        svc.reconcileInstalledState();
+    }
+
+    private void cleanupPartialServiceInstall(String id) {
+        try {
+            File cacheTar = new File(getCacheDir(), id + ".tar.gz");
+            if (cacheTar.exists()) cacheTar.delete();
+            File cacheZip = new File(getCacheDir(), id + ".zip");
+            if (cacheZip.exists()) cacheZip.delete();
+            File targetDir = new File(new File(TermuxConstants.TERMUX_HOME_DIR, "services"), id);
+            if (targetDir.exists()) deleteRecursive(targetDir);
+        } catch (Throwable ignored) {}
+    }
+
+    private void installServiceAutomatically(ManagedService svc) {
+        OledProgressDialog progress = showOledProgressDialog("INSTALLING " + svc.getDisplayName().toUpperCase(Locale.ROOT), "Preparing runtime environment...", true);
+
+        new Thread(() -> {
+            try {
+                performServiceInstallSync(svc, progress);
                 runOnUiThread(() -> {
                     progress.dismiss();
                     svc.reconcileInstalledState();
@@ -5471,15 +6555,429 @@ public final class FishbowlActivity extends AppCompatActivity
                     refreshHomeServicesBadge();
                     Toast.makeText(this, svc.getDisplayName() + " installed successfully!", Toast.LENGTH_LONG).show();
                 });
-
             } catch (Throwable t) {
+                boolean isCancel = (progress != null && progress.isCancelled()) || (t instanceof InterruptedException);
+                if (isCancel) {
+                    Log.i(TAG, "Installation cancelled for " + svc.getId());
+                    cleanupPartialServiceInstall(svc.getId());
+                    runOnUiThread(() -> {
+                        progress.dismiss();
+                        svc.reconcileInstalledState();
+                        refreshServicesTabUI();
+                        refreshHomeServicesBadge();
+                        Toast.makeText(this, "Installation cancelled.", Toast.LENGTH_SHORT).show();
+                    });
+                    return;
+                }
                 Log.e(TAG, "Failed to auto-install " + svc.getId(), t);
+                cleanupPartialServiceInstall(svc.getId());
                 runOnUiThread(() -> {
                     progress.dismiss();
                     Toast.makeText(this, "Installation failed: " + t.getMessage(), Toast.LENGTH_LONG).show();
                 });
             }
         }).start();
+    }
+
+    private void installMultipleServicesSequentially(List<ManagedService> services) {
+        if (services.isEmpty()) return;
+        OledProgressDialog progress = showOledProgressDialog("INSTALLING SERVICES", "Preparing batch setup...", true);
+
+        new Thread(() -> {
+            int successCount = 0;
+            boolean cancelled = false;
+            for (int i = 0; i < services.size(); i++) {
+                if (progress != null && progress.isCancelled()) {
+                    cancelled = true;
+                    break;
+                }
+                ManagedService svc = services.get(i);
+                final int idx = i + 1;
+                final int total = services.size();
+                runOnUiThread(() -> {
+                    if (progress != null) {
+                        progress.setTitle("INSTALLING (" + idx + "/" + total + ") " + svc.getDisplayName().toUpperCase(Locale.ROOT));
+                        progress.setMessage("Preparing runtime environment...");
+                        progress.setProgress(0);
+                    }
+                });
+                try {
+                    performServiceInstallSync(svc, progress);
+                    successCount++;
+                } catch (InterruptedException ie) {
+                    cancelled = true;
+                    cleanupPartialServiceInstall(svc.getId());
+                    break;
+                } catch (Throwable t) {
+                    Log.e(TAG, "Batch installation error for " + svc.getId(), t);
+                    cleanupPartialServiceInstall(svc.getId());
+                }
+            }
+
+            final int finalSuccess = successCount;
+            final boolean wasCancelled = cancelled;
+            runOnUiThread(() -> {
+                if (progress != null) progress.dismiss();
+                for (ManagedService s : services) {
+                    s.reconcileInstalledState();
+                }
+                refreshServicesTabUI();
+                refreshHomeServicesBadge();
+                if (wasCancelled) {
+                    Toast.makeText(this, "Installation cancelled (" + finalSuccess + " installed).", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(this, "Batch installation complete (" + finalSuccess + " installed)!", Toast.LENGTH_LONG).show();
+                }
+            });
+        }).start();
+    }
+
+    private void uninstallMultipleServicesSequentially(List<ManagedService> services, boolean purge) {
+        OledProgressDialog progress = showOledProgressDialog("UNINSTALLING SERVICES", "Stopping processes and removing packages...", false);
+        new Thread(() -> {
+            int count = 0;
+            MediaServiceManager mgr = MediaServiceManager.getInstance(this);
+            for (int i = 0; i < services.size(); i++) {
+                ManagedService s = services.get(i);
+                final int current = i + 1;
+                final int total = services.size();
+                runOnUiThread(() -> {
+                    if (progress != null) {
+                        progress.setTitle("UNINSTALLING (" + current + "/" + total + ") " + s.getDisplayName().toUpperCase(Locale.ROOT));
+                        progress.setMessage("Reclaiming binaries...");
+                        progress.setProgress((current * 100) / total);
+                    }
+                });
+                CountDownLatch latch = new CountDownLatch(1);
+                mgr.uninstallService(s.getId(), purge, latch::countDown);
+                try {
+                    latch.await(30, TimeUnit.SECONDS);
+                    count++;
+                } catch (InterruptedException ignored) {}
+            }
+            final int uninstalledCount = count;
+            runOnUiThread(() -> {
+                if (progress != null) progress.dismiss();
+                refreshServicesTabUI();
+                refreshHomeServicesBadge();
+                Toast.makeText(this, "Uninstalled " + uninstalledCount + " service(s).", Toast.LENGTH_LONG).show();
+            });
+        }).start();
+    }
+
+    private void showSelectiveInstallDialog() {
+        MediaServiceManager mgr = MediaServiceManager.getInstance(this);
+        List<ManagedService> all = mgr.getAllServices();
+        List<ManagedService> candidates = new ArrayList<>();
+        for (ManagedService s : all) {
+            if ("jellyfin".equalsIgnoreCase(s.getId())) continue;
+            if (!s.isInstalled()) {
+                candidates.add(s);
+            }
+        }
+        if (candidates.isEmpty()) {
+            Toast.makeText(this, "All companion services are already installed!", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Set<String> selectedIds = new HashSet<>();
+        for (ManagedService s : candidates) {
+            selectedIds.add(s.getId());
+        }
+
+        Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(18), dp(18), dp(18), dp(18));
+        root.setBackground(createBorderedRoundedDrawable(Color.BLACK, Color.parseColor("#27272A"), dp(1), dp(14)));
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText("INSTALL SERVICES");
+        titleTv.setTextSize(13.5f);
+        titleTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        titleTv.setTextColor(Color.WHITE);
+        root.addView(titleTv);
+
+        TextView subTv = new TextView(this);
+        subTv.setText("Choose companion services to download:");
+        subTv.setTextSize(10.5f);
+        subTv.setTypeface(Typeface.MONOSPACE);
+        subTv.setTextColor(Color.parseColor("#A1A1AA"));
+        subTv.setPadding(0, dp(4), 0, dp(12));
+        root.addView(subTv);
+
+        CheckBox selectAllCb = new CheckBox(this);
+        selectAllCb.setText("Select All (" + candidates.size() + ")");
+        selectAllCb.setTextSize(11f);
+        selectAllCb.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        selectAllCb.setTextColor(Color.WHITE);
+        selectAllCb.setChecked(true);
+        root.addView(selectAllCb);
+
+        ScrollView sv = new ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(0, dp(8), 0, dp(8));
+
+        List<CheckBox> itemCbs = new ArrayList<>();
+        Button actionBtn = createPixelButton("INSTALL (" + selectedIds.size() + ")", Color.parseColor("#0284C7"), Color.WHITE);
+
+        Runnable updateButtonText = () -> {
+            actionBtn.setText("INSTALL (" + selectedIds.size() + ")");
+            actionBtn.setEnabled(!selectedIds.isEmpty());
+            actionBtn.setAlpha(selectedIds.isEmpty() ? 0.4f : 1.0f);
+        };
+
+        for (ManagedService s : candidates) {
+            LinearLayout itemRow = new LinearLayout(this);
+            itemRow.setOrientation(LinearLayout.HORIZONTAL);
+            itemRow.setGravity(Gravity.CENTER_VERTICAL);
+            itemRow.setPadding(0, dp(4), 0, dp(4));
+
+            CheckBox cb = new CheckBox(this);
+            cb.setChecked(true);
+            int port = (s.getManifest() != null) ? s.getManifest().getDefaultPort() : 0;
+            cb.setText(port > 0 ? (s.getDisplayName() + " (:" + port + ")") : s.getDisplayName());
+            cb.setTextSize(11f);
+            cb.setTypeface(Typeface.MONOSPACE);
+            cb.setTextColor(Color.parseColor("#E4E4E7"));
+            cb.setOnCheckedChangeListener((btn, isChecked) -> {
+                if (isChecked) {
+                    selectedIds.add(s.getId());
+                } else {
+                    selectedIds.remove(s.getId());
+                }
+                selectAllCb.setOnCheckedChangeListener(null);
+                selectAllCb.setChecked(selectedIds.size() == candidates.size());
+                setupSelectAllListener(selectAllCb, candidates, itemCbs, selectedIds, updateButtonText);
+                updateButtonText.run();
+            });
+            itemCbs.add(cb);
+            itemRow.addView(cb);
+            list.addView(itemRow);
+        }
+
+        setupSelectAllListener(selectAllCb, candidates, itemCbs, selectedIds, updateButtonText);
+
+        sv.addView(list, new LinearLayout.LayoutParams(-1, dp(180)));
+        root.addView(sv);
+
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setPadding(0, dp(14), 0, 0);
+
+        Button cancelBtn = createOutlinePixelButton("CANCEL", Color.parseColor("#71717A"), Color.parseColor("#A1A1AA"));
+        cancelBtn.setTextSize(10f);
+        cancelBtn.setOnClickListener(v -> d.dismiss());
+        footer.addView(cancelBtn, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        View gap = new View(this);
+        footer.addView(gap, new LinearLayout.LayoutParams(dp(10), 1));
+
+        actionBtn.setTextSize(10f);
+        actionBtn.setOnClickListener(v -> {
+            d.dismiss();
+            List<ManagedService> toInstall = new ArrayList<>();
+            for (ManagedService s : candidates) {
+                if (selectedIds.contains(s.getId())) {
+                    toInstall.add(s);
+                }
+            }
+            if (!toInstall.isEmpty()) {
+                installMultipleServicesSequentially(toInstall);
+            }
+        });
+        footer.addView(actionBtn, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        root.addView(footer);
+        d.setContentView(root);
+        if (d.getWindow() != null) {
+            d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            d.getWindow().setDimAmount(0.85f);
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
+            lp.copyFrom(d.getWindow().getAttributes());
+            lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.90);
+            lp.height = WindowManager.LayoutParams.WRAP_CONTENT;
+            d.getWindow().setAttributes(lp);
+        }
+        d.show();
+    }
+
+    private void showSelectiveUninstallDialog() {
+        MediaServiceManager mgr = MediaServiceManager.getInstance(this);
+        List<ManagedService> all = mgr.getAllServices();
+        List<ManagedService> candidates = new ArrayList<>();
+        for (ManagedService s : all) {
+            if ("jellyfin".equalsIgnoreCase(s.getId())) continue;
+            if (s.isInstalled()) {
+                candidates.add(s);
+            }
+        }
+        if (candidates.isEmpty()) {
+            Toast.makeText(this, "No companion services installed to uninstall.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Set<String> selectedIds = new HashSet<>();
+        for (ManagedService s : candidates) {
+            selectedIds.add(s.getId());
+        }
+
+        Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(18), dp(18), dp(18), dp(18));
+        root.setBackground(createBorderedRoundedDrawable(Color.BLACK, Color.parseColor("#27272A"), dp(1), dp(14)));
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText("UNINSTALL SERVICES");
+        titleTv.setTextSize(13.5f);
+        titleTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        titleTv.setTextColor(Color.parseColor("#EF4444"));
+        root.addView(titleTv);
+
+        TextView subTv = new TextView(this);
+        subTv.setText("Choose services to remove from device:");
+        subTv.setTextSize(10.5f);
+        subTv.setTypeface(Typeface.MONOSPACE);
+        subTv.setTextColor(Color.parseColor("#A1A1AA"));
+        subTv.setPadding(0, dp(4), 0, dp(12));
+        root.addView(subTv);
+
+        CheckBox selectAllCb = new CheckBox(this);
+        selectAllCb.setText("Select All (" + candidates.size() + ")");
+        selectAllCb.setTextSize(11f);
+        selectAllCb.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        selectAllCb.setTextColor(Color.WHITE);
+        selectAllCb.setChecked(true);
+        root.addView(selectAllCb);
+
+        ScrollView sv = new ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(0, dp(8), 0, dp(8));
+
+        List<CheckBox> itemCbs = new ArrayList<>();
+        Button actionBtn = createPixelButton("UNINSTALL (" + selectedIds.size() + ")", Color.parseColor("#EF4444"), Color.WHITE);
+
+        Runnable updateButtonText = () -> {
+            actionBtn.setText("UNINSTALL (" + selectedIds.size() + ")");
+            actionBtn.setEnabled(!selectedIds.isEmpty());
+            actionBtn.setAlpha(selectedIds.isEmpty() ? 0.4f : 1.0f);
+        };
+
+        for (ManagedService s : candidates) {
+            LinearLayout itemRow = new LinearLayout(this);
+            itemRow.setOrientation(LinearLayout.HORIZONTAL);
+            itemRow.setGravity(Gravity.CENTER_VERTICAL);
+            itemRow.setPadding(0, dp(4), 0, dp(4));
+
+            CheckBox cb = new CheckBox(this);
+            cb.setChecked(true);
+            cb.setText(s.getDisplayName() + (s.isRunning() ? " [RUNNING]" : ""));
+            cb.setTextSize(11f);
+            cb.setTypeface(Typeface.MONOSPACE);
+            cb.setTextColor(Color.parseColor("#E4E4E7"));
+            cb.setOnCheckedChangeListener((btn, isChecked) -> {
+                if (isChecked) {
+                    selectedIds.add(s.getId());
+                } else {
+                    selectedIds.remove(s.getId());
+                }
+                selectAllCb.setOnCheckedChangeListener(null);
+                selectAllCb.setChecked(selectedIds.size() == candidates.size());
+                setupSelectAllListener(selectAllCb, candidates, itemCbs, selectedIds, updateButtonText);
+                updateButtonText.run();
+            });
+            itemCbs.add(cb);
+            itemRow.addView(cb);
+            list.addView(itemRow);
+        }
+
+        setupSelectAllListener(selectAllCb, candidates, itemCbs, selectedIds, updateButtonText);
+
+        sv.addView(list, new LinearLayout.LayoutParams(-1, dp(150)));
+        root.addView(sv);
+
+        CheckBox purgeCb = new CheckBox(this);
+        purgeCb.setText("Purge databases & configurations");
+        purgeCb.setTextSize(10f);
+        purgeCb.setTypeface(Typeface.MONOSPACE);
+        purgeCb.setTextColor(Color.parseColor("#F87171"));
+        purgeCb.setChecked(false);
+        purgeCb.setPadding(0, dp(4), 0, dp(8));
+        root.addView(purgeCb);
+
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setPadding(0, dp(8), 0, 0);
+
+        Button cancelBtn = createOutlinePixelButton("CANCEL", Color.parseColor("#71717A"), Color.parseColor("#A1A1AA"));
+        cancelBtn.setTextSize(10f);
+        cancelBtn.setOnClickListener(v -> d.dismiss());
+        footer.addView(cancelBtn, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        View gap = new View(this);
+        footer.addView(gap, new LinearLayout.LayoutParams(dp(10), 1));
+
+        actionBtn.setTextSize(10f);
+        actionBtn.setOnClickListener(v -> {
+            d.dismiss();
+            boolean purge = purgeCb.isChecked();
+            List<ManagedService> toUninstall = new ArrayList<>();
+            for (ManagedService s : candidates) {
+                if (selectedIds.contains(s.getId())) {
+                    toUninstall.add(s);
+                }
+            }
+            if (!toUninstall.isEmpty()) {
+                uninstallMultipleServicesSequentially(toUninstall, purge);
+            }
+        });
+        footer.addView(actionBtn, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+
+        root.addView(footer);
+        d.setContentView(root);
+        if (d.getWindow() != null) {
+            d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            d.getWindow().setDimAmount(0.85f);
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
+            lp.copyFrom(d.getWindow().getAttributes());
+            lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.90);
+            lp.height = WindowManager.LayoutParams.WRAP_CONTENT;
+            d.getWindow().setAttributes(lp);
+        }
+        d.show();
+    }
+
+    private void setupSelectAllListener(CheckBox selectAllCb, List<ManagedService> candidates, List<CheckBox> itemCbs, Set<String> selectedIds, Runnable updateButtonText) {
+        selectAllCb.setOnCheckedChangeListener((btn, isChecked) -> {
+            selectedIds.clear();
+            for (CheckBox cb : itemCbs) {
+                cb.setOnCheckedChangeListener(null);
+                cb.setChecked(isChecked);
+            }
+            if (isChecked) {
+                for (ManagedService s : candidates) {
+                    selectedIds.add(s.getId());
+                }
+            }
+            for (int i = 0; i < candidates.size(); i++) {
+                ManagedService s = candidates.get(i);
+                CheckBox cb = itemCbs.get(i);
+                cb.setOnCheckedChangeListener((b, c) -> {
+                    if (c) selectedIds.add(s.getId());
+                    else selectedIds.remove(s.getId());
+                    selectAllCb.setOnCheckedChangeListener(null);
+                    selectAllCb.setChecked(selectedIds.size() == candidates.size());
+                    setupSelectAllListener(selectAllCb, candidates, itemCbs, selectedIds, updateButtonText);
+                    updateButtonText.run();
+                });
+            }
+            updateButtonText.run();
+        });
     }
 
     private void syncAndAutoWireAllServices() {
@@ -5723,6 +7221,9 @@ public final class FishbowlActivity extends AppCompatActivity
 
         // Section 3: PERMISSIONS & SYSTEM HEALTH (Drawer)
         layout.addView(buildPermissionsSection());
+
+        // Section: DIAGNOSTICS CENTRE
+        layout.addView(buildDiagnosticsSection());
 
         // Section 4: PLAYBACK & STREAMING CODECS (Drawer)
         layout.addView(buildStreamingSection());
@@ -6182,14 +7683,26 @@ public final class FishbowlActivity extends AppCompatActivity
             storageLegendContainer.addView(compItem);
             storageLegendContainer.addView(createSettingsDivider());
 
-            storageLegendContainer.addView(createStorageBreakdownItem(
+            View jfItem = createStorageBreakdownItem(
                     Color.parseColor("#8B5CF6"), "Jellyfin Server & Databases",
-                    "SQLite metadata, posters, and user watch history", dataBytes, totalHardwareUsed));
+                    "SQLite metadata, posters, and user watch history • Tap for details", dataBytes, totalHardwareUsed);
+            jfItem.setClickable(true);
+            jfItem.setFocusable(true);
+            jfItem.setBackground(createBorderedRoundedDrawable(Color.TRANSPARENT, Color.argb(18, 255, 255, 255), dp(1), dp(6)));
+            jfItem.setPadding(dp(6), dp(4), dp(6), dp(4));
+            jfItem.setOnClickListener(v -> showJellyfinDatabaseBreakdownDialog());
+            storageLegendContainer.addView(jfItem);
             storageLegendContainer.addView(createSettingsDivider());
 
-            storageLegendContainer.addView(createStorageBreakdownItem(
+            View cacheItem = createStorageBreakdownItem(
                     Color.parseColor("#F43F5E"), "Cache, Transcodes & Logs",
-                    "FFmpeg transcoding buffer, HTTP cache, and logs", cacheBytes, totalHardwareUsed));
+                    "FFmpeg transcoding buffer, HTTP cache, and logs • Tap for details", cacheBytes, totalHardwareUsed);
+            cacheItem.setClickable(true);
+            cacheItem.setFocusable(true);
+            cacheItem.setBackground(createBorderedRoundedDrawable(Color.TRANSPARENT, Color.argb(18, 255, 255, 255), dp(1), dp(6)));
+            cacheItem.setPadding(dp(6), dp(4), dp(6), dp(4));
+            cacheItem.setOnClickListener(v -> showCacheStorageBreakdownDialog());
+            storageLegendContainer.addView(cacheItem);
         }
     }
 
@@ -6294,7 +7807,7 @@ public final class FishbowlActivity extends AppCompatActivity
                         content.addView(createSettingsDivider());
                     }
                     if (jackettBytes > 0) {
-                        content.addView(createStorageBreakdownItem(Color.parseColor("#FF6D00"), "Jackett (Indexer Proxy)", "/services/jackett", jackettBytes, totalBytes));
+                        content.addView(createStorageBreakdownItem(Color.parseColor("#F97316"), "Jackett (Indexer Proxy)", "/services/jackett", jackettBytes, totalBytes));
                         content.addView(createSettingsDivider());
                     }
                     if (lidarrBytes > 0) {
@@ -6336,6 +7849,154 @@ public final class FishbowlActivity extends AppCompatActivity
                 runOnUiThread(() -> {
                     progress.dismiss();
                     Toast.makeText(this, "Failed to analyze storage: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+
+    private void showJellyfinDatabaseBreakdownDialog() {
+        OledProgressDialog progress = showOledProgressDialog("ANALYZING DATABASES", "Calculating itemized Jellyfin server breakdown...");
+        new Thread(() -> {
+            try {
+                File home = com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR;
+                File jfShare = new File(home, ".local/share/jellyfin");
+                File jfData = new File(jfShare, "data");
+                File jfMetadata = new File(jfShare, "metadata");
+                File jfPlugins = new File(jfShare, "plugins");
+                File jfRoot = new File(jfShare, "root");
+                File jfConfig = new File(home, ".config/jellyfin");
+
+                long dataDbBytes = calculateDirSize(jfData);
+                long metadataBytes = calculateDirSize(jfMetadata);
+                long pluginsBytes = calculateDirSize(jfPlugins);
+                long rootBytes = calculateDirSize(jfRoot);
+                long configBytes = calculateDirSize(jfConfig);
+
+                long apkBytes = 0;
+                try {
+                    String pkgCodePath = getPackageCodePath();
+                    if (pkgCodePath != null) {
+                        File apkFile = new File(pkgCodePath);
+                        if (apkFile.exists()) apkBytes = apkFile.length();
+                    }
+                } catch (Throwable ignored) {}
+
+                long totalBytes = dataDbBytes + metadataBytes + pluginsBytes + rootBytes + configBytes + apkBytes;
+                final long finalApkBytes = apkBytes;
+
+                runOnUiThread(() -> {
+                    progress.dismiss();
+
+                    LinearLayout content = new LinearLayout(this);
+                    content.setOrientation(LinearLayout.VERTICAL);
+                    content.setPadding(0, dp(4), 0, dp(8));
+
+                    TextView sub = new TextView(this);
+                    sub.setText("Total Jellyfin Server & Database Footprint: " + MediaStorageManager.formatBytes(totalBytes));
+                    sub.setTextSize(11f);
+                    sub.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+                    sub.setTextColor(Color.parseColor("#8B5CF6"));
+                    sub.setPadding(0, dp(2), 0, dp(12));
+                    content.addView(sub);
+
+                    if (dataDbBytes > 0) {
+                        content.addView(createStorageBreakdownItem(Color.parseColor("#8B5CF6"), "SQLite Databases & User State", "jellyfin.db, library.db, users.db, watch states & playback progress", dataDbBytes, totalBytes));
+                        content.addView(createSettingsDivider());
+                    }
+                    if (metadataBytes > 0) {
+                        content.addView(createStorageBreakdownItem(Color.parseColor("#A78BFA"), "Metadata & Poster Artwork", "Movie covers, TV backdrops, actor portraits & chapter images", metadataBytes, totalBytes));
+                        content.addView(createSettingsDivider());
+                    }
+                    if (pluginsBytes > 0) {
+                        content.addView(createStorageBreakdownItem(Color.parseColor("#C4B5FD"), "Installed Plugins & Assemblies", "Community plugin DLLs, manifests, and package configurations", pluginsBytes, totalBytes));
+                        content.addView(createSettingsDivider());
+                    }
+                    if (configBytes > 0) {
+                        content.addView(createStorageBreakdownItem(Color.parseColor("#6366F1"), "Server XML Configurations", "system.xml, encoding.xml, network.xml, transcoding rules", configBytes, totalBytes));
+                        content.addView(createSettingsDivider());
+                    }
+                    if (rootBytes > 0) {
+                        content.addView(createStorageBreakdownItem(Color.parseColor("#818CF8"), "Virtual Library Links", "Folder mapping links connecting your media libraries", rootBytes, totalBytes));
+                        content.addView(createSettingsDivider());
+                    }
+                    if (finalApkBytes > 0) {
+                        content.addView(createStorageBreakdownItem(Color.parseColor("#71717A"), "App Package & Native Engines", "Base Android APK and bundled native architecture libraries", finalApkBytes, totalBytes));
+                    }
+
+                    showOledDialog("Jellyfin Server & Databases", "Itemized breakdown of Jellyfin server core data and databases", content, null, 0, null, "CLOSE", null);
+                });
+            } catch (Throwable t) {
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    Toast.makeText(this, "Failed to analyze databases: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+
+    private void showCacheStorageBreakdownDialog() {
+        OledProgressDialog progress = showOledProgressDialog("ANALYZING CACHE", "Calculating cache and transcoding buffer...");
+        new Thread(() -> {
+            try {
+                File home = com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR;
+                File jfShare = new File(home, ".local/share/jellyfin");
+                File jfLog = new File(jfShare, "log");
+                File jfCache = new File(home, ".cache/jellyfin");
+                File jfTranscodes = new File(jfCache, "transcodes");
+
+                long transcodeBytes = calculateDirSize(jfTranscodes);
+                long fullCacheBytes = calculateDirSize(jfCache);
+                long webCacheBytes = Math.max(0, fullCacheBytes - transcodeBytes);
+                long logBytes = calculateDirSize(jfLog);
+                long appCacheBytes = calculateDirSize(getCacheDir());
+
+                long totalBytes = transcodeBytes + webCacheBytes + logBytes + appCacheBytes;
+
+                runOnUiThread(() -> {
+                    progress.dismiss();
+
+                    LinearLayout content = new LinearLayout(this);
+                    content.setOrientation(LinearLayout.VERTICAL);
+                    content.setPadding(0, dp(4), 0, dp(8));
+
+                    TextView sub = new TextView(this);
+                    sub.setText("Total Temporary & Cache Footprint: " + MediaStorageManager.formatBytes(totalBytes));
+                    sub.setTextSize(11f);
+                    sub.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+                    sub.setTextColor(Color.parseColor("#F43F5E"));
+                    sub.setPadding(0, dp(2), 0, dp(12));
+                    content.addView(sub);
+
+                    if (transcodeBytes > 0) {
+                        content.addView(createStorageBreakdownItem(Color.parseColor("#F43F5E"), "Active Transcoding Buffer", "Temporary HLS video fragments, transcoded audio & video chunks", transcodeBytes, totalBytes));
+                        content.addView(createSettingsDivider());
+                    }
+                    if (webCacheBytes > 0) {
+                        content.addView(createStorageBreakdownItem(Color.parseColor("#FB7185"), "Web & Metadata API Cache", "Cached TheMovieDB / Fanart.tv requests & Web UI assets", webCacheBytes, totalBytes));
+                        content.addView(createSettingsDivider());
+                    }
+                    if (logBytes > 0) {
+                        content.addView(createStorageBreakdownItem(Color.parseColor("#E11D48"), "Server Execution Logs", "Jellyfin runtime logs tracking playback sessions and system events", logBytes, totalBytes));
+                        content.addView(createSettingsDivider());
+                    }
+                    if (appCacheBytes > 0) {
+                        content.addView(createStorageBreakdownItem(Color.parseColor("#9F1239"), "Internal App WebView Cache", "Android WebView cache, temporary thumbnail rendering cache", appCacheBytes, totalBytes));
+                        content.addView(createSettingsDivider());
+                    }
+
+                    Button btnClear = createOutlinePixelButton("PURGE TEMPORARY CACHE (" + MediaStorageManager.formatBytes(totalBytes) + ")", Color.parseColor("#F43F5E"), Color.parseColor("#F43F5E"));
+                    btnClear.setTextSize(10.5f);
+                    btnClear.setOnClickListener(v -> showClearCacheConfirmation());
+                    LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, dp(38));
+                    clp.topMargin = dp(8);
+                    content.addView(btnClear, clp);
+
+                    showOledDialog("Cache, Transcodes & Logs", "Itemized breakdown of temporary cache and transcodes", content, null, 0, null, "CLOSE", null);
+                });
+            } catch (Throwable t) {
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    Toast.makeText(this, "Failed to analyze cache: " + t.getMessage(), Toast.LENGTH_SHORT).show();
                 });
             }
         }).start();
@@ -6452,7 +8113,73 @@ public final class FishbowlActivity extends AppCompatActivity
         });
         autoStartAppRow.addView(autoStartAppSwitch);
         card.addView(autoStartAppRow);
+        card.addView(createSettingsDivider());
 
+        // Row 1A-2: Auto-Start Companion Services
+        LinearLayout autoStartCompRow = new LinearLayout(this);
+        autoStartCompRow.setOrientation(LinearLayout.HORIZONTAL);
+        autoStartCompRow.setGravity(Gravity.CENTER_VERTICAL);
+        autoStartCompRow.setPadding(0, dp(2), 0, dp(4));
+
+        LinearLayout asCompTextCol = new LinearLayout(this);
+        asCompTextCol.setOrientation(LinearLayout.VERTICAL);
+        TextView asCompTitle = new TextView(this);
+        asCompTitle.setText("Auto-Start Companion Services");
+        asCompTitle.setTextSize(13.5f);
+        asCompTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        asCompTitle.setTextColor(Color.parseColor("#F4F4F5"));
+        asCompTextCol.addView(asCompTitle);
+
+        TextView asCompSub = new TextView(this);
+        asCompSub.setText("Automatically launch companion services (Radarr, Sonarr, etc.) when Fishbowl starts. Disabled by default to prevent port conflicts.");
+        asCompSub.setTextSize(11f);
+        asCompSub.setTextColor(Color.parseColor("#71717A"));
+        asCompSub.setPadding(0, dp(2), 0, 0);
+        asCompTextCol.addView(asCompSub);
+        autoStartCompRow.addView(asCompTextCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        Switch autoStartCompSwitch = new Switch(this);
+        boolean compAutoStart = MediaServiceManager.getInstance(this).isCompanionAutoStartEnabled();
+        autoStartCompSwitch.setChecked(compAutoStart);
+        autoStartCompSwitch.setOnCheckedChangeListener((v, checked) -> {
+            MediaServiceManager.getInstance(this).setCompanionAutoStartEnabled(checked);
+            Toast.makeText(this, checked ? "Companion auto-start enabled." : "Companion auto-start disabled (on-demand only).", Toast.LENGTH_SHORT).show();
+        });
+        autoStartCompRow.addView(autoStartCompSwitch);
+        card.addView(autoStartCompRow);
+        card.addView(createSettingsDivider());
+
+        // Row 1B: Media Stack Subsystem (Companion Services)
+        LinearLayout mediaStackRow = new LinearLayout(this);
+        mediaStackRow.setOrientation(LinearLayout.HORIZONTAL);
+        mediaStackRow.setGravity(Gravity.CENTER_VERTICAL);
+        mediaStackRow.setPadding(0, dp(2), 0, dp(4));
+
+        LinearLayout msTextCol = new LinearLayout(this);
+        msTextCol.setOrientation(LinearLayout.VERTICAL);
+        TextView msTitle = new TextView(this);
+        msTitle.setText("Media Stack Subsystem");
+        msTitle.setTextSize(13.5f);
+        msTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        msTitle.setTextColor(Color.parseColor("#F4F4F5"));
+        msTextCol.addView(msTitle);
+
+        TextView msSub = new TextView(this);
+        msSub.setText("Enable Radarr, Sonarr, Seerr, Prowlarr & companion services. Disable for Jellyfin-only mode to save storage.");
+        msSub.setTextSize(11f);
+        msSub.setTextColor(Color.parseColor("#71717A"));
+        msSub.setPadding(0, dp(2), 0, 0);
+        msTextCol.addView(msSub);
+        mediaStackRow.addView(msTextCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        Switch mediaStackSwitch = new Switch(this);
+        mediaStackSwitch.setChecked(isMediaStackEnabled());
+        mediaStackSwitch.setOnCheckedChangeListener((v, checked) -> {
+            setMediaStackEnabled(checked);
+            Toast.makeText(this, checked ? "Media Stack enabled." : "Media Stack disabled (Jellyfin-only mode).", Toast.LENGTH_SHORT).show();
+        });
+        mediaStackRow.addView(mediaStackSwitch);
+        card.addView(mediaStackRow);
         card.addView(createSettingsDivider());
 
         // Row 2: Background Survival
@@ -6495,11 +8222,105 @@ public final class FishbowlActivity extends AppCompatActivity
         bgRow.addView(btnBattery, new LinearLayout.LayoutParams(-2, dp(32)));
         card.addView(bgRow);
 
+        card.addView(createSettingsDivider());
+
+        // Row 3: Quick Settings Tile
+        LinearLayout qsRow = new LinearLayout(this);
+        qsRow.setOrientation(LinearLayout.HORIZONTAL);
+        qsRow.setGravity(Gravity.CENTER_VERTICAL);
+        qsRow.setPadding(0, dp(2), 0, dp(4));
+
+        LinearLayout qsTextCol = new LinearLayout(this);
+        qsTextCol.setOrientation(LinearLayout.VERTICAL);
+        TextView qsTitle = new TextView(this);
+        qsTitle.setText("Quick Settings Tile");
+        qsTitle.setTextSize(13.5f);
+        qsTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        qsTitle.setTextColor(Color.parseColor("#F4F4F5"));
+        qsTextCol.addView(qsTitle);
+
+        TextView qsSub = new TextView(this);
+        qsSub.setText("Toggle Jellyfin server and check live status from notification shade");
+        qsSub.setTextSize(11f);
+        qsSub.setTextColor(Color.parseColor("#71717A"));
+        qsSub.setPadding(0, dp(2), 0, 0);
+        qsTextCol.addView(qsSub);
+        qsRow.addView(qsTextCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        Button btnAddTile = createPixelButton("ADD TILE", Color.argb(25, 56, 189, 248), Color.parseColor("#38BDF8"));
+        btnAddTile.setTextSize(10f);
+        btnAddTile.setPadding(dp(10), 0, dp(10), 0);
+        btnAddTile.setOnClickListener(v -> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                FishbowlQuickSettingsTileService.requestAddTile(this,
+                    () -> Toast.makeText(this, "Fishbowl Quick Settings tile added!", Toast.LENGTH_SHORT).show(),
+                    () -> Toast.makeText(this, "Quick Settings tile request cancelled or already present.", Toast.LENGTH_SHORT).show()
+                );
+            } else {
+                Toast.makeText(this, "To add the Fishbowl tile: swipe down twice from the top of your screen, tap Edit (pencil icon), and drag the Fishbowl tile into active tiles.", Toast.LENGTH_LONG).show();
+            }
+        });
+        qsRow.addView(btnAddTile, new LinearLayout.LayoutParams(-2, dp(32)));
+        card.addView(qsRow);
+
         section.addView(card);
         return section;
     }
 
     // -- Section 3: Permissions & Background Survival (Drawer) -----------------
+
+    
+    private View buildDiagnosticsSection() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        section.addView(createSettingsSectionHeader("DIAGNOSTICS CENTRE"));
+
+        LinearLayout card = createSettingsSectionCard();
+        TextView diagTitle = new TextView(this);
+        diagTitle.setText("System & Port Diagnostics");
+        diagTitle.setTextSize(15f);
+        diagTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        diagTitle.setTextColor(Color.WHITE);
+        card.addView(diagTitle);
+
+        TextView diagSub = new TextView(this);
+        diagSub.setText("Audit companion service ports (collisions / zombies), device ABI compatibility, and disk headroom.");
+        diagSub.setTextSize(11f);
+        diagSub.setTextColor(Color.parseColor("#71717A"));
+        diagSub.setPadding(0, dp(2), 0, dp(12));
+        card.addView(diagSub);
+
+        Button btnRunDiag = createPixelButton("RUN DIAGNOSTICS", Color.parseColor("#18191E"), Color.parseColor("#38BDF8"));
+        btnRunDiag.setTextSize(10.5f);
+        btnRunDiag.setOnClickListener(v -> showDiagnosticsModal());
+        card.addView(btnRunDiag, new LinearLayout.LayoutParams(-1, dp(40)));
+
+        View spGap = new View(this);
+        card.addView(spGap, new LinearLayout.LayoutParams(1, dp(8)));
+
+        Button btnReport = createPixelButton("REPORT ISSUE / EXPORT REPORT", Color.parseColor("#18191E"), Color.parseColor("#F59E0B"));
+        btnReport.setTextSize(10.5f);
+        btnReport.setOnClickListener(v -> {
+            String fullReport = generateDiagnosticReport(null);
+            ScrollView sv = new ScrollView(this);
+            TextView rTv = new TextView(this);
+            rTv.setText(fullReport);
+            rTv.setTextSize(10f);
+            rTv.setTypeface(Typeface.MONOSPACE);
+            rTv.setTextColor(Color.parseColor("#D4D4D8"));
+            rTv.setTextIsSelectable(true);
+            rTv.setPadding(0, dp(4), 0, dp(4));
+            sv.addView(rTv);
+
+            showOledDialog("Diagnostic Report", "Complete hardware, OS & services diagnostic audit", sv,
+                    "EXPORT .TXT", Color.parseColor("#38BDF8"), () -> exportReportAsTxtFile(fullReport, "system"),
+                    "CLOSE", null);
+        });
+        card.addView(btnReport, new LinearLayout.LayoutParams(-1, dp(40)));
+
+        section.addView(card);
+        return section;
+    }
 
     private View buildPermissionsSection() {
         return buildCollapsibleCard(
@@ -7402,6 +9223,42 @@ public final class FishbowlActivity extends AppCompatActivity
         });
         autoDetectRow.addView(detectSwitch);
         content.addView(autoDetectRow);
+
+        content.addView(createSettingsDivider());
+
+        // Keep Screen Awake While Importing Toggle
+        LinearLayout keepScreenRow = new LinearLayout(this);
+        keepScreenRow.setOrientation(LinearLayout.HORIZONTAL);
+        keepScreenRow.setGravity(Gravity.CENTER_VERTICAL);
+        keepScreenRow.setPadding(0, dp(4), 0, dp(4));
+
+        LinearLayout ksTextCol = new LinearLayout(this);
+        ksTextCol.setOrientation(LinearLayout.VERTICAL);
+
+        TextView ksTitle = new TextView(this);
+        ksTitle.setText("Keep Screen Awake While Importing");
+        ksTitle.setTextSize(13.5f);
+        ksTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        ksTitle.setTextColor(Color.parseColor("#F4F4F5"));
+        ksTextCol.addView(ksTitle);
+
+        TextView ksSub = new TextView(this);
+        ksSub.setText("Prevents screen timeout and OS sleep while moving or copying media.");
+        ksSub.setTextSize(11f);
+        ksSub.setTextColor(Color.parseColor("#71717A"));
+        ksSub.setPadding(0, dp(2), 0, 0);
+        ksTextCol.addView(ksSub);
+
+        keepScreenRow.addView(ksTextCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        Switch keepScreenSwitch = new Switch(this);
+        keepScreenSwitch.setChecked(dm.isKeepScreenOnEnabled());
+        keepScreenSwitch.setOnCheckedChangeListener((b, isChecked) -> {
+            dm.setKeepScreenOnEnabled(isChecked);
+            Toast.makeText(this, isChecked ? "Screen will stay awake during imports" : "Screen wake lock disabled", Toast.LENGTH_SHORT).show();
+        });
+        keepScreenRow.addView(keepScreenSwitch);
+        content.addView(keepScreenRow);
 
         content.addView(createSettingsDivider());
 
@@ -8633,6 +10490,7 @@ public final class FishbowlActivity extends AppCompatActivity
             final boolean finalSuccess = allSuccess;
             runOnUiThread(() -> {
                 updateStorageInfoText();
+                refreshStorageBar();
                 if (finalSuccess) {
                     Toast.makeText(FishbowlActivity.this, "Cache cleared successfully.", Toast.LENGTH_SHORT).show();
                 } else {
@@ -8739,6 +10597,22 @@ public final class FishbowlActivity extends AppCompatActivity
         btnSettingsReinstall = createPixelButton("REINSTALL RUNTIME", Color.parseColor("#455A64"), Color.WHITE);
         btnSettingsReinstall.setOnClickListener(v -> showReinstallConfirmation());
         item.addView(btnSettingsReinstall);
+
+        Button btnAddQsTile = createPixelButton("ADD QUICK SETTINGS TILE", Color.parseColor("#18191E"), Color.parseColor("#F4F4F5"));
+        btnAddQsTile.setTextSize(10f);
+        btnAddQsTile.setOnClickListener(v -> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                FishbowlQuickSettingsTileService.requestAddTile(this,
+                    () -> Toast.makeText(this, "Fishbowl Quick Settings tile added!", Toast.LENGTH_SHORT).show(),
+                    () -> Toast.makeText(this, "Quick Settings tile request cancelled or already present.", Toast.LENGTH_SHORT).show()
+                );
+            } else {
+                Toast.makeText(this, "To add the Fishbowl tile: swipe down twice from the top of your screen, tap Edit (pencil icon), and drag the Fishbowl tile into active tiles.", Toast.LENGTH_LONG).show();
+            }
+        });
+        LinearLayout.LayoutParams pAddTile = new LinearLayout.LayoutParams(-1, dp(36));
+        pAddTile.topMargin = dp(6);
+        item.addView(btnAddQsTile, pAddTile);
 
         refreshRuntimeStatusUI();
         return item;
@@ -9122,8 +10996,9 @@ public final class FishbowlActivity extends AppCompatActivity
         // Refresh live server health & resources
         refreshServerHealthUI();
 
-        // Broadcast state change to Home Screen Widgets
+        // Broadcast state change to Home Screen Widgets and Quick Settings Tile
         com.fishbowl.app.widget.FishbowlWidgetProvider.updateAllWidgets(this);
+        FishbowlQuickSettingsTileService.requestTileUpdate(this);
     }
 
     private void updateStageRow(TextView tv, String label, boolean completed, boolean active) {
@@ -9204,21 +11079,44 @@ public final class FishbowlActivity extends AppCompatActivity
         try {
             Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
             if (ifaces == null) return null;
+            String tetherIp = null;
+            String fallbackIp = null;
             while (ifaces.hasMoreElements()) {
                 NetworkInterface intf = ifaces.nextElement();
                 if (!intf.isUp() || intf.isLoopback()) continue;
                 String name = intf.getName().toLowerCase(Locale.ROOT);
-                if (name.startsWith("tun") || name.startsWith("tailscale")) continue;
+                // Exclude cellular, vpn, tunnel, and loopback virtual interfaces
+                if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("pdp")
+                        || name.startsWith("radio") || name.startsWith("dummy") || name.startsWith("tun")
+                        || name.startsWith("tailscale") || name.startsWith("sit") || name.startsWith("gre")
+                        || name.startsWith("ifb") || name.startsWith("ip_vti")) {
+                    continue;
+                }
                 Enumeration<java.net.InetAddress> addrs = intf.getInetAddresses();
                 while (addrs.hasMoreElements()) {
                     java.net.InetAddress addr = addrs.nextElement();
                     if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
                         String ip = addr.getHostAddress();
                         if (isTailscaleIp(ip)) continue;
-                        return ip;
+                        if (ip.startsWith("192.0.0.") || ip.startsWith("100.64.")) continue; // CGNAT / cellular
+
+                        // Priority 1: Wi-Fi interface (wlan)
+                        if (name.startsWith("wlan")) {
+                            return ip;
+                        }
+                        // Priority 2: USB Tethering / Ethernet (rndis, usb, eth)
+                        if (name.startsWith("rndis") || name.startsWith("usb") || name.startsWith("eth")) {
+                            tetherIp = ip;
+                        } else if (name.startsWith("ap") || name.startsWith("softap")) {
+                            fallbackIp = ip;
+                        } else if (fallbackIp == null) {
+                            fallbackIp = ip;
+                        }
                     }
                 }
             }
+            if (tetherIp != null) return tetherIp;
+            return fallbackIp;
         } catch (Exception ignored) {}
         return null;
     }

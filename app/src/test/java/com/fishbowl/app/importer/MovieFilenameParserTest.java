@@ -165,4 +165,14 @@ public class MovieFilenameParserTest {
         assertEquals("21 Jump Street", p11.title);
         assertEquals(2012, p11.year);
     }
+
+    @Test
+    public void testMediaExtensionValidation() {
+        assertTrue(MovieFilenameParser.isSupportedMediaExtension("mkv"));
+        assertTrue(MovieFilenameParser.isSupportedMediaExtension(".mp4"));
+        assertTrue(MovieFilenameParser.isSupportedMediaExtension("AVI"));
+        assertFalse(MovieFilenameParser.isSupportedMediaExtension("exe"));
+        assertFalse(MovieFilenameParser.isSupportedMediaExtension("../sh"));
+        assertFalse(MovieFilenameParser.isSupportedMediaExtension("mp4\0"));
+    }
 }
