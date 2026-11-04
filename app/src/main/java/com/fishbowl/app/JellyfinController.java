@@ -865,11 +865,25 @@ public class JellyfinController {
                 env.put("OPENSSL_CONF", "/dev/null");
             }
             env.put("DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER", "1");
+            env.put("DOTNET_gcServer", "0");
+            env.put("DOTNET_gcConcurrent", "1");
+            env.put("DOTNET_GCHighMemPercent", "80");
+            env.put("DOTNET_ThreadPool_MinThreads", "2");
+            env.put("DOTNET_ThreadPool_MaxThreads", "24");
+            env.put("DOTNET_EnableWriteXorExecute", "0");
 
             // §2: Merge stdout+stderr to prevent blocked pipe
             pb.redirectErrorStream(true);
 
             final Process process = pb.start();
+            try {
+                java.lang.reflect.Field f = process.getClass().getDeclaredField("pid");
+                f.setAccessible(true);
+                long jfPid = f.getLong(process);
+                if (jfPid > 0) {
+                    android.os.Process.setThreadPriority((int) jfPid, android.os.Process.THREAD_PRIORITY_DEFAULT);
+                }
+            } catch (Throwable ignored) {}
 
             // §12: Clean up previous workers before creating new ones
             shutdownProcessWorkers();
