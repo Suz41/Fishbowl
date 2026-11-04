@@ -219,6 +219,51 @@ public class ManagedService {
         return sb.toString();
     }
 
+    /**
+     * Filters in-memory logs (and optionally disk log files) to return strictly errors,
+     * crashes, critical warnings, and exception stack traces.
+     */
+    public synchronized String getErrorAndCrashLogs(int maxLines) {
+        List<String> errorLines = new java.util.ArrayList<>();
+        boolean inStackTrace = false;
+
+        for (int i = 0; i < logs.size(); i++) {
+            String line = logs.get(i);
+            String lower = line.toLowerCase(java.util.Locale.ROOT);
+            boolean isError = lower.contains("error") || lower.contains("crit") || lower.contains("fatal")
+                    || lower.contains("crash") || lower.contains("exception") || lower.contains("fail")
+                    || lower.contains("warn") || lower.contains("traceback") || lower.contains("sigkill")
+                    || lower.contains("sigsegv") || lower.contains("unhandled") || lower.contains("exited unexpectedly")
+                    || lower.contains("exit code:") || lower.contains("halted");
+
+            if (isError) {
+                errorLines.add(line);
+                inStackTrace = lower.contains("exception") || lower.contains("traceback");
+            } else if (inStackTrace && (line.startsWith("   at ") || line.startsWith("\tat ") || line.startsWith("  File "))) {
+                errorLines.add(line);
+            } else {
+                inStackTrace = false;
+            }
+        }
+
+        if (errorLines.isEmpty()) {
+            if (lastError != null && !lastError.isEmpty()) {
+                return "[LAST RECORDED ERROR]\n" + lastError;
+            }
+            return "";
+        }
+
+        int start = Math.max(0, errorLines.size() - maxLines);
+        StringBuilder sb = new StringBuilder();
+        if (lastError != null && !lastError.isEmpty()) {
+            sb.append("[CURRENT ERROR STATE] ").append(lastError).append("\n\n");
+        }
+        for (int i = start; i < errorLines.size(); i++) {
+            sb.append(errorLines.get(i)).append('\n');
+        }
+        return sb.toString();
+    }
+
     public synchronized void clearLogs() {
         logs.clear();
         try {

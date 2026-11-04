@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -17,10 +18,12 @@ import android.webkit.CookieManager;
 import android.webkit.ConsoleMessage;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -49,6 +52,8 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
     private FrameLayout rootLayout;
     private View loadingView;
     private TextView loadingText;
+    private ProgressBar loadingBar;
+    private LinearLayout loadingActionBox;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
     private JellyfinController controller;
@@ -252,6 +257,22 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                     "})();", null);
             }
 
+            private int connectionRetryCount = 0;
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request != null && request.isForMainFrame() && connectionRetryCount < 4) {
+                    connectionRetryCount++;
+                    Log.w(TAG, "WebView main frame error (attempt " + connectionRetryCount + "): " + (error != null ? error.getDescription() : "unknown") + ", retrying...");
+                    handler.postDelayed(() -> {
+                        if (!isDestroyed && view != null) {
+                            view.loadUrl(customUrl != null ? customUrl : "http://127.0.0.1:8096");
+                        }
+                    }, 1500);
+                }
+            }
+
             @Override
             public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
                 Log.w(TAG, "WebView render process killed (crashed=" + (detail != null && detail.didCrash()) + ")");
@@ -311,8 +332,8 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         centerBox.setOrientation(LinearLayout.VERTICAL);
         centerBox.setGravity(Gravity.CENTER);
 
-        ProgressBar bar = new ProgressBar(this);
-        centerBox.addView(bar);
+        loadingBar = new ProgressBar(this);
+        centerBox.addView(loadingBar);
 
         loadingText = new TextView(this);
         loadingText.setText(customTitle != null ? "Starting " + customTitle + "..." : "Starting Fishbowl...");
@@ -323,6 +344,15 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         txtParams.topMargin = dp(16);
         centerBox.addView(loadingText, txtParams);
+
+        loadingActionBox = new LinearLayout(this);
+        loadingActionBox.setOrientation(LinearLayout.HORIZONTAL);
+        loadingActionBox.setGravity(Gravity.CENTER);
+        loadingActionBox.setVisibility(View.GONE);
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        actionParams.topMargin = dp(16);
+        centerBox.addView(loadingActionBox, actionParams);
 
         FrameLayout.LayoutParams boxParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
@@ -335,6 +365,11 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         if (customUrl == null) return;
         loadingView.setVisibility(View.VISIBLE);
         web.setVisibility(View.GONE);
+        if (loadingBar != null) loadingBar.setVisibility(View.VISIBLE);
+        if (loadingActionBox != null) {
+            loadingActionBox.removeAllViews();
+            loadingActionBox.setVisibility(View.GONE);
+        }
         if (loadingText != null) {
             loadingText.setText("Connecting to " + (customTitle != null ? customTitle : "service") + "...");
         }
@@ -353,7 +388,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         }
 
         if (serviceId != null) {
-            long waitTimeout = "bazarr".equalsIgnoreCase(serviceId) ? 120000L : 35000L;
+            long waitTimeout = "bazarr".equalsIgnoreCase(serviceId) ? 120000L : 60000L;
             MediaServiceManager.getInstance(this).ensureServiceReadyAndGetUrl(serviceId, waitTimeout, new MediaServiceManager.ServiceReadyCallback() {
                 @Override
                 public void onReady(String url) {
@@ -367,8 +402,53 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                 @Override
                 public void onError(String errorReason) {
                     if (isDestroyed) return;
+                    if (loadingBar != null) loadingBar.setVisibility(View.GONE);
                     if (loadingText != null) {
-                        loadingText.setText("Failed to start service:\n" + errorReason);
+                        loadingText.setText("Could not connect to " + (customTitle != null ? customTitle : "service") + ":\n" + errorReason);
+                    }
+                    if (loadingActionBox != null) {
+                        loadingActionBox.removeAllViews();
+                        loadingActionBox.setVisibility(View.VISIBLE);
+
+                        Button retryBtn = new Button(JellyfinWebActivity.this);
+                        retryBtn.setText("RETRY");
+                        retryBtn.setTextSize(12f);
+                        retryBtn.setTextColor(Color.BLACK);
+                        retryBtn.setBackgroundColor(COLOR_ACCENT);
+                        retryBtn.setOnClickListener(v -> connectToCustomService());
+                        loadingActionBox.addView(retryBtn);
+
+                        Button forceBtn = new Button(JellyfinWebActivity.this);
+                        forceBtn.setText("LOAD ANYWAY");
+                        forceBtn.setTextSize(12f);
+                        forceBtn.setTextColor(Color.WHITE);
+                        forceBtn.setBackgroundColor(Color.parseColor("#27272A"));
+                        LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(-2, -2);
+                        fp.leftMargin = dp(10);
+                        forceBtn.setLayoutParams(fp);
+                        forceBtn.setOnClickListener(v -> {
+                            loaded = true;
+                            loadingView.setVisibility(View.GONE);
+                            web.setVisibility(View.VISIBLE);
+                            web.loadUrl(customUrl);
+                        });
+                        loadingActionBox.addView(forceBtn);
+
+                        Button browserBtn = new Button(JellyfinWebActivity.this);
+                        browserBtn.setText("BROWSER");
+                        browserBtn.setTextSize(12f);
+                        browserBtn.setTextColor(Color.WHITE);
+                        browserBtn.setBackgroundColor(Color.parseColor("#27272A"));
+                        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2);
+                        bp.leftMargin = dp(10);
+                        browserBtn.setLayoutParams(bp);
+                        browserBtn.setOnClickListener(v -> {
+                            try {
+                                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(customUrl));
+                                startActivity(browserIntent);
+                            } catch (Exception ignored) {}
+                        });
+                        loadingActionBox.addView(browserBtn);
                     }
                 }
             });
