@@ -133,30 +133,14 @@ Fishbowl runs **Jellyfin Server 12.4.0** natively on compatible ARM64 Android de
 
 ## Release Notes: v1.4.10-beta.1
 
-Fishbowl `v1.4.10-beta.1` introduces multi-service concurrency and resource optimizations, filtered error and crash diagnostics, an automated system diagnostic reporting engine, native Android Quick Settings tile integration, Jellyfin storage breakdown modals with 1-tap cache clearance, and movie importer security hardening.
+- **Performance:** Enforced .NET Workstation GC, capped thread pools, and limited Node.js memory to prevent multi-service startup hangs.
+- **Diagnostics:** Added filtered error/crash log viewer and one-tap system diagnostic report export (.txt).
+- **Storage:** Added Jellyfin database and cache breakdown dialog with one-tap cache clearance.
+- **Quick Settings:** Added native Android Quick Settings tile with Fishbowl branding for Jellyfin server control.
+- **Movie Importer:** Added keep-screen-awake toggle, two-phase replacement commit, and SHA-256 integrity checks.
+- **UI:** Upgraded lockscreen notifications, added top-right "X" progress dialog cancel, and relocated batch controls.
 
-### Release Specifications
-- **Core Server Engine:** Jellyfin Server 12.4.0 (.NET 10.0.12 ARM64 Bionic)
-- **Target Platform:** Android ARM64 (API 21+ / Android 7.0 - 16)
-- **Indexer Proxy:** Jackett 0.22.x (Port :9117) & Prowlarr 1.21.2 (Port :9696)
-- **Universal APK:** [`Fishbowl-v1.4.10-beta.1-release-universal.apk`](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.10-beta.1) (338,722,175 bytes)
-- **SHA-256 Checksum:** `fd79f0ed93e0a413ebd2f84fcf10fff1a1f7c749dd10d1ac28ce703bcbb03ab9`
-
-### Key Highlights & Changes
-- **Multi-Service Concurrency Optimization:** Enforced Microsoft .NET Workstation GC (`DOTNET_gcServer=0`, `DOTNET_gcConcurrent=1`), restricted threadpools (`2-20`), bounded Seerr V8 memory (`--max-old-space-size=256`), and set background daemon process priority (`nice 10`), eliminating multi-service launch hangs and CPU/memory thrashing.
-- **Filtered Error & Crash Logs:** Added dual-mode segmented toggle (`[ERRORS & CRASHES]` vs `[ALL LOGS]`) inside the service log viewer with automated regex error isolation and 1-tap clipboard copying.
-- **Automated Diagnostic & Issue Reporting Engine:** Integrated comprehensive telemetry audit under Settings Diagnostics Centre and inside service modals, featuring 1-tap `.txt` export via `FileProvider` and direct GitHub Issue reporting.
-- **Jellyfin Storage Breakdown & Cache Purge:** Itemized breakdown of Jellyfin SQLite databases, transcode buffers, and cached posters with instant 1-tap cache purge.
-- **Native Android Quick Settings Tile:** Notification shade tile with official Fishbowl branding and real-time lifecycle synchronization.
-- **Movie Importer Security & Anti-Corruption Guard:** Added `FLAG_KEEP_SCREEN_ON` during active transfers, two-phase atomic commit and rollback, post-commit SHA-256 verification, and strict media extension allowlists.
-- **Notification & UI Polish:** Upgraded foreground service notification to public lockscreen visibility, added top-right "X" progress dialog cancellation, and relocated batch action buttons.
-
-### Resolved Community Issues & PRs
-- **Issue #46:** Pinpointed and resolved multi-service startup hangs and connection refused errors on Android 15 via .NET Workstation GC and V8 memory limits.
-- **PR #48:** Integrated storage diagnostics, public lockscreen notifications, LMK auto-revival, import keep-screen-on guard, and multi-service concurrency optimizations.
-- **PR #47:** Evaluated Dependabot actions bump and preserved open-source caching.
-
-> Full asset downloads and checksum manifests are available on the [GitHub Release v1.4.10-beta.1](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.10-beta.1) page.
+> Universal package: [`Fishbowl-v1.4.10-beta.1-release-universal.apk`](https://github.com/Suz41/Fishbowl/releases/tag/v1.4.10-beta.1) | SHA-256: `fd79f0ed93e0a413ebd2f84fcf10fff1a1f7c749dd10d1ac28ce703bcbb03ab9`
 
 ---
 
