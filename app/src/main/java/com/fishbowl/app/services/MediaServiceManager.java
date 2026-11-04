@@ -3,6 +3,7 @@ package com.fishbowl.app.services;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.system.Os;
 import android.util.Log;
 
 import com.fishbowl.app.JellyfinController;
@@ -27,6 +28,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -53,6 +55,8 @@ public class MediaServiceManager {
 
     private final Context appContext;
     private final Map<String, ManagedService> services = new LinkedHashMap<>();
+    private final java.util.concurrent.atomic.AtomicBoolean isRevivingActive = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static final Map<String, Integer> lmkRevivalAttempts = new ConcurrentHashMap<>();
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<ServiceListener> listeners = new CopyOnWriteArrayList<>();
     private final ExecutorService serviceExecutor = Executors.newCachedThreadPool();
@@ -127,6 +131,199 @@ public class MediaServiceManager {
      * Resets the persisted active services set to only Jellyfin core server.
      * Used on OS Low Memory Killer (LMK) revival to guarantee companion services are never revived automatically.
      */
+    
+    /**
+     * Cold-starts all previously running services on OS LMK revival in background.
+     */
+    public boolean isMediaStackEnabled() {
+        if (appContext == null) return true;
+        try {
+            android.content.SharedPreferences sp = appContext.getSharedPreferences("fishbowl", Context.MODE_PRIVATE);
+            return sp.getBoolean("media_stack_enabled", true);
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    public boolean isCompanionAutoStartEnabled() {
+        if (appContext == null) return false;
+        try {
+            return appContext.getSharedPreferences("fishbowl", Context.MODE_PRIVATE)
+                    .getBoolean("auto_start_companions", false);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    public void setCompanionAutoStartEnabled(boolean enabled) {
+        if (appContext == null) return;
+        try {
+            appContext.getSharedPreferences("fishbowl", Context.MODE_PRIVATE)
+                    .edit().putBoolean("auto_start_companions", enabled).apply();
+        } catch (Throwable ignored) {}
+    }
+
+
+
+    public boolean isServiceHealthy(ManagedService s) {
+        if (s == null) return false;
+        int port = s.getManifest().getDefaultPort();
+        if (!isPortOccupied(port)) {
+            return false;
+        }
+        String endpoint = s.getManifest().getHealthCheckPath();
+        if (endpoint == null || endpoint.trim().isEmpty() || "/".equals(endpoint)) {
+            return true;
+        }
+        String apiKey = getServiceApiKey(s.getId());
+        String urlStr = "http://127.0.0.1:" + port + endpoint;
+        if (apiKey != null && !apiKey.trim().isEmpty() && !urlStr.contains("apiKey=")) {
+            urlStr += (urlStr.contains("?") ? "&" : "?") + "apiKey=" + apiKey.trim();
+        }
+        try {
+            URL u = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+            conn.setConnectTimeout(2000);
+            conn.setReadTimeout(2000);
+            conn.setRequestMethod("GET");
+            if (apiKey != null && !apiKey.trim().isEmpty()) {
+                conn.setRequestProperty("X-Api-Key", apiKey.trim());
+            }
+            int code = conn.getResponseCode();
+            conn.disconnect();
+            return code >= 200 && code < 500;
+        } catch (Throwable t) {
+            return isPortOccupied(port);
+        }
+    }
+
+    public static int getLmkRevivalAttempts(String sid) {
+        return lmkRevivalAttempts.getOrDefault(sid, 0);
+    }
+
+    public static void recordLmkRevivalAttempt(String sid) {
+        lmkRevivalAttempts.put(sid, getLmkRevivalAttempts(sid) + 1);
+    }
+
+    public static void resetLmkRevivalAttempts(String sid) {
+        lmkRevivalAttempts.remove(sid);
+    }
+
+    public void autoRevivePersistedServices(Context ctx) {
+        if (!isMediaStackEnabled()) {
+            Log.i(TAG, "[LMKRecovery] Media Stack is disabled by user. Skipping companion revival.");
+            return;
+        }
+        if (!isCompanionAutoStartEnabled()) {
+            Log.i(TAG, "[LMKRecovery] Companion auto-start is disabled by user preference. Skipping companion revival.");
+            return;
+        }
+        if (!isRevivingActive.compareAndSet(false, true)) {
+            Log.i(TAG, "[LMKRecovery] Revival sequence already in progress. Skipping duplicate invocation.");
+            return;
+        }
+        Set<String> active = getPersistedActiveServices();
+        Log.i(TAG, "[LMKRecovery] Scheduling staggered background cold-start for persisted services: " + active);
+        serviceExecutor.execute(() -> {
+            try {
+                String[] startOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
+                for (String sid : startOrder) {
+                    if (!active.contains(sid)) continue;
+                    try {
+                        ManagedService s = getService(sid);
+                        if (s == null || !s.isInstalled()) continue;
+
+                        int attempts = lmkRevivalAttempts.getOrDefault(sid, 0);
+                        if (attempts >= 3) {
+                            Log.w(TAG, "[LMKRecovery] Service " + sid + " reached maximum revival attempts (" + attempts + "). Skipping to avoid crash loop.");
+                            continue;
+                        }
+
+                        int port = s.getManifest().getDefaultPort();
+                        if (s.isRunning() && isServiceHealthy(s)) {
+                            Log.i(TAG, "[LMKRecovery] Service " + sid + " is already healthy on port " + port + ". Skipping restart.");
+                            lmkRevivalAttempts.remove(sid);
+                            continue;
+                        }
+
+                        long backoff = 1200L * (attempts + 1);
+                        Log.i(TAG, "[LMKRecovery] Reviving " + sid + " (Attempt " + (attempts + 1) + "/3, backoff " + backoff + "ms)...");
+                        lmkRevivalAttempts.put(sid, attempts + 1);
+                        startService(sid, ctx != null ? ctx : appContext);
+                        // Stagger with backoff to avoid memory/CPU spikes that trigger Android LMK
+                        Thread.sleep(backoff);
+
+                        if (isServiceHealthy(s)) {
+                            Log.i(TAG, "[LMKRecovery] Service " + sid + " confirmed healthy after revival. Resetting attempt counter.");
+                            lmkRevivalAttempts.remove(sid);
+                        } else {
+                            Log.w(TAG, "[LMKRecovery] Service " + sid + " started but health confirmation is pending.");
+                        }
+                    } catch (Throwable t) {
+                        Log.w(TAG, "[LMKRecovery] Error reviving " + sid + ": " + t.getMessage());
+                    }
+                }
+            } finally {
+                isRevivingActive.set(false);
+            }
+        });
+    }
+
+    /**
+     * Uninstalls all companion services by terminating their processes, purging
+     * their binary and configuration folders from internal storage to reclaim space.
+     */
+    public synchronized void uninstallAllCompanionServices() {
+        stopAllServices();
+        try {
+            File home = TermuxConstants.TERMUX_HOME_DIR;
+            File servicesDir = new File(home, "services");
+            Set<String> allowedCompanions = new HashSet<>(Arrays.asList(
+                    "radarr", "sonarr", "prowlarr", "jackett", "transmission", "transmission-daemon", "seerr", "jellyseerr", "bazarr", "lidarr"
+            ));
+            if (servicesDir.exists()) {
+                File[] subs = servicesDir.listFiles();
+                if (subs != null) {
+                    String canonicalServices = servicesDir.getCanonicalPath();
+                    for (File f : subs) {
+                        String name = f.getName().toLowerCase(Locale.ROOT);
+                        if (allowedCompanions.contains(name) && !"jellyfin".equalsIgnoreCase(name)) {
+                            String canonicalSub = f.getCanonicalPath();
+                            if (canonicalSub.startsWith(canonicalServices + File.separator)) {
+                                deleteRecursive(f);
+                            }
+                        }
+                    }
+                }
+            }
+            File configDir = new File(home, ".config");
+            if (configDir.exists()) {
+                String canonicalConfig = configDir.getCanonicalPath();
+                String[] compConfigs = {"radarr", "sonarr", "prowlarr", "jackett", "transmission-daemon", "seerr", "bazarr", "lidarr", "Radarr", "Sonarr", "Prowlarr", "Jackett", "Lidarr"};
+                for (String c : compConfigs) {
+                    File cf = new File(configDir, c);
+                    if (cf.exists()) {
+                        String canonicalSub = cf.getCanonicalPath();
+                        if (canonicalSub.startsWith(canonicalConfig + File.separator)) {
+                            deleteRecursive(cf);
+                        }
+                    }
+                }
+            }
+            for (ManagedService s : getAllServices()) {
+                if (!"jellyfin".equalsIgnoreCase(s.getId())) {
+                    s.reconcileInstalledState();
+                }
+            }
+            clearPersistedActiveServices();
+            Log.i(TAG, "[StorageReclaim] All companion services safely uninstalled with strict allowlist.");
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to uninstall companion services: " + t.getMessage());
+        }
+    }
+
+    
+
     public synchronized void resetPersistedActiveServicesToCoreOnly() {
         if (appContext == null) return;
         try {
@@ -728,28 +925,17 @@ public class MediaServiceManager {
                     Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " RUNNING (port already active & healthy)");
                     return;
                 } else {
-                    // Port is occupied but unresponsive: kill stale process on this port to recover
+                    // Port is occupied but unresponsive: reclaim port for this service
                     Log.w(TAG, "[ServiceManager] Port " + port + " is occupied by unresponsive process. Reclaiming port for " + ms.getDisplayName() + "...");
-                    if ("bazarr".equalsIgnoreCase(id)) {
-                        killProcessByPattern("bazarr");
-                        killProcessByPattern("main.py");
-                    } else if ("seerr".equalsIgnoreCase(id)) {
-                        killProcessByPattern("seerr");
-                    } else if ("jackett".equalsIgnoreCase(id)) {
-                        killProcessByPattern("jackett");
-                        killProcessByPattern("Jackett.dll");
-                        killProcessByPattern("jackett.dll");
-                    } else {
-                        String execPath = ms.getManifest().getExecutableOrDllPath();
-                        if (execPath != null && !execPath.trim().isEmpty()) {
-                            killProcessByPattern(new File(execPath).getName());
+                    boolean reclaimed = reclaimPort(port, id);
+                    if (!reclaimed && isPortOccupied(port)) {
+                        if (checkApiReadiness(ms)) {
+                            ms.setState(ServiceState.RUNNING);
+                            ms.setHealthy(true);
+                            ms.resetCrashCount();
+                            notifyListeners(id, ServiceState.RUNNING);
+                            return;
                         }
-                    }
-                    try {
-                        Thread.sleep(600);
-                    } catch (InterruptedException ignored) {}
-
-                    if (isPortOccupied(port)) {
                         ms.setLastError("PORT_CONFLICT: Port " + port + " is occupied by an external process.");
                         ms.setState(ServiceState.ERROR);
                         notifyListeners(id, ServiceState.ERROR);
@@ -920,7 +1106,9 @@ public class MediaServiceManager {
                     File customLibs = new File(home, "services/bazarr/custom_libs");
                     File libs = new File(home, "services/bazarr/libs");
                     File bazarrDir = new File(home, "services/bazarr/bazarr");
-                    env.put("PYTHONPATH", customLibs.getAbsolutePath() + ":" + libs.getAbsolutePath() + ":" + bazarrDir.getAbsolutePath());
+                    File pyStdLib = new File(prefix, "lib/python3.14");
+                    String pypath = customLibs.getAbsolutePath() + ":" + libs.getAbsolutePath() + ":" + bazarrDir.getAbsolutePath() + (pyStdLib.exists() ? (":" + pyStdLib.getAbsolutePath()) : "");
+                    env.put("PYTHONPATH", pypath);
                     env.put("BAZARR_VERSION", ms.getManifest().getVersion());
                 }
                 if ("transmission".equalsIgnoreCase(id)) {
@@ -932,6 +1120,11 @@ public class MediaServiceManager {
                     env.put("NODE_ENV", "production");
                     env.put("OPENSSL_CONF", "/dev/null");
                     env.put("SSL_CERT_FILE", new File(prefix, "etc/tls/cert.pem").getAbsolutePath());
+                    env.put("NODE_OPTIONS", "--max-old-space-size=256");
+                }
+                if ("bazarr".equalsIgnoreCase(id)) {
+                    env.put("PYTHONOPTIMIZE", "1");
+                    env.put("PYTHONUNBUFFERED", "1");
                 }
                 if ("radarr".equalsIgnoreCase(id)) {
                     env.put("RADARR__SERVER__ALLOWEDHOSTS", "*");
@@ -954,6 +1147,14 @@ public class MediaServiceManager {
                 env.put("ASPNETCORE_ALLOWEDHOSTS", "*");
                 env.put("AllowedHosts", "*");
 
+                // Multi-service Android optimization: Workstation GC & thread caps to prevent UI lag & OOM kills
+                env.put("DOTNET_gcServer", "0");
+                env.put("DOTNET_gcConcurrent", "1");
+                env.put("DOTNET_GCHighMemPercent", "75");
+                env.put("DOTNET_ThreadPool_MinThreads", "2");
+                env.put("DOTNET_ThreadPool_MaxThreads", "20");
+                env.put("DOTNET_EnableWriteXorExecute", "0");
+
                 String nativeLibDir = appContext.getApplicationInfo().nativeLibraryDir;
                 String prefixLib = new File(prefix, "lib").getAbsolutePath();
                 String jfLib = new File(prefix, "opt/jellyfin/lib").getAbsolutePath();
@@ -974,12 +1175,10 @@ public class MediaServiceManager {
                     env.put("SSL_CERT_DIR", certFile.getParentFile().getAbsolutePath());
                 }
                 File sslCnf = new File(prefix, "etc/tls/openssl.cnf");
-                if (sslCnf.exists()) {
-                    env.put("OPENSSL_CONF", sslCnf.getAbsolutePath());
-                } else {
-                    env.put("OPENSSL_CONF", "/dev/null");
-                    env.put("SSL_CERT_FILE", new File(prefix, "etc/tls/cert.pem").getAbsolutePath());
-                }
+                // Force empty OPENSSL_CONF to bypass invalid Termux TLS / openssl_init provider probes that cause Bionic crashes
+                env.put("OPENSSL_CONF", "/dev/null");
+                env.put("DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER", "1");
+                env.put("DOTNET_SYSTEM_GLOBALIZATION_PREFER_USER_OVERRIDE", "0");
 
                 pb.directory(new File(ms.getManifest().getInstallDir()));
                 pb.redirectErrorStream(true);
@@ -987,6 +1186,14 @@ public class MediaServiceManager {
                 Process process = pb.start();
                 long pid = extractPid(process);
                 ms.setProcessPid(pid);
+                if (pid > 0) {
+                    try {
+                        android.os.Process.setThreadPriority((int) pid, android.os.Process.THREAD_PRIORITY_BACKGROUND);
+                        Log.i(TAG, "[Optimization] Set background thread priority (BACKGROUND) for " + ms.getDisplayName() + " (PID " + pid + ")");
+                    } catch (Throwable t) {
+                        Log.w(TAG, "[Optimization] Could not set thread priority: " + t.getMessage());
+                    }
+                }
                 activeProcesses.put(id, process);
                 ms.setState(ServiceState.PROCESS_READY);
                 notifyListeners(id, ServiceState.PROCESS_READY);
@@ -1241,26 +1448,8 @@ public class MediaServiceManager {
                 } catch (Throwable ignored) {}
             }
 
-            if ("bazarr".equalsIgnoreCase(id)) {
-                killProcessByPattern("bazarr");
-                killProcessByPattern("main.py");
-                for (int i = 0; i < 25; i++) {
-                    if (!isPortOccupied(6767)) break;
-                    try { Thread.sleep(100); } catch (InterruptedException ignored) {}
-                }
-            } else {
-                int port = ms.getManifest().getDefaultPort();
-                if (isPortOccupied(port)) {
-                    String execPath = ms.getManifest().getExecutableOrDllPath();
-                    if (execPath != null && !execPath.trim().isEmpty()) {
-                        String execName = new File(execPath).getName();
-                        killProcessByPattern(execName);
-                        if ("jackett".equalsIgnoreCase(id)) {
-                            killProcessByPattern("Jackett.dll");
-                        }
-                    }
-                }
-            }
+            int defaultPort = ms.getManifest().getDefaultPort();
+            reclaimPort(defaultPort, id);
 
             if (ms.getState() != ServiceState.NOT_INSTALLED) {
                 ms.setState(ServiceState.STOPPED);
@@ -1280,6 +1469,10 @@ public class MediaServiceManager {
             String canonical = f.getCanonicalPath();
             File home = TermuxConstants.TERMUX_HOME_DIR.getCanonicalFile();
             File filesDir = TermuxConstants.TERMUX_FILES_DIR.getCanonicalFile();
+            if (canonical.equals(home.getPath()) || canonical.equals(filesDir.getPath())) {
+                Log.e(TAG, "Refusing recursive deletion of app root directory: " + canonical);
+                return false;
+            }
             boolean isAllowed = canonical.startsWith(home.getPath() + File.separator) ||
                                 canonical.startsWith(filesDir.getPath() + File.separator);
             if (!isAllowed) {
@@ -1431,6 +1624,16 @@ public class MediaServiceManager {
         mainHandler.postDelayed(() -> startService(id, ctx), 1200);
     }
 
+    public void resetCrashLoop(String id) {
+        ManagedService ms = services.get(id);
+        if (ms != null) {
+            ms.resetCrashCount();
+            ms.setLastError(null);
+            ms.setState(ms.isInstalled() ? ServiceState.STOPPED : ServiceState.NOT_INSTALLED);
+            notifyListeners(id, ms.getState());
+        }
+    }
+
     private void destroyProcess(String id) {
         Process p = activeProcesses.remove(id);
         if (p != null) {
@@ -1567,6 +1770,127 @@ public class MediaServiceManager {
         return 0;
     }
 
+    public static int findPidListeningOnPort(int targetPort) {
+        String hexPort = String.format(Locale.ROOT, "%04X", targetPort);
+        Set<String> inodes = new HashSet<>();
+
+        for (String tcpPath : new String[]{"/proc/net/tcp", "/proc/net/tcp6"}) {
+            File tcpFile = new File(tcpPath);
+            if (!tcpFile.exists() || !tcpFile.canRead()) continue;
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(tcpFile), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    line = line.trim();
+                    String[] tokens = line.split("\\s+");
+                    if (tokens.length >= 10) {
+                        String localAddr = tokens[1];
+                        String state = tokens[3];
+                        if ("0A".equalsIgnoreCase(state) && localAddr.toUpperCase(Locale.ROOT).endsWith(":" + hexPort)) {
+                            String inode = tokens[9];
+                            if (!"0".equals(inode)) {
+                                inodes.add(inode);
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        if (inodes.isEmpty()) return 0;
+
+        int myPid = android.os.Process.myPid();
+        File procDir = new File("/proc");
+        File[] procFiles = procDir.listFiles();
+        if (procFiles == null) return 0;
+
+        for (File f : procFiles) {
+            if (!f.isDirectory()) continue;
+            String name = f.getName();
+            if (!name.matches("\\d+")) continue;
+            int pid;
+            try {
+                pid = Integer.parseInt(name);
+            } catch (Exception ignored) { continue; }
+            if (pid == myPid) continue;
+
+            File fdDir = new File(f, "fd");
+            File[] fds = fdDir.listFiles();
+            if (fds == null) continue;
+            for (File fd : fds) {
+                try {
+                    String target = Os.readlink(fd.getAbsolutePath());
+                    for (String inode : inodes) {
+                        if (target != null && target.contains("socket:[" + inode + "]")) {
+                            return pid;
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
+        }
+        return 0;
+    }
+
+    public boolean reclaimPort(int port, String serviceId) {
+        if (!isPortOccupied(port)) return true;
+
+        Log.w(TAG, "[PortReclaimer] Port " + port + " is occupied. Reclaiming for " + serviceId + "...");
+
+        // 1. Target by known process name / patterns
+        if (serviceId != null) {
+            killProcessByPattern(serviceId);
+            if ("radarr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("Radarr.dll");
+                killProcessByPattern("radarr");
+            } else if ("sonarr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("Sonarr.dll");
+                killProcessByPattern("sonarr");
+            } else if ("prowlarr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("Prowlarr.dll");
+                killProcessByPattern("prowlarr");
+            } else if ("lidarr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("Lidarr.dll");
+                killProcessByPattern("lidarr");
+            } else if ("jackett".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("jackett");
+                killProcessByPattern("Jackett.dll");
+                killProcessByPattern("jackett.dll");
+            } else if ("bazarr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("bazarr");
+                killProcessByPattern("main.py");
+            } else if ("transmission".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("transmission-daemon");
+            } else if ("seerr".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("seerr");
+                killProcessByPattern("dist/index.js");
+            }
+        }
+
+        // 2. Target specific listening PID
+        int listeningPid = findPidListeningOnPort(port);
+        if (listeningPid > 0 && listeningPid != android.os.Process.myPid()) {
+            Log.i(TAG, "[PortReclaimer] Identified PID " + listeningPid + " on port " + port + ". Terminating...");
+            try {
+                android.os.Process.sendSignal(listeningPid, 15);
+                android.os.Process.killProcess(listeningPid);
+                android.os.Process.sendSignal(listeningPid, 9);
+                java.lang.Runtime.getRuntime().exec(new String[]{"/system/bin/kill", "-9", String.valueOf(listeningPid)});
+            } catch (Throwable ignored) {}
+        }
+
+        // 3. Poll for port release up to 2500ms
+        for (int i = 0; i < 10; i++) {
+            try {
+                Thread.sleep(250);
+            } catch (InterruptedException ignored) {}
+            if (!isPortOccupied(port)) {
+                Log.i(TAG, "[PortReclaimer] Port " + port + " released successfully after " + ((i + 1) * 250) + "ms.");
+                return true;
+            }
+        }
+
+        return !isPortOccupied(port);
+    }
+
     private void stopTransmissionGracefully(Process p, ManagedService ms) {
         if (ms != null) ms.appendLog("Sending Transmission session-close RPC to flush resume data...");
         try {
@@ -1640,8 +1964,12 @@ public class MediaServiceManager {
             // 1. Rename glibc deps.json so Bionic .NET runtime uses runtimeconfig.json frameworks
             File depsJson = new File(parent, baseName + ".deps.json");
             File depsJsonBak = new File(parent, baseName + ".deps.json.bak");
-            if (depsJson.exists() && !depsJsonBak.exists()) {
-                depsJson.renameTo(depsJsonBak);
+            if (depsJson.exists()) {
+                if (!depsJsonBak.exists()) {
+                    depsJson.renameTo(depsJsonBak);
+                } else {
+                    depsJson.delete();
+                }
             }
 
             // 2. Remove all bundled glibc .so and CLR host files
@@ -1697,6 +2025,32 @@ public class MediaServiceManager {
             File jfConfig = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.runtimeconfig.json");
             if (jfConfig.exists()) {
                 copyFile(jfConfig, runtimeConfig);
+            } else if (!runtimeConfig.exists() || runtimeConfig.length() == 0) {
+                String minimalConfig = "{\n" +
+                        "  \"runtimeOptions\": {\n" +
+                        "    \"tfm\": \"net10.0\",\n" +
+                        "    \"rollForward\": \"Major\",\n" +
+                        "    \"frameworks\": [\n" +
+                        "      {\n" +
+                        "        \"name\": \"Microsoft.NETCore.App\",\n" +
+                        "        \"version\": \"10.0.0\"\n" +
+                        "      },\n" +
+                        "      {\n" +
+                        "        \"name\": \"Microsoft.AspNetCore.App\",\n" +
+                        "        \"version\": \"10.0.0\"\n" +
+                        "      }\n" +
+                        "    ],\n" +
+                        "    \"configProperties\": {\n" +
+                        "      \"System.GC.Server\": false,\n" +
+                        "      \"System.Reflection.Metadata.MetadataUpdater.IsSupported\": false,\n" +
+                        "      \"System.Reflection.NullabilityInfoContext.IsSupported\": true,\n" +
+                        "      \"System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization\": false\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}\n";
+                try (FileOutputStream fos = new FileOutputStream(runtimeConfig)) {
+                    fos.write(minimalConfig.getBytes(StandardCharsets.UTF_8));
+                }
             }
 
             // 6. Pre-create or sanitize config.xml (BindAddress 0.0.0.0 and Auth None for local Web UI)
@@ -1838,7 +2192,7 @@ public class MediaServiceManager {
         }
         if ("seerr".equalsIgnoreCase(serviceId)) {
             File seerrConfigDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/seerr");
-            if (!seerrConfigDir.exists()) seerrConfigDir.mkdirs();
+            sanitizeSeerrConfig(seerrConfigDir);
             return;
         }
         if ("bazarr".equalsIgnoreCase(serviceId)) {
@@ -1866,6 +2220,76 @@ public class MediaServiceManager {
             } else {
                 createInitialConfigXml(configXml, baseName, port);
             }
+        }
+    }
+
+    public static void sanitizeSeerrConfig(File seerrConfigDir) {
+        if (seerrConfigDir == null) return;
+        try {
+            if (!seerrConfigDir.exists()) seerrConfigDir.mkdirs();
+            File settingsJson = new File(seerrConfigDir, "settings.json");
+            if (!settingsJson.exists()) {
+                org.json.JSONObject root = new org.json.JSONObject();
+                org.json.JSONObject main = new org.json.JSONObject();
+                main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
+                main.put("applicationTitle", "Fishbowl Requests");
+                main.put("applicationUrl", "http://127.0.0.1:5055");
+                main.put("trustProxy", false);
+                main.put("csrfProtection", true);
+                root.put("main", main);
+                writeTextFile(settingsJson, root.toString(2));
+                Log.i(TAG, "[ConfigSanitizer] Created new Seerr settings.json with secure API credentials.");
+                return;
+            }
+
+            String text = readTextFile(settingsJson);
+            if (text == null || text.trim().isEmpty()) {
+                File emptyBak = new File(seerrConfigDir, "settings.json.empty.bak");
+                copyFile(settingsJson, emptyBak);
+                org.json.JSONObject root = new org.json.JSONObject();
+                org.json.JSONObject main = new org.json.JSONObject();
+                main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
+                main.put("applicationTitle", "Fishbowl Requests");
+                main.put("applicationUrl", "http://127.0.0.1:5055");
+                main.put("trustProxy", false);
+                main.put("csrfProtection", true);
+                root.put("main", main);
+                writeTextFile(settingsJson, root.toString(2));
+                Log.w(TAG, "[ConfigSanitizer] Empty Seerr settings.json detected; backed up and initialized defaults.");
+                return;
+            }
+
+            org.json.JSONObject root;
+            try {
+                root = new org.json.JSONObject(text);
+            } catch (Throwable parseError) {
+                // Malformed JSON: NEVER overwrite malformed user configuration!
+                File corruptedBak = new File(seerrConfigDir, "settings.json.corrupted.bak");
+                copyFile(settingsJson, corruptedBak);
+                Log.e(TAG, "[ConfigSanitizer] WARNING: Seerr settings.json is malformed JSON! Preserving original file. Backup created: " +
+                        corruptedBak.getName() + ". Error: " + parseError.getMessage());
+                return;
+            }
+
+            File bak = new File(seerrConfigDir, "settings.json.bak");
+            copyFile(settingsJson, bak);
+
+            org.json.JSONObject main = root.optJSONObject("main");
+            if (main == null) {
+                main = new org.json.JSONObject();
+                root.put("main", main);
+            }
+            if (!main.has("apiKey") || main.optString("apiKey", "").trim().isEmpty()) {
+                main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
+            }
+            main.put("applicationTitle", "Fishbowl Requests");
+            main.put("applicationUrl", "http://127.0.0.1:5055");
+            main.put("trustProxy", false);
+            main.put("csrfProtection", true);
+            writeTextFile(settingsJson, root.toString(2));
+            Log.i(TAG, "[ConfigSanitizer] Sanitized Seerr settings.json with secure API authentication.");
+        } catch (Throwable t) {
+            Log.w(TAG, "[ConfigSanitizer] Error sanitizing Seerr config: " + t.getMessage());
         }
     }
 
@@ -1924,6 +2348,10 @@ public class MediaServiceManager {
                 }
                 if (sonarrKey != null && !content.contains("apikey: '" + sonarrKey + "'") && !content.contains("apikey: " + sonarrKey)) {
                     content = content.replaceAll("(?m)^(sonarr:\\s*\\n\\s*apikey:).*$", "$1 '" + sonarrKey + "'");
+                    changed = true;
+                }
+                if (content.contains("type: form") || content.contains("type: basic")) {
+                    content = content.replaceAll("(?m)^(\\s*type:).*$", "$1 null");
                     changed = true;
                 }
                 if (changed) {
@@ -2018,6 +2446,10 @@ public class MediaServiceManager {
                 cfg.put("FlareSolverrUrl", "http://127.0.0.1:8191");
                 changed = true;
             }
+            if (cfg.has("AdminPassword") && !cfg.optString("AdminPassword").isEmpty()) {
+                cfg.put("AdminPassword", "");
+                changed = true;
+            }
 
             if (changed || !configFile.exists()) {
                 try (FileOutputStream fos = new FileOutputStream(configFile)) {
@@ -2054,7 +2486,11 @@ public class MediaServiceManager {
         }
     }
 
-    private void sanitizeConfigXml(File configXml) {
+    public void sanitizeConfigXml(File configXml) {
+        sanitizeConfigXml(configXml, false);
+    }
+
+    public static void sanitizeConfigXml(File configXml, boolean unused) {
         try {
             if (!configXml.exists()) return;
             StringBuilder sb = new StringBuilder();
@@ -2069,7 +2505,12 @@ public class MediaServiceManager {
 
             if (updated.contains("<BindAddress>*</BindAddress>")) {
                 updated = updated.replace("<BindAddress>*</BindAddress>", "<BindAddress>0.0.0.0</BindAddress>");
+            } else if (updated.contains("<BindAddress>localhost</BindAddress>")) {
+                updated = updated.replace("<BindAddress>localhost</BindAddress>", "<BindAddress>0.0.0.0</BindAddress>");
+            } else if (updated.contains("<BindAddress>127.0.0.1</BindAddress>")) {
+                updated = updated.replace("<BindAddress>127.0.0.1</BindAddress>", "<BindAddress>0.0.0.0</BindAddress>");
             }
+
             if (updated.matches("(?s).*<AuthenticationMethod>.*?</AuthenticationMethod>.*") &&
                 !updated.contains("<AuthenticationMethod>Forms</AuthenticationMethod>") &&
                 !updated.contains("<AuthenticationMethod>External</AuthenticationMethod>")) {
@@ -2078,7 +2519,12 @@ public class MediaServiceManager {
             if (updated.matches("(?s).*<AuthenticationRequired>.*?</AuthenticationRequired>.*") &&
                 !updated.contains("<AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>")) {
                 updated = updated.replaceAll("<AuthenticationRequired>.*?</AuthenticationRequired>", "<AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>");
+            } else if (!updated.contains("<AuthenticationRequired>")) {
+                if (updated.contains("</Config>")) {
+                    updated = updated.replace("</Config>", "  <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>\n</Config>");
+                }
             }
+
             if (updated.contains("<AllowedHosts>")) {
                 if (!updated.contains("<AllowedHosts>*</AllowedHosts>")) {
                     updated = updated.replaceAll("<AllowedHosts>.*?</AllowedHosts>", "<AllowedHosts>*</AllowedHosts>");
@@ -2088,13 +2534,15 @@ public class MediaServiceManager {
                     updated = updated.replace("</Config>", "  <AllowedHosts>*</AllowedHosts>\n</Config>");
                 }
             }
+
+            String broadTrustedNetworks = "<TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32</TrustedNetworks>";
             if (updated.contains("<TrustedNetworks>")) {
-                if (!updated.contains("192.0.0.0/8")) {
-                    updated = updated.replaceAll("<TrustedNetworks>.*?</TrustedNetworks>", "<TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32</TrustedNetworks>");
+                if (!updated.contains("192.0.0.0/8") || !updated.contains("192.168.0.0/16")) {
+                    updated = updated.replaceAll("<TrustedNetworks>.*?</TrustedNetworks>", broadTrustedNetworks);
                 }
             } else {
                 if (updated.contains("</Config>")) {
-                    updated = updated.replace("</Config>", "  <TrustedNetworks>192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.0.0.0/8, 127.0.0.1/32</TrustedNetworks>\n</Config>");
+                    updated = updated.replace("</Config>", "  " + broadTrustedNetworks + "\n</Config>");
                 }
             }
 
@@ -2102,7 +2550,7 @@ public class MediaServiceManager {
                 try (FileOutputStream fos = new FileOutputStream(configXml)) {
                     fos.write(updated.getBytes(StandardCharsets.UTF_8));
                 }
-                Log.i(TAG, "[ConfigSanitizer] Sanitized auth, allowed hosts & trusted networks in " + configXml.getAbsolutePath());
+                Log.i(TAG, "[ConfigSanitizer] Sanitized auth (DisabledForLocalAddresses), allowed hosts & trusted networks in " + configXml.getAbsolutePath());
             }
         } catch (Throwable t) {
             Log.w(TAG, "[ConfigSanitizer] Error sanitizing " + configXml.getAbsolutePath() + ": " + t.getMessage());
@@ -2153,6 +2601,7 @@ public class MediaServiceManager {
                 org.json.JSONObject conf = new org.json.JSONObject(sbJson.toString());
                 conf.put("rpc-whitelist-enabled", false);
                 conf.put("rpc-host-whitelist-enabled", false);
+                conf.put("rpc-authentication-required", false);
                 conf.put("dht-enabled", true);
                 conf.put("pex-enabled", true);
                 conf.put("lpd-enabled", false);
@@ -2226,7 +2675,7 @@ public class MediaServiceManager {
         } catch (Throwable ignored) {}
     }
 
-    private void copyFile(File src, File dst) {
+    public static void copyFile(File src, File dst) {
         try (FileInputStream in = new FileInputStream(src);
              FileOutputStream out = new FileOutputStream(dst)) {
             byte[] buf = new byte[8192];
@@ -2237,7 +2686,7 @@ public class MediaServiceManager {
         } catch (Throwable ignored) {}
     }
 
-    private String readTextFile(File file) {
+    public static String readTextFile(File file) {
         try (FileInputStream fis = new FileInputStream(file);
              InputStreamReader isr = new InputStreamReader(fis, StandardCharsets.UTF_8);
              BufferedReader br = new BufferedReader(isr)) {
@@ -2252,7 +2701,7 @@ public class MediaServiceManager {
         }
     }
 
-    private void writeTextFile(File file, String content) {
+    public static void writeTextFile(File file, String content) {
         try (FileOutputStream fos = new FileOutputStream(file)) {
             fos.write(content.getBytes(StandardCharsets.UTF_8));
         } catch (Throwable ignored) {}
@@ -2360,7 +2809,7 @@ public class MediaServiceManager {
                 startService(serviceId);
             }
 
-            long effectiveTimeout = "bazarr".equalsIgnoreCase(serviceId) ? Math.max(timeoutMs, 150000L) : timeoutMs;
+            long effectiveTimeout = "bazarr".equalsIgnoreCase(serviceId) ? Math.max(timeoutMs, 150000L) : Math.max(timeoutMs, 60000L);
             long deadline = System.currentTimeMillis() + effectiveTimeout;
             while (System.currentTimeMillis() < deadline) {
                 if (ms.isReady()) {
@@ -2371,8 +2820,25 @@ public class MediaServiceManager {
                     mainHandler.post(() -> callback.onReady(targetUrl));
                     return;
                 }
-                if (ms.getState() == ServiceState.ERROR || ms.getState() == ServiceState.FAILED) {
+                int defaultPort = ms.getManifest().getDefaultPort();
+                if ((ms.getState() == ServiceState.SOCKET_READY || ms.getState() == ServiceState.UNHEALTHY) && isPortOccupied(defaultPort)) {
+                    if (checkApiReadiness(ms)) {
+                        ms.setState(ServiceState.API_READY);
+                        String webPath = ms.getManifest().getWebPath();
+                        if (webPath == null) webPath = "/";
+                        String targetUrl = "http://127.0.0.1:" + defaultPort + (webPath.equals("/") ? "" : webPath);
+                        mainHandler.post(() -> callback.onReady(targetUrl));
+                        return;
+                    }
+                }
+                if (ms.getState() == ServiceState.ERROR || ms.getState() == ServiceState.FAILED
+                        || ms.getState() == ServiceState.CRASH_LOOP_PROTECTION) {
                     String err = ms.getLastError() != null ? ms.getLastError() : "PROCESS_START_FAILED";
+                    mainHandler.post(() -> callback.onError(err));
+                    return;
+                }
+                if (ms.getState() == ServiceState.RECOVERING && ms.getCrashCount() >= 2) {
+                    String err = ms.getLastError() != null ? ms.getLastError() : "PROCESS_CRASHED (Retry " + ms.getCrashCount() + "/5)";
                     mainHandler.post(() -> callback.onError(err));
                     return;
                 }
@@ -4363,6 +4829,19 @@ public class MediaServiceManager {
                 } catch (Exception ignored) {}
             }
         }
+        if ("seerr".equals(id)) {
+            File cfg = new File(home, ".config/seerr/settings.json");
+            if (cfg.exists()) {
+                try {
+                    String text = readTextFile(cfg);
+                    if (text != null) {
+                        org.json.JSONObject obj = new org.json.JSONObject(text);
+                        org.json.JSONObject main = obj.optJSONObject("main");
+                        if (main != null) return main.optString("apiKey", null);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
         if ("bazarr".equals(id)) {
             File cfg = new File(home, ".config/bazarr/config/config.yaml");
             if (cfg.exists()) {
@@ -4535,6 +5014,11 @@ public class MediaServiceManager {
             json.put("minimumFreeSpaceWhenImporting", 100);
             json.put("deleteEmptyFolders", true);
             json.put("importExtraFiles", true);
+            if (port == 7878) {
+                json.put("autoUnmonitorPreviouslyDownloadedMovies", true);
+            } else if (port == 8989) {
+                json.put("autoUnmonitorPreviouslyDownloadedEpisodes", true);
+            }
             if (port != 8686) {
                 json.put("extraFileExtensions", "srt");
             }

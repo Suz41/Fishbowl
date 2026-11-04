@@ -416,8 +416,26 @@ public class JellyfinController {
     public synchronized void clearDisplayedLogs() {
         liveLines.clear();
         preservedErrorLogs.clear();
+        truncateDiskLogs();
         notifyListeners();
         notifyLogListeners();
+    }
+
+    public synchronized void truncateDiskLogs() {
+        try {
+            File dataDir = getProgramDataDir();
+            File logDir = new File(dataDir, "log");
+            if (logDir.exists() && logDir.isDirectory()) {
+                File[] files = logDir.listFiles((dir, name) -> name.endsWith(".log"));
+                if (files != null) {
+                    for (File f : files) {
+                        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(f)) {
+                            // Truncate file to 0 bytes
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     public void addListener(Listener l) {
@@ -847,11 +865,25 @@ public class JellyfinController {
                 env.put("OPENSSL_CONF", "/dev/null");
             }
             env.put("DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER", "1");
+            env.put("DOTNET_gcServer", "0");
+            env.put("DOTNET_gcConcurrent", "1");
+            env.put("DOTNET_GCHighMemPercent", "80");
+            env.put("DOTNET_ThreadPool_MinThreads", "2");
+            env.put("DOTNET_ThreadPool_MaxThreads", "24");
+            env.put("DOTNET_EnableWriteXorExecute", "0");
 
             // §2: Merge stdout+stderr to prevent blocked pipe
             pb.redirectErrorStream(true);
 
             final Process process = pb.start();
+            try {
+                java.lang.reflect.Field f = process.getClass().getDeclaredField("pid");
+                f.setAccessible(true);
+                long jfPid = f.getLong(process);
+                if (jfPid > 0) {
+                    android.os.Process.setThreadPriority((int) jfPid, android.os.Process.THREAD_PRIORITY_DEFAULT);
+                }
+            } catch (Throwable ignored) {}
 
             // §12: Clean up previous workers before creating new ones
             shutdownProcessWorkers();

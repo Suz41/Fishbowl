@@ -68,7 +68,7 @@ jobs:
         run: ./gradlew assembleDebug
 
       - name: Validate Release Build Compilation
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease -PvalidateReleaseCompilation=true
 
       - name: Verify Build Artifacts & Compute Checksums
         run: |

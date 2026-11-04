@@ -78,6 +78,11 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- Native Android Quick Settings Tile Preferences Long-Press Target -->
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
         <activity
             android:name="com.fishbowl.app.JellyfinStorageActivity"
@@ -293,6 +298,19 @@
             android:foregroundServiceType="mediaPlayback"
             android:stopWithTask="false"
             android:exported="false" />
+
+        <!-- Native Android Quick Settings Tile (Jellyfin Server Controller) -->
+        <service
+            android:name="com.fishbowl.app.FishbowlQuickSettingsTileService"
+            android:label="@string/quick_settings_tile_label"
+            android:icon="@drawable/ic_fishbowl_logo"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true"
+            tools:targetApi="n">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
 
         <!-- This (or rather, value 2.1 or higher) is needed to make the Samsung Galaxy S8 mark the
