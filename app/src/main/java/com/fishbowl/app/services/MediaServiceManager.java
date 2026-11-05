@@ -1998,9 +1998,19 @@ public class MediaServiceManager {
                 try { android.system.Os.chmod(targetEsqlite.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
             }
 
-            // 4. Ensure Bionic libMonoPosixHelper.so is present from prefix/lib or directly from assets
+            // 4. Ensure Bionic libMonoPosixHelper.so is present from nativeLibraryDir, prefix/lib, or assets
+            File nativeMono = new File(appContext.getApplicationInfo().nativeLibraryDir, "libMonoPosixHelper.so");
             File prefixMono = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libMonoPosixHelper.so");
-            if (!prefixMono.exists()) {
+            File prefixNoLibMono = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/MonoPosixHelper.so");
+            File targetMono = new File(parent, "libMonoPosixHelper.so");
+            File targetNoLibMono = new File(parent, "MonoPosixHelper.so");
+
+            // Overwrite existing files to ensure any outdated/unpatched library on device is replaced
+            if (nativeMono.exists()) {
+                copyFile(nativeMono, prefixMono);
+                copyFile(nativeMono, targetMono);
+                copyFile(nativeMono, targetNoLibMono);
+            } else {
                 try (InputStream in = appContext.getAssets().open("libMonoPosixHelper.so");
                      FileOutputStream out = new FileOutputStream(prefixMono)) {
                     byte[] buf = new byte[8192];
@@ -2008,18 +2018,40 @@ public class MediaServiceManager {
                     while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
                 } catch (Throwable ignored) {}
                 if (prefixMono.exists()) {
-                    try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                    copyFile(prefixMono, targetMono);
+                    copyFile(prefixMono, targetNoLibMono);
                 }
             }
-            File targetMono = new File(parent, "libMonoPosixHelper.so");
-            if (prefixMono.exists() && (!targetMono.exists() || targetMono.length() != prefixMono.length())) {
-                copyFile(prefixMono, targetMono);
+
+            if (prefixMono.exists()) {
+                try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
+            if (prefixNoLibMono.exists()) {
+                try { android.system.Os.chmod(prefixNoLibMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
             }
             if (targetMono.exists()) {
                 targetMono.setReadable(true, false);
                 targetMono.setExecutable(true, false);
                 try { android.system.Os.chmod(targetMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
             }
+            if (targetNoLibMono.exists()) {
+                targetNoLibMono.setReadable(true, false);
+                targetNoLibMono.setExecutable(true, false);
+                try { android.system.Os.chmod(targetNoLibMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
+
+            // Ensure Android system libz.so is symlinked into prefix/lib for zlib resolution
+            try {
+                File prefixLibZ = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libz.so");
+                File prefixLibZ1 = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libz.so.1");
+                File systemLibZ = new File("/system/lib64/libz.so");
+                if (!prefixLibZ.exists() && systemLibZ.exists()) {
+                    android.system.Os.symlink(systemLibZ.getAbsolutePath(), prefixLibZ.getAbsolutePath());
+                }
+                if (!prefixLibZ1.exists() && prefixLibZ.exists()) {
+                    android.system.Os.symlink(prefixLibZ.getAbsolutePath(), prefixLibZ1.getAbsolutePath());
+                }
+            } catch (Throwable ignored) {}
 
             // 5. Ensure runtimeconfig uses net10.0 and Bionic frameworks
             File jfConfig = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.runtimeconfig.json");
@@ -2107,11 +2139,12 @@ public class MediaServiceManager {
             }
 
             // 2. Deploy wrapper script for ffprobe and ffmpeg
+            String nativeLibDir = appContext.getApplicationInfo().nativeLibraryDir;
             String[] bins = {"ffprobe", "ffmpeg"};
             for (String b : bins) {
                 File realBin = new File(jfOptBin, b);
                 String scriptContent = "#!/system/bin/sh\n" +
-                        "export LD_LIBRARY_PATH=" + jfOptLib.getAbsolutePath() + ":" + prefixLib.getAbsolutePath() + ":$LD_LIBRARY_PATH\n" +
+                        "export LD_LIBRARY_PATH=" + jfOptLib.getAbsolutePath() + ":" + prefixLib.getAbsolutePath() + ":" + nativeLibDir + ":$LD_LIBRARY_PATH\n" +
                         "exec " + realBin.getAbsolutePath() + " \"$@\"\n";
 
                 File wrapperBin = new File(prefixBin, b);

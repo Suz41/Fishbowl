@@ -496,12 +496,22 @@ public class JellyfinBootstrapper {
             if (!libDir.exists()) libDir.mkdirs();
             File prefixMono = new File(libDir, "libMonoPosixHelper.so");
             if (!prefixMono.exists()) {
-                try (InputStream in = context.getAssets().open("libMonoPosixHelper.so");
-                     OutputStream out = new FileOutputStream(prefixMono)) {
-                    byte[] buf = new byte[8192];
-                    int r;
-                    while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
-                } catch (Throwable ignored) {}
+                File nativeMono = new File(context.getApplicationInfo().nativeLibraryDir, "libMonoPosixHelper.so");
+                if (nativeMono.exists()) {
+                    try (InputStream in = new java.io.FileInputStream(nativeMono);
+                         OutputStream out = new FileOutputStream(prefixMono)) {
+                        byte[] buf = new byte[8192];
+                        int r;
+                        while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+                    } catch (Throwable ignored) {}
+                } else {
+                    try (InputStream in = context.getAssets().open("libMonoPosixHelper.so");
+                         OutputStream out = new FileOutputStream(prefixMono)) {
+                        byte[] buf = new byte[8192];
+                        int r;
+                        while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+                    } catch (Throwable ignored) {}
+                }
             }
             if (prefixMono.exists()) {
                 try { Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}

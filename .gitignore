@@ -7,6 +7,8 @@ build/
 release/
 *.apk
 *.so
+!app/src/main/jniLibs/**/libMonoPosixHelper.so
+!app/src/main/assets/libMonoPosixHelper.so
 .externalNativeBuild
 .cxx
 *.zip

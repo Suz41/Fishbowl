@@ -6473,8 +6473,17 @@ public final class FishbowlActivity extends AppCompatActivity
                 try { android.system.Os.chmod(targetEsqlite.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
             }
 
+            File nativeMono = new File(getApplicationInfo().nativeLibraryDir, "libMonoPosixHelper.so");
             File prefixMono = new File(prefix, "lib/libMonoPosixHelper.so");
-            if (!prefixMono.exists()) {
+            File prefixNoLibMono = new File(prefix, "lib/MonoPosixHelper.so");
+            File targetMono = new File(parent, "libMonoPosixHelper.so");
+            File targetNoLibMono = new File(parent, "MonoPosixHelper.so");
+
+            if (nativeMono.exists()) {
+                copyFile(nativeMono, prefixMono);
+                copyFile(nativeMono, targetMono);
+                copyFile(nativeMono, targetNoLibMono);
+            } else {
                 try (InputStream in = getAssets().open("libMonoPosixHelper.so");
                      OutputStream out = new FileOutputStream(prefixMono)) {
                     byte[] buf = new byte[8192];
@@ -6482,15 +6491,25 @@ public final class FishbowlActivity extends AppCompatActivity
                     while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
                 } catch (Throwable ignored) {}
                 if (prefixMono.exists()) {
-                    try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                    copyFile(prefixMono, targetMono);
+                    copyFile(prefixMono, targetNoLibMono);
                 }
             }
-            File targetMono = new File(parent, "libMonoPosixHelper.so");
-            if (prefixMono.exists()) copyFile(prefixMono, targetMono);
+            if (prefixMono.exists()) {
+                try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
+            if (prefixNoLibMono.exists()) {
+                try { android.system.Os.chmod(prefixNoLibMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
             if (targetMono.exists()) {
                 targetMono.setReadable(true, false);
                 targetMono.setExecutable(true, false);
                 try { android.system.Os.chmod(targetMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
+            if (targetNoLibMono.exists()) {
+                targetNoLibMono.setReadable(true, false);
+                targetNoLibMono.setExecutable(true, false);
+                try { android.system.Os.chmod(targetNoLibMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
             }
 
             File jfConfig = new File(prefix, "lib/jellyfin/jellyfin.runtimeconfig.json");

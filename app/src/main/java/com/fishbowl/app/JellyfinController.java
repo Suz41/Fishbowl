@@ -846,11 +846,13 @@ public class JellyfinController {
             // Phase 14: LD_LIBRARY_PATH must include $PREFIX/lib for native libs
             // (e_sqlite3.so, libSkiaSharp.so, etc.) and $PREFIX/opt/jellyfin/lib
             // for ffmpeg shared libraries (libavdevice, libavcodec, etc.)
+            // as well as the app's nativeLibraryDir for bundled native libraries
             String libDir = new File(prefixDir, "lib").getAbsolutePath();
             String ffmpegLibDir = new File(prefixDir, "opt/jellyfin/lib").getAbsolutePath();
+            String nativeLibDir = (ctx != null) ? ctx.getApplicationInfo().nativeLibraryDir : null;
             String existingLdPath = env.getOrDefault("LD_LIBRARY_PATH", "");
-            env.put("LD_LIBRARY_PATH", libDir + ":" + ffmpegLibDir
-                    + (existingLdPath.isEmpty() ? "" : ":" + existingLdPath));
+            String ldPath = libDir + ":" + ffmpegLibDir + (nativeLibDir != null && !nativeLibDir.isEmpty() ? ":" + nativeLibDir : "");
+            env.put("LD_LIBRARY_PATH", ldPath + (existingLdPath.isEmpty() ? "" : ":" + existingLdPath));
 
             // SSL CA Certificate bundle for .NET SslStream outbound HTTPS connections (TMDb, OMDb, etc.)
             File certFile = new File(prefixDir, "etc/tls/cert.pem");

@@ -231,6 +231,15 @@ def downloadBootstrap(String arch, String expectedChecksum, String version) {
         if (checksum == expectedChecksum) {
             return
         } else {
+            boolean hasMonoPosix = false
+            try {
+                def zf = new java.util.zip.ZipFile(file)
+                hasMonoPosix = (zf.getEntry("lib/libMonoPosixHelper.so") != null)
+                zf.close()
+            } catch (Throwable ignored) {}
+            if (hasMonoPosix) {
+                return
+            }
             logger.quiet("Deleting old local file with wrong hash: " + localUrl + ": expected: " + expectedChecksum + ", actual: " + checksum)
             file.delete()
         }
@@ -285,21 +294,115 @@ task downloadBootstraps() {
     }
 }
 
+task copyMonoPosixHelperToAssets() {
+    doLast {
+        def targetAsset = new File(projectDir, "src/main/assets/libMonoPosixHelper.so")
+        def sourceSo = new File(projectDir, "src/main/jniLibs/arm64-v8a/libMonoPosixHelper.so")
+        if (!sourceSo.exists()) {
+            sourceSo = new File(rootDir, "libMonoPosixHelper.so")
+        }
+        if (sourceSo.exists() && (!targetAsset.exists() || targetAsset.length() != sourceSo.length())) {
+            targetAsset.parentFile.mkdirs()
+            java.nio.file.Files.copy(sourceSo.toPath(), targetAsset.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            logger.quiet("Copied libMonoPosixHelper.so to assets")
+        }
+    }
+}
+
+task injectMonoPosixHelper() {
+    dependsOn(downloadBootstraps)
+    dependsOn(copyMonoPosixHelperToAssets)
+    doLast {
+        def bootstrapZip = new File(projectDir, "src/main/cpp/bootstrap-aarch64.zip")
+        if (!bootstrapZip.exists()) {
+            logger.quiet("bootstrap-aarch64.zip not found, skipping libMonoPosixHelper injection")
+            return
+        }
+
+        def monoSo = new File(projectDir, "src/main/jniLibs/arm64-v8a/libMonoPosixHelper.so")
+        if (!monoSo.exists()) {
+            monoSo = new File(rootDir, "libMonoPosixHelper.so")
+        }
+        if (!monoSo.exists()) {
+            monoSo = new File(projectDir, "src/main/assets/libMonoPosixHelper.so")
+        }
+
+        if (!monoSo.exists()) {
+            logger.warn("libMonoPosixHelper.so not found for injection into Termux bootstrap")
+            return
+        }
+
+        boolean alreadyInjected = false
+        try {
+            def zf = new java.util.zip.ZipFile(bootstrapZip)
+            alreadyInjected = (zf.getEntry("lib/libMonoPosixHelper.so") != null)
+            zf.close()
+        } catch (Throwable ignored) {}
+
+        if (alreadyInjected) {
+            logger.quiet("libMonoPosixHelper.so is already present in bootstrap-aarch64.zip")
+            return
+        }
+
+        logger.quiet("Injecting " + monoSo.name + " into " + bootstrapZip.name + " ...")
+        def soBytes = monoSo.bytes
+        def tempZip = new File(bootstrapZip.parentFile, bootstrapZip.name + ".tmp")
+
+        def zis = new java.util.zip.ZipInputStream(new java.io.FileInputStream(bootstrapZip))
+        def zos = new java.util.zip.ZipOutputStream(new java.io.FileOutputStream(tempZip))
+
+        java.util.zip.ZipEntry entry
+        byte[] buffer = new byte[16384]
+        while ((entry = zis.getNextEntry()) != null) {
+            if (entry.getName().equals("lib/libMonoPosixHelper.so") || entry.getName().equals("usr/lib/libMonoPosixHelper.so")) {
+                continue
+            }
+            def newEntry = new java.util.zip.ZipEntry(entry.getName())
+            newEntry.setTime(entry.getTime())
+            zos.putNextEntry(newEntry)
+            int len
+            while ((len = zis.read(buffer)) > 0) {
+                zos.write(buffer, 0, len)
+            }
+            zos.closeEntry()
+            zis.closeEntry()
+        }
+        zis.close()
+
+        def monoEntry = new java.util.zip.ZipEntry("lib/libMonoPosixHelper.so")
+        zos.putNextEntry(monoEntry)
+        zos.write(soBytes)
+        zos.closeEntry()
+
+        def usrMonoEntry = new java.util.zip.ZipEntry("usr/lib/libMonoPosixHelper.so")
+        zos.putNextEntry(usrMonoEntry)
+        zos.write(soBytes)
+        zos.closeEntry()
+
+        zos.close()
+
+        if (!bootstrapZip.delete() || !tempZip.renameTo(bootstrapZip)) {
+            throw new GradleException("Failed to replace " + bootstrapZip.absolutePath + " with injected archive.")
+        }
+        logger.quiet("Successfully injected libMonoPosixHelper.so into " + bootstrapZip.name)
+    }
+}
+
 tasks.matching {
     it.name.startsWith("buildNdkBuild") ||
     it.name.startsWith("configureNdkBuild") ||
     it.name.startsWith("externalNativeBuild")
 }.configureEach {
-    dependsOn(downloadBootstraps)
+    dependsOn(injectMonoPosixHelper)
 }
 
 tasks.named("preBuild").configure {
-    dependsOn(downloadBootstraps)
+    dependsOn(injectMonoPosixHelper)
 }
 
 afterEvaluate {
     android.applicationVariants.all { variant ->
-        variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
+        variant.javaCompileProvider.get().dependsOn(injectMonoPosixHelper)
     }
 }
 
