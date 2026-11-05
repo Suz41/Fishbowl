@@ -238,8 +238,10 @@ public class ManagedService {
 
             if (isError) {
                 errorLines.add(line);
-                inStackTrace = lower.contains("exception") || lower.contains("traceback");
-            } else if (inStackTrace && (line.startsWith("   at ") || line.startsWith("\tat ") || line.startsWith("  File "))) {
+                inStackTrace = lower.contains("exception") || lower.contains("traceback")
+                        || lower.contains("native crash") || lower.contains("sigsegv");
+            } else if (inStackTrace && (line.startsWith("   at ") || line.startsWith("\tat ") || line.startsWith("  File ")
+                    || line.startsWith("=") || line.startsWith("\t") || line.contains("0x") || line.contains("#"))) {
                 errorLines.add(line);
             } else {
                 inStackTrace = false;

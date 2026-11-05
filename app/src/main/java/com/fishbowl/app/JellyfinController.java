@@ -870,8 +870,10 @@ public class JellyfinController {
             env.put("DOTNET_gcServer", "0");
             env.put("DOTNET_gcConcurrent", "1");
             env.put("DOTNET_GCHighMemPercent", "80");
-            env.put("DOTNET_ThreadPool_MinThreads", "2");
-            env.put("DOTNET_ThreadPool_MaxThreads", "24");
+            env.put("DOTNET_ThreadPool_MinThreads", "4");
+            env.put("DOTNET_ThreadPool_MaxThreads", "64");
+            env.put("DOTNET_DefaultStackSize", "2097152");
+            env.put("COMPlus_DefaultStackSize", "2097152");
             env.put("DOTNET_EnableWriteXorExecute", "0");
 
             // §2: Merge stdout+stderr to prevent blocked pipe
