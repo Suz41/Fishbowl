@@ -208,28 +208,30 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             return false;
         }
         String endpoint = s.getManifest().getHealthCheckPath();
-        if (endpoint == null || endpoint.trim().isEmpty() || "/".equals(endpoint)) {
-            return true;
+        if (endpoint == null || endpoint.trim().isEmpty()) {
+            endpoint = "/";
         }
         String apiKey = getServiceApiKey(s.getId());
         String urlStr = "http://127.0.0.1:" + port + endpoint;
-        if (apiKey != null && !apiKey.trim().isEmpty() && !urlStr.contains("apiKey=")) {
-            urlStr += (urlStr.contains("?") ? "&" : "?") + "apiKey=" + apiKey.trim();
-        }
+        HttpURLConnection conn = null;
         try {
             URL u = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) u.openConnection();
-            conn.setConnectTimeout(2000);
-            conn.setReadTimeout(2000);
+            conn = (HttpURLConnection) u.openConnection();
+            conn.setConnectTimeout(2500);
+            conn.setReadTimeout(2500);
             conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(false);
             if (apiKey != null && !apiKey.trim().isEmpty()) {
                 conn.setRequestProperty("X-Api-Key", apiKey.trim());
             }
             int code = conn.getResponseCode();
-            conn.disconnect();
-            return code >= 200 && code < 500;
+            return (code >= 200 && code < 400) || code == 401 || code == 409;
         } catch (Throwable t) {
-            return isPortOccupied(port);
+            return false;
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
         }
     }
 
