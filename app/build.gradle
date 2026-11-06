@@ -166,6 +166,11 @@ android {
         abortOnError false
         checkReleaseBuilds false
         disable 'ProtectedPermissions'
+        warningsAsErrors false
+        checkAllWarnings false
+        ignoreTestSources true
+        htmlReport true
+        xmlReport true
     }
 
     testOptions {
