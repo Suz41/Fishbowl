@@ -44,6 +44,9 @@ public class JellyfinServerService extends Service implements JellyfinController
     public  static final String ACTION_START_JELLYFIN = "com.fishbowl.app.START_JELLYFIN";
     public  static final String ACTION_STOP_JELLYFIN  = "com.fishbowl.app.STOP_JELLYFIN";
     public  static final String ACTION_START_ALL      = "com.fishbowl.app.START_ALL";
+    public  static final String ACTION_RESTART_ALL    = "com.fishbowl.app.RESTART_ALL";
+    public  static final String ACTION_TOGGLE_SERVICE = "com.fishbowl.app.TOGGLE_SERVICE";
+    public  static final String EXTRA_SERVICE_ID      = "service_id";
     public  static final String ACTION_STOP           = "com.fishbowl.app.STOP";
     public  static final String ACTION_STOP_ALL       = "com.fishbowl.app.STOP_ALL";
     public  static final String ACTION_KEEP_ALIVE     = "com.fishbowl.app.KEEP_ALIVE";
@@ -146,6 +149,56 @@ public class JellyfinServerService extends Service implements JellyfinController
                 controller.stop();
                 updateNotificationState();
                 stopSelf();
+            } else if (ACTION_RESTART_ALL.equals(action)) {
+                Log.i(TAG, "Service received RESTART_ALL - restarting all media stack services");
+                hasStarted = true;
+                acquireLocks();
+                promoteToForeground(buildNotification("Fishbowl Stack", "Restarting services...", false));
+                if (serviceManager != null) {
+                    serviceManager.stopAllServices();
+                }
+                controller.stop();
+                updateNotificationState();
+                lockHandler.postDelayed(() -> {
+                    if (serviceManager != null) {
+                        serviceManager.startAllServices();
+                    } else {
+                        controller.start(getApplicationContext());
+                    }
+                    updateNotificationState();
+                }, 1500);
+            } else if (ACTION_TOGGLE_SERVICE.equals(action)) {
+                String serviceId = intent.getStringExtra(EXTRA_SERVICE_ID);
+                Log.i(TAG, "Service received TOGGLE_SERVICE for: " + serviceId);
+                if ("jellyfin".equalsIgnoreCase(serviceId)) {
+                    if (controller.getState() == JellyfinController.State.RUNNING) {
+                        Log.i(TAG, "Stopping Jellyfin via service toggle");
+                        if (serviceManager != null) serviceManager.recordServiceActive("jellyfin", false);
+                        controller.stop();
+                    } else {
+                        Log.i(TAG, "Starting Jellyfin via service toggle");
+                        hasStarted = true;
+                        acquireLocks();
+                        promoteToForeground(buildNotification("Jellyfin Server", "Starting...", false));
+                        if (serviceManager != null) serviceManager.recordServiceActive("jellyfin", true);
+                        controller.start(getApplicationContext());
+                    }
+                } else if (serviceManager != null && serviceId != null) {
+                    com.fishbowl.app.model.ManagedService ms = serviceManager.getService(serviceId);
+                    if (ms != null) {
+                        if (ms.isRunning()) {
+                            Log.i(TAG, "Stopping companion service via toggle: " + serviceId);
+                            serviceManager.stopService(serviceId);
+                        } else {
+                            Log.i(TAG, "Starting companion service via toggle: " + serviceId);
+                            hasStarted = true;
+                            acquireLocks();
+                            promoteToForeground(buildNotification("Fishbowl Services", "Starting " + ms.getDisplayName() + "...", false));
+                            serviceManager.startService(serviceId, getApplicationContext());
+                        }
+                    }
+                }
+                updateNotificationState();
             } else if (ACTION_KEEP_ALIVE.equals(action)) {
                 hasStarted = true;
                 acquireLocks();
@@ -315,6 +368,7 @@ public class JellyfinServerService extends Service implements JellyfinController
                 Notification notification = buildNotification(title, shortText, expandedText, subText, iconRes, jfRunning, anyRunning, isInitializing, isFailed);
                 promoteToForeground(notification);
                 com.fishbowl.app.widget.FishbowlWidgetProvider.updateAllWidgets(getApplicationContext());
+                com.fishbowl.app.widget.FishbowlServicesWidgetProvider.updateAllWidgets(getApplicationContext());
             } else if (isFailed && hasStarted) {
                 // Failure occurred - report real error instead of leaving "Starting..." or stopping silently
                 serviceStartTimeMs = 0;
@@ -324,12 +378,14 @@ public class JellyfinServerService extends Service implements JellyfinController
                 Notification failNotif = buildNotification(title, err, err, "Error", R.drawable.ic_notification_jellyfin, false, false, false, true);
                 promoteToForeground(failNotif);
                 com.fishbowl.app.widget.FishbowlWidgetProvider.updateAllWidgets(getApplicationContext());
+                com.fishbowl.app.widget.FishbowlServicesWidgetProvider.updateAllWidgets(getApplicationContext());
             } else if (hasStarted) {
                 // Fully stopped cleanly after having been active
                 serviceStartTimeMs = 0;
                 hasStarted = false;
                 releaseLocks();
                 com.fishbowl.app.widget.FishbowlWidgetProvider.updateAllWidgets(getApplicationContext());
+                com.fishbowl.app.widget.FishbowlServicesWidgetProvider.updateAllWidgets(getApplicationContext());
                 try {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         stopForeground(STOP_FOREGROUND_REMOVE);
@@ -537,26 +593,6 @@ public class JellyfinServerService extends Service implements JellyfinController
     }
 
     private String getLanAddress() {
-        try {
-            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
-            if (interfaces == null) return null;
-            while (interfaces.hasMoreElements()) {
-                NetworkInterface intf = interfaces.nextElement();
-                if (!intf.isUp() || intf.isLoopback()) continue;
-                String name = intf.getName() != null ? intf.getName().toLowerCase(Locale.ROOT) : "";
-                if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("dummy")) continue;
-                Enumeration<java.net.InetAddress> addrs = intf.getInetAddresses();
-                while (addrs.hasMoreElements()) {
-                    java.net.InetAddress addr = addrs.nextElement();
-                    if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
-                        String host = addr.getHostAddress();
-                        if (host != null && !host.startsWith("192.0.0.")) {
-                            return "http://" + host + ":8096";
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
-        return null;
+        return NetworkUtils.getLanAddress();
     }
 }

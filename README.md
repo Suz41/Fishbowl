@@ -195,9 +195,10 @@ flowchart TD
 
     subgraph AndroidHost["Android Host System (Unprivileged User Space)"]
         direction TB
-        FGS["Foreground Media Service (Ongoing Notification + WakeLock)"]
+        FGS["Foreground Media Service (Public Ongoing Notification + WakeLock)"]
         UI["Fishbowl Control Plane (Dashboard, Disk Log Viewer, Settings)"]
         Widgets["Android Home Widgets (Status & Service Quick-Tiles)"]
+        Tile["Android Quick Settings Tile (1-Tap Server Control)"]
     end
 
     subgraph Engine["Native POSIX Runtime (Linux Bionic libc)"]

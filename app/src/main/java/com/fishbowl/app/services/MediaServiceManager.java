@@ -4830,17 +4830,45 @@ public class MediaServiceManager {
             }
         }
         if ("seerr".equals(id)) {
-            File cfg = new File(home, ".config/seerr/settings.json");
-            if (cfg.exists()) {
-                try {
+            File[] candidateFiles = new File[] {
+                new File(home, ".config/seerr/settings.json"),
+                new File(home, "services/seerr/config/settings.json"),
+                new File(home, "services/seerr/settings.json"),
+                new File(home, ".config/jellyseerr/settings.json")
+            };
+            for (File cfg : candidateFiles) {
+                if (cfg.exists()) {
+                    try {
+                        String text = readTextFile(cfg);
+                        if (text != null && !text.trim().isEmpty()) {
+                            org.json.JSONObject obj = new org.json.JSONObject(text);
+                            org.json.JSONObject main = obj.optJSONObject("main");
+                            if (main != null && main.has("apiKey")) {
+                                String key = main.optString("apiKey", "").trim();
+                                if (!key.isEmpty()) return key;
+                            }
+                            if (obj.has("apiKey")) {
+                                String key = obj.optString("apiKey", "").trim();
+                                if (!key.isEmpty()) return key;
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+            try {
+                ensureServiceConfigSanitized("seerr");
+                File cfg = new File(home, ".config/seerr/settings.json");
+                if (cfg.exists()) {
                     String text = readTextFile(cfg);
-                    if (text != null) {
+                    if (text != null && !text.trim().isEmpty()) {
                         org.json.JSONObject obj = new org.json.JSONObject(text);
                         org.json.JSONObject main = obj.optJSONObject("main");
-                        if (main != null) return main.optString("apiKey", null);
+                        if (main != null && main.has("apiKey")) {
+                            return main.optString("apiKey", null);
+                        }
                     }
-                } catch (Exception ignored) {}
-            }
+                }
+            } catch (Exception ignored) {}
         }
         if ("bazarr".equals(id)) {
             File cfg = new File(home, ".config/bazarr/config/config.yaml");

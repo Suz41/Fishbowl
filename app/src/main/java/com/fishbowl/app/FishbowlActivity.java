@@ -4686,8 +4686,14 @@ public final class FishbowlActivity extends AppCompatActivity
             credVal = "Username: fishbowl  |  Password: fishbowl";
             copyCredVal = "User: fishbowl | Password: fishbowl";
         } else if ("seerr".equalsIgnoreCase(id)) {
-            credVal = "Jellyfin Single Sign-On (Admin user)";
-            copyCredVal = "http://127.0.0.1:5055";
+            String seerrKey = MediaServiceManager.getInstance(this).getServiceApiKey("seerr");
+            if (seerrKey != null && !seerrKey.trim().isEmpty()) {
+                credVal = "API Key: " + seerrKey + "\n(Or Jellyfin SSO Admin user)";
+                copyCredVal = seerrKey;
+            } else {
+                credVal = "Jellyfin Single Sign-On (Admin user)";
+                copyCredVal = "http://127.0.0.1:5055";
+            }
         } else {
             String apiKey = MediaServiceManager.getInstance(this).getServiceApiKey(id);
             if (apiKey != null && !apiKey.isEmpty()) {
@@ -5260,8 +5266,8 @@ public final class FishbowlActivity extends AppCompatActivity
         }
         sb.append("\n");
 
-        // [4] Target Service Specific Error Logs
-        sb.append("[4] SERVICE ERROR & CRASH LOGS\n");
+        // [4] Service Error & Operational Audit
+        sb.append("[4] SERVICE ERROR & OPERATIONAL AUDIT\n");
         if (targetSvc != null) {
             String errLogs = targetSvc.getErrorAndCrashLogs(150);
             if (!errLogs.trim().isEmpty()) {
@@ -5272,7 +5278,27 @@ public final class FishbowlActivity extends AppCompatActivity
                 sb.append(targetSvc.getRecentLogs(30)).append("\n");
             }
         } else {
-            sb.append("(No specific target service selected)\n");
+            boolean hasAnyErrors = false;
+            if (jf != null && jf.getLastError() != null && !jf.getLastError().isEmpty()) {
+                sb.append("--- Jellyfin Error ---\n").append(jf.getLastError()).append("\n\n");
+                hasAnyErrors = true;
+            }
+            if (mgr != null) {
+                for (ManagedService s : mgr.getAllServices()) {
+                    if ("jellyfin".equalsIgnoreCase(s.getId())) continue;
+                    String sErr = s.getErrorAndCrashLogs(50);
+                    if (sErr != null && !sErr.trim().isEmpty()) {
+                        sb.append("--- ").append(s.getDisplayName()).append(" Error Logs ---\n").append(sErr).append("\n\n");
+                        hasAnyErrors = true;
+                    } else if (s.getLastError() != null && !s.getLastError().isEmpty()) {
+                        sb.append("--- ").append(s.getDisplayName()).append(" Last Error ---\n").append(s.getLastError()).append("\n\n");
+                        hasAnyErrors = true;
+                    }
+                }
+            }
+            if (!hasAnyErrors) {
+                sb.append("[OK] All media stack services are operating nominally with 0 recorded error events.\n");
+            }
         }
         sb.append("======================================================================\n");
         return sb.toString();
@@ -6123,7 +6149,61 @@ public final class FishbowlActivity extends AppCompatActivity
         return null;
     }
 
+    private static boolean isDebPackageAlreadyInstalled(String pkgName, File prefixDir) {
+        if (prefixDir == null || !prefixDir.exists()) return false;
+        File bin = new File(prefixDir, "bin");
+        File lib = new File(prefixDir, "lib");
+        switch (pkgName.toLowerCase(Locale.ROOT)) {
+            case "libc++":
+                return new File(lib, "libc++_shared.so").exists();
+            case "zlib":
+                return new File(lib, "libz.so").exists();
+            case "openssl":
+                return new File(lib, "libssl.so.3").exists() || new File(lib, "libcrypto.so.3").exists();
+            case "c-ares":
+                return new File(lib, "libcares.so").exists();
+            case "libicu":
+                return new File(lib, "libicuuc.so").exists() || new File(lib, "libicudata.so").exists();
+            case "libsqlite":
+                return new File(lib, "libsqlite3.so").exists();
+            case "nodejs-lts":
+                return new File(bin, "node").exists();
+            case "python":
+                return new File(bin, "python3").exists() || new File(bin, "python").exists();
+            case "7zip":
+                return new File(bin, "7z").exists();
+            case "transmission":
+                return new File(bin, "transmission-daemon").exists();
+            case "libevent":
+                return new File(lib, "libevent.so").exists();
+            case "miniupnpc":
+                return new File(lib, "libminiupnpc.so").exists();
+            case "natpmpc":
+                return new File(lib, "libnatpmp.so").exists();
+            case "libpsl":
+                return new File(lib, "libpsl.so").exists();
+            case "libidn2":
+                return new File(lib, "libidn2.so").exists();
+            case "libbz2":
+                return new File(lib, "libbz2.so").exists();
+            case "libffi":
+                return new File(lib, "libffi.so").exists();
+            case "liblzma":
+                return new File(lib, "liblzma.so").exists();
+            case "zstd":
+                return new File(lib, "libzstd.so").exists();
+            case "readline":
+                return new File(lib, "libreadline.so").exists();
+            default:
+                return false;
+        }
+    }
+
     private void downloadAndInstallDebPackage(String pkgName, File prefixDir, OledProgressDialog progress, String stepDescription) throws Exception {
+        if (isDebPackageAlreadyInstalled(pkgName, prefixDir)) {
+            Log.i(TAG, "[FastInstall] Package " + pkgName + " already present in prefix, skipping download.");
+            return;
+        }
         if (progress != null && progress.isCancelled()) {
             throw new InterruptedException("Installation cancelled");
         }
@@ -6690,35 +6770,62 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(18), dp(18), dp(18));
-        root.setBackground(createBorderedRoundedDrawable(Color.BLACK, Color.parseColor("#27272A"), dp(1), dp(14)));
+        root.setBackground(createBorderedRoundedDrawable(Color.parseColor("#09090B"), Color.parseColor("#27272A"), dp(1), dp(16)));
+
+        // Header badge
+        TextView badge = new TextView(this);
+        badge.setText("MEDIA STACK INSTALLER");
+        badge.setTextSize(9f);
+        badge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        badge.setTextColor(Color.parseColor("#38BDF8"));
+        badge.setLetterSpacing(0.08f);
+        root.addView(badge);
 
         TextView titleTv = new TextView(this);
-        titleTv.setText("INSTALL SERVICES");
-        titleTv.setTextSize(13.5f);
-        titleTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        titleTv.setText("Select Services to Install");
+        titleTv.setTextSize(15f);
+        titleTv.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         titleTv.setTextColor(Color.WHITE);
+        titleTv.setPadding(0, dp(2), 0, 0);
         root.addView(titleTv);
 
         TextView subTv = new TextView(this);
-        subTv.setText("Choose companion services to download:");
-        subTv.setTextSize(10.5f);
-        subTv.setTypeface(Typeface.MONOSPACE);
+        subTv.setText("Choose companion engines to deploy to your media stack:");
+        subTv.setTextSize(11f);
         subTv.setTextColor(Color.parseColor("#A1A1AA"));
-        subTv.setPadding(0, dp(4), 0, dp(12));
+        subTv.setPadding(0, dp(2), 0, dp(12));
         root.addView(subTv);
 
+        // Select All Pill Card
+        LinearLayout selectAllCard = new LinearLayout(this);
+        selectAllCard.setOrientation(LinearLayout.HORIZONTAL);
+        selectAllCard.setGravity(Gravity.CENTER_VERTICAL);
+        selectAllCard.setPadding(dp(12), dp(8), dp(12), dp(8));
+        selectAllCard.setBackground(createBorderedRoundedDrawable(Color.parseColor("#121215"), Color.parseColor("#27272A"), dp(1), dp(10)));
+        LinearLayout.LayoutParams sacLp = new LinearLayout.LayoutParams(-1, -2);
+        sacLp.bottomMargin = dp(10);
+        selectAllCard.setLayoutParams(sacLp);
+
         CheckBox selectAllCb = new CheckBox(this);
-        selectAllCb.setText("Select All (" + candidates.size() + ")");
-        selectAllCb.setTextSize(11f);
-        selectAllCb.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        selectAllCb.setTextColor(Color.WHITE);
         selectAllCb.setChecked(true);
-        root.addView(selectAllCb);
+        selectAllCard.addView(selectAllCb);
+
+        TextView selectAllLabel = new TextView(this);
+        selectAllLabel.setText("Select All (" + candidates.size() + " available)");
+        selectAllLabel.setTextSize(11.5f);
+        selectAllLabel.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        selectAllLabel.setTextColor(Color.WHITE);
+        selectAllLabel.setPadding(dp(8), 0, 0, 0);
+        selectAllCard.addView(selectAllLabel, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        selectAllCard.setClickable(true);
+        selectAllCard.setOnClickListener(v -> selectAllCb.setChecked(!selectAllCb.isChecked()));
+        root.addView(selectAllCard);
 
         ScrollView sv = new ScrollView(this);
+        sv.setOverScrollMode(View.OVER_SCROLL_NEVER);
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(0, dp(8), 0, dp(8));
 
         List<CheckBox> itemCbs = new ArrayList<>();
         Button actionBtn = createPixelButton("INSTALL (" + selectedIds.size() + ")", Color.parseColor("#0284C7"), Color.WHITE);
@@ -6726,22 +6833,48 @@ public final class FishbowlActivity extends AppCompatActivity
         Runnable updateButtonText = () -> {
             actionBtn.setText("INSTALL (" + selectedIds.size() + ")");
             actionBtn.setEnabled(!selectedIds.isEmpty());
-            actionBtn.setAlpha(selectedIds.isEmpty() ? 0.4f : 1.0f);
+            actionBtn.setAlpha(selectedIds.isEmpty() ? 0.35f : 1.0f);
         };
 
         for (ManagedService s : candidates) {
-            LinearLayout itemRow = new LinearLayout(this);
-            itemRow.setOrientation(LinearLayout.HORIZONTAL);
-            itemRow.setGravity(Gravity.CENTER_VERTICAL);
-            itemRow.setPadding(0, dp(4), 0, dp(4));
+            LinearLayout itemCard = new LinearLayout(this);
+            itemCard.setOrientation(LinearLayout.HORIZONTAL);
+            itemCard.setGravity(Gravity.CENTER_VERTICAL);
+            itemCard.setPadding(dp(12), dp(10), dp(12), dp(10));
+            itemCard.setBackground(createBorderedRoundedDrawable(Color.parseColor("#121215"), Color.parseColor("#27272A"), dp(1), dp(10)));
+            LinearLayout.LayoutParams icLp = new LinearLayout.LayoutParams(-1, -2);
+            icLp.bottomMargin = dp(6);
+            itemCard.setLayoutParams(icLp);
+
+            ImageView iconView = new ImageView(this);
+            iconView.setImageResource(getServiceIconRes(s.getId()));
+            iconView.setPadding(dp(4), dp(4), dp(4), dp(4));
+            iconView.setBackground(createBorderedRoundedDrawable(Color.parseColor("#18181B"), Color.parseColor("#3F3F46"), dp(1), dp(8)));
+            itemCard.addView(iconView, new LinearLayout.LayoutParams(dp(32), dp(32)));
+
+            LinearLayout textCol = new LinearLayout(this);
+            textCol.setOrientation(LinearLayout.VERTICAL);
+            textCol.setPadding(dp(10), 0, dp(10), 0);
+
+            TextView nameTv = new TextView(this);
+            nameTv.setText(s.getDisplayName());
+            nameTv.setTextSize(12f);
+            nameTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+            nameTv.setTextColor(Color.WHITE);
+            textCol.addView(nameTv);
+
+            int port = (s.getManifest() != null) ? s.getManifest().getDefaultPort() : 0;
+            long reqMb = (s.getManifest() != null) ? s.getManifest().getStorageRequiredMb() : 0;
+            TextView descTv = new TextView(this);
+            descTv.setText("Port " + port + " â€¢ ~" + reqMb + " MB");
+            descTv.setTextSize(10f);
+            descTv.setTextColor(Color.parseColor("#71717A"));
+            textCol.addView(descTv);
+
+            itemCard.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
             CheckBox cb = new CheckBox(this);
             cb.setChecked(true);
-            int port = (s.getManifest() != null) ? s.getManifest().getDefaultPort() : 0;
-            cb.setText(port > 0 ? (s.getDisplayName() + " (:" + port + ")") : s.getDisplayName());
-            cb.setTextSize(11f);
-            cb.setTypeface(Typeface.MONOSPACE);
-            cb.setTextColor(Color.parseColor("#E4E4E7"));
             cb.setOnCheckedChangeListener((btn, isChecked) -> {
                 if (isChecked) {
                     selectedIds.add(s.getId());
@@ -6754,20 +6887,24 @@ public final class FishbowlActivity extends AppCompatActivity
                 updateButtonText.run();
             });
             itemCbs.add(cb);
-            itemRow.addView(cb);
-            list.addView(itemRow);
+            itemCard.addView(cb);
+
+            itemCard.setClickable(true);
+            itemCard.setOnClickListener(v -> cb.setChecked(!cb.isChecked()));
+
+            list.addView(itemCard);
         }
 
         setupSelectAllListener(selectAllCb, candidates, itemCbs, selectedIds, updateButtonText);
 
-        sv.addView(list, new LinearLayout.LayoutParams(-1, dp(180)));
-        root.addView(sv);
+        sv.addView(list, new LinearLayout.LayoutParams(-1, -2));
+        root.addView(sv, new LinearLayout.LayoutParams(-1, dp(220)));
 
         LinearLayout footer = new LinearLayout(this);
         footer.setOrientation(LinearLayout.HORIZONTAL);
         footer.setPadding(0, dp(14), 0, 0);
 
-        Button cancelBtn = createOutlinePixelButton("CANCEL", Color.parseColor("#71717A"), Color.parseColor("#A1A1AA"));
+        Button cancelBtn = createOutlinePixelButton("CANCEL", Color.parseColor("#3F3F46"), Color.parseColor("#A1A1AA"));
         cancelBtn.setTextSize(10f);
         cancelBtn.setOnClickListener(v -> d.dismiss());
         footer.addView(cancelBtn, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
@@ -6788,7 +6925,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 installMultipleServicesSequentially(toInstall);
             }
         });
-        footer.addView(actionBtn, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+        footer.addView(actionBtn, new LinearLayout.LayoutParams(0, dp(38), 1.2f));
 
         root.addView(footer);
         d.setContentView(root);
@@ -6797,7 +6934,7 @@ public final class FishbowlActivity extends AppCompatActivity
             d.getWindow().setDimAmount(0.85f);
             WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
             lp.copyFrom(d.getWindow().getAttributes());
-            lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.90);
+            lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.92);
             lp.height = WindowManager.LayoutParams.WRAP_CONTENT;
             d.getWindow().setAttributes(lp);
         }
@@ -6829,57 +6966,109 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(18), dp(18), dp(18));
-        root.setBackground(createBorderedRoundedDrawable(Color.BLACK, Color.parseColor("#27272A"), dp(1), dp(14)));
+        root.setBackground(createBorderedRoundedDrawable(Color.parseColor("#09090B"), Color.parseColor("#27272A"), dp(1), dp(16)));
+
+        // Header badge
+        TextView badge = new TextView(this);
+        badge.setText("STORAGE MANAGEMENT");
+        badge.setTextSize(9f);
+        badge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        badge.setTextColor(Color.parseColor("#EF4444"));
+        badge.setLetterSpacing(0.08f);
+        root.addView(badge);
 
         TextView titleTv = new TextView(this);
-        titleTv.setText("UNINSTALL SERVICES");
-        titleTv.setTextSize(13.5f);
-        titleTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        titleTv.setTextColor(Color.parseColor("#EF4444"));
+        titleTv.setText("Select Services to Uninstall");
+        titleTv.setTextSize(15f);
+        titleTv.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        titleTv.setTextColor(Color.WHITE);
+        titleTv.setPadding(0, dp(2), 0, 0);
         root.addView(titleTv);
 
         TextView subTv = new TextView(this);
-        subTv.setText("Choose services to remove from device:");
-        subTv.setTextSize(10.5f);
-        subTv.setTypeface(Typeface.MONOSPACE);
+        subTv.setText("Choose services to remove and reclaim storage:");
+        subTv.setTextSize(11f);
         subTv.setTextColor(Color.parseColor("#A1A1AA"));
-        subTv.setPadding(0, dp(4), 0, dp(12));
+        subTv.setPadding(0, dp(2), 0, dp(12));
         root.addView(subTv);
 
+        // Select All Pill Card
+        LinearLayout selectAllCard = new LinearLayout(this);
+        selectAllCard.setOrientation(LinearLayout.HORIZONTAL);
+        selectAllCard.setGravity(Gravity.CENTER_VERTICAL);
+        selectAllCard.setPadding(dp(12), dp(8), dp(12), dp(8));
+        selectAllCard.setBackground(createBorderedRoundedDrawable(Color.parseColor("#121215"), Color.parseColor("#27272A"), dp(1), dp(10)));
+        LinearLayout.LayoutParams sacLp = new LinearLayout.LayoutParams(-1, -2);
+        sacLp.bottomMargin = dp(10);
+        selectAllCard.setLayoutParams(sacLp);
+
         CheckBox selectAllCb = new CheckBox(this);
-        selectAllCb.setText("Select All (" + candidates.size() + ")");
-        selectAllCb.setTextSize(11f);
-        selectAllCb.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        selectAllCb.setTextColor(Color.WHITE);
         selectAllCb.setChecked(true);
-        root.addView(selectAllCb);
+        selectAllCard.addView(selectAllCb);
+
+        TextView selectAllLabel = new TextView(this);
+        selectAllLabel.setText("Select All (" + candidates.size() + " installed)");
+        selectAllLabel.setTextSize(11.5f);
+        selectAllLabel.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        selectAllLabel.setTextColor(Color.WHITE);
+        selectAllLabel.setPadding(dp(8), 0, 0, 0);
+        selectAllCard.addView(selectAllLabel, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        selectAllCard.setClickable(true);
+        selectAllCard.setOnClickListener(v -> selectAllCb.setChecked(!selectAllCb.isChecked()));
+        root.addView(selectAllCard);
 
         ScrollView sv = new ScrollView(this);
+        sv.setOverScrollMode(View.OVER_SCROLL_NEVER);
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(0, dp(8), 0, dp(8));
 
         List<CheckBox> itemCbs = new ArrayList<>();
-        Button actionBtn = createPixelButton("UNINSTALL (" + selectedIds.size() + ")", Color.parseColor("#EF4444"), Color.WHITE);
+        Button actionBtn = createPixelButton("UNINSTALL (" + selectedIds.size() + ")", Color.parseColor("#DC2626"), Color.WHITE);
 
         Runnable updateButtonText = () -> {
             actionBtn.setText("UNINSTALL (" + selectedIds.size() + ")");
             actionBtn.setEnabled(!selectedIds.isEmpty());
-            actionBtn.setAlpha(selectedIds.isEmpty() ? 0.4f : 1.0f);
+            actionBtn.setAlpha(selectedIds.isEmpty() ? 0.35f : 1.0f);
         };
 
         for (ManagedService s : candidates) {
-            LinearLayout itemRow = new LinearLayout(this);
-            itemRow.setOrientation(LinearLayout.HORIZONTAL);
-            itemRow.setGravity(Gravity.CENTER_VERTICAL);
-            itemRow.setPadding(0, dp(4), 0, dp(4));
+            LinearLayout itemCard = new LinearLayout(this);
+            itemCard.setOrientation(LinearLayout.HORIZONTAL);
+            itemCard.setGravity(Gravity.CENTER_VERTICAL);
+            itemCard.setPadding(dp(12), dp(10), dp(12), dp(10));
+            itemCard.setBackground(createBorderedRoundedDrawable(Color.parseColor("#121215"), Color.parseColor("#27272A"), dp(1), dp(10)));
+            LinearLayout.LayoutParams icLp = new LinearLayout.LayoutParams(-1, -2);
+            icLp.bottomMargin = dp(6);
+            itemCard.setLayoutParams(icLp);
+
+            ImageView iconView = new ImageView(this);
+            iconView.setImageResource(getServiceIconRes(s.getId()));
+            iconView.setPadding(dp(4), dp(4), dp(4), dp(4));
+            iconView.setBackground(createBorderedRoundedDrawable(Color.parseColor("#18181B"), Color.parseColor("#3F3F46"), dp(1), dp(8)));
+            itemCard.addView(iconView, new LinearLayout.LayoutParams(dp(32), dp(32)));
+
+            LinearLayout textCol = new LinearLayout(this);
+            textCol.setOrientation(LinearLayout.VERTICAL);
+            textCol.setPadding(dp(10), 0, dp(10), 0);
+
+            TextView nameTv = new TextView(this);
+            nameTv.setText(s.getDisplayName());
+            nameTv.setTextSize(12f);
+            nameTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+            nameTv.setTextColor(Color.WHITE);
+            textCol.addView(nameTv);
+
+            TextView statusTv = new TextView(this);
+            statusTv.setText(s.isRunning() ? "Running â€¢ Port " + s.getManifest().getDefaultPort() : "Stopped");
+            statusTv.setTextSize(10f);
+            statusTv.setTextColor(s.isRunning() ? Color.parseColor("#34D399") : Color.parseColor("#71717A"));
+            textCol.addView(statusTv);
+
+            itemCard.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
             CheckBox cb = new CheckBox(this);
             cb.setChecked(true);
-            cb.setText(s.getDisplayName() + (s.isRunning() ? " [RUNNING]" : ""));
-            cb.setTextSize(11f);
-            cb.setTypeface(Typeface.MONOSPACE);
-            cb.setTextColor(Color.parseColor("#E4E4E7"));
             cb.setOnCheckedChangeListener((btn, isChecked) -> {
                 if (isChecked) {
                     selectedIds.add(s.getId());
@@ -6892,29 +7081,49 @@ public final class FishbowlActivity extends AppCompatActivity
                 updateButtonText.run();
             });
             itemCbs.add(cb);
-            itemRow.addView(cb);
-            list.addView(itemRow);
+            itemCard.addView(cb);
+
+            itemCard.setClickable(true);
+            itemCard.setOnClickListener(v -> cb.setChecked(!cb.isChecked()));
+
+            list.addView(itemCard);
         }
 
         setupSelectAllListener(selectAllCb, candidates, itemCbs, selectedIds, updateButtonText);
 
-        sv.addView(list, new LinearLayout.LayoutParams(-1, dp(150)));
-        root.addView(sv);
+        sv.addView(list, new LinearLayout.LayoutParams(-1, -2));
+        root.addView(sv, new LinearLayout.LayoutParams(-1, dp(180)));
+
+        // Purge card
+        LinearLayout purgeCard = new LinearLayout(this);
+        purgeCard.setOrientation(LinearLayout.HORIZONTAL);
+        purgeCard.setGravity(Gravity.CENTER_VERTICAL);
+        purgeCard.setPadding(dp(10), dp(8), dp(10), dp(8));
+        purgeCard.setBackground(createBorderedRoundedDrawable(Color.argb(25, 239, 68, 68), Color.parseColor("#7F1D1D"), dp(1), dp(8)));
+        LinearLayout.LayoutParams pcLp = new LinearLayout.LayoutParams(-1, -2);
+        pcLp.topMargin = dp(8);
+        purgeCard.setLayoutParams(pcLp);
 
         CheckBox purgeCb = new CheckBox(this);
-        purgeCb.setText("Purge databases & configurations");
-        purgeCb.setTextSize(10f);
-        purgeCb.setTypeface(Typeface.MONOSPACE);
-        purgeCb.setTextColor(Color.parseColor("#F87171"));
         purgeCb.setChecked(false);
-        purgeCb.setPadding(0, dp(4), 0, dp(8));
-        root.addView(purgeCb);
+        purgeCard.addView(purgeCb);
+
+        TextView purgeLabel = new TextView(this);
+        purgeLabel.setText("Purge databases, configs & library indices");
+        purgeLabel.setTextSize(10.5f);
+        purgeLabel.setTextColor(Color.parseColor("#FCA5A5"));
+        purgeLabel.setPadding(dp(6), 0, 0, 0);
+        purgeCard.addView(purgeLabel, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        purgeCard.setClickable(true);
+        purgeCard.setOnClickListener(v -> purgeCb.setChecked(!purgeCb.isChecked()));
+        root.addView(purgeCard);
 
         LinearLayout footer = new LinearLayout(this);
         footer.setOrientation(LinearLayout.HORIZONTAL);
-        footer.setPadding(0, dp(8), 0, 0);
+        footer.setPadding(0, dp(12), 0, 0);
 
-        Button cancelBtn = createOutlinePixelButton("CANCEL", Color.parseColor("#71717A"), Color.parseColor("#A1A1AA"));
+        Button cancelBtn = createOutlinePixelButton("CANCEL", Color.parseColor("#3F3F46"), Color.parseColor("#A1A1AA"));
         cancelBtn.setTextSize(10f);
         cancelBtn.setOnClickListener(v -> d.dismiss());
         footer.addView(cancelBtn, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
@@ -6936,7 +7145,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 uninstallMultipleServicesSequentially(toUninstall, purge);
             }
         });
-        footer.addView(actionBtn, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+        footer.addView(actionBtn, new LinearLayout.LayoutParams(0, dp(38), 1.2f));
 
         root.addView(footer);
         d.setContentView(root);
@@ -6945,7 +7154,7 @@ public final class FishbowlActivity extends AppCompatActivity
             d.getWindow().setDimAmount(0.85f);
             WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
             lp.copyFrom(d.getWindow().getAttributes());
-            lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.90);
+            lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.92);
             lp.height = WindowManager.LayoutParams.WRAP_CONTENT;
             d.getWindow().setAttributes(lp);
         }
@@ -8294,29 +8503,6 @@ public final class FishbowlActivity extends AppCompatActivity
         btnRunDiag.setTextSize(10.5f);
         btnRunDiag.setOnClickListener(v -> showDiagnosticsModal());
         card.addView(btnRunDiag, new LinearLayout.LayoutParams(-1, dp(40)));
-
-        View spGap = new View(this);
-        card.addView(spGap, new LinearLayout.LayoutParams(1, dp(8)));
-
-        Button btnReport = createPixelButton("REPORT ISSUE / EXPORT REPORT", Color.parseColor("#18191E"), Color.parseColor("#F59E0B"));
-        btnReport.setTextSize(10.5f);
-        btnReport.setOnClickListener(v -> {
-            String fullReport = generateDiagnosticReport(null);
-            ScrollView sv = new ScrollView(this);
-            TextView rTv = new TextView(this);
-            rTv.setText(fullReport);
-            rTv.setTextSize(10f);
-            rTv.setTypeface(Typeface.MONOSPACE);
-            rTv.setTextColor(Color.parseColor("#D4D4D8"));
-            rTv.setTextIsSelectable(true);
-            rTv.setPadding(0, dp(4), 0, dp(4));
-            sv.addView(rTv);
-
-            showOledDialog("Diagnostic Report", "Complete hardware, OS & services diagnostic audit", sv,
-                    "EXPORT .TXT", Color.parseColor("#38BDF8"), () -> exportReportAsTxtFile(fullReport, "system"),
-                    "CLOSE", null);
-        });
-        card.addView(btnReport, new LinearLayout.LayoutParams(-1, dp(40)));
 
         section.addView(card);
         return section;
@@ -11076,94 +11262,23 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     public String getRawLanIp() {
-        try {
-            Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
-            if (ifaces == null) return null;
-            String tetherIp = null;
-            String fallbackIp = null;
-            while (ifaces.hasMoreElements()) {
-                NetworkInterface intf = ifaces.nextElement();
-                if (!intf.isUp() || intf.isLoopback()) continue;
-                String name = intf.getName().toLowerCase(Locale.ROOT);
-                // Exclude cellular, vpn, tunnel, and loopback virtual interfaces
-                if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("pdp")
-                        || name.startsWith("radio") || name.startsWith("dummy") || name.startsWith("tun")
-                        || name.startsWith("tailscale") || name.startsWith("sit") || name.startsWith("gre")
-                        || name.startsWith("ifb") || name.startsWith("ip_vti")) {
-                    continue;
-                }
-                Enumeration<java.net.InetAddress> addrs = intf.getInetAddresses();
-                while (addrs.hasMoreElements()) {
-                    java.net.InetAddress addr = addrs.nextElement();
-                    if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
-                        String ip = addr.getHostAddress();
-                        if (isTailscaleIp(ip)) continue;
-                        if (ip.startsWith("192.0.0.") || ip.startsWith("100.64.")) continue; // CGNAT / cellular
-
-                        // Priority 1: Wi-Fi interface (wlan)
-                        if (name.startsWith("wlan")) {
-                            return ip;
-                        }
-                        // Priority 2: USB Tethering / Ethernet (rndis, usb, eth)
-                        if (name.startsWith("rndis") || name.startsWith("usb") || name.startsWith("eth")) {
-                            tetherIp = ip;
-                        } else if (name.startsWith("ap") || name.startsWith("softap")) {
-                            fallbackIp = ip;
-                        } else if (fallbackIp == null) {
-                            fallbackIp = ip;
-                        }
-                    }
-                }
-            }
-            if (tetherIp != null) return tetherIp;
-            return fallbackIp;
-        } catch (Exception ignored) {}
-        return null;
+        return NetworkUtils.getRawLanIp();
     }
 
     private String getLanAddress() {
-        String ip = getRawLanIp();
-        return ip != null ? "http://" + ip + ":8096" : null;
+        return NetworkUtils.getLanAddress();
     }
 
     public String getRawTailscaleIp() {
-        try {
-            Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
-            if (ifaces == null) return null;
-            while (ifaces.hasMoreElements()) {
-                NetworkInterface intf = ifaces.nextElement();
-                if (!intf.isUp() || intf.isLoopback()) continue;
-                Enumeration<java.net.InetAddress> addrs = intf.getInetAddresses();
-                while (addrs.hasMoreElements()) {
-                    java.net.InetAddress addr = addrs.nextElement();
-                    if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
-                        String ip = addr.getHostAddress();
-                        if (isTailscaleIp(ip)) {
-                            return ip;
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
-        return null;
+        return NetworkUtils.getRawTailscaleIp();
     }
 
     private String getTailscaleAddress() {
-        String ip = getRawTailscaleIp();
-        return ip != null ? "http://" + ip + ":8096" : null;
+        return NetworkUtils.getTailscaleAddress();
     }
 
     private boolean isTailscaleIp(String ip) {
-        if (ip == null) return false;
-        String[] parts = ip.split("\\.");
-        if (parts.length != 4) return false;
-        try {
-            int first = Integer.parseInt(parts[0]);
-            int second = Integer.parseInt(parts[1]);
-            return first == 100 && (second >= 64 && second <= 127);
-        } catch (NumberFormatException e) {
-            return false;
-        }
+        return NetworkUtils.isTailscaleIp(ip);
     }
 
     private void setupNetworkMonitor() {
