@@ -48,7 +48,7 @@ import java.util.concurrent.Executors;
  * Centralized service management engine coordinating lifecycle, health checks,
  * port binding verification, and process supervision across all media services.
  */
-public class MediaServiceManager {
+public class MediaServiceManager implements ServiceLifecycleContract, ServiceRegistryContract {
 
     private static final String TAG = "MediaServiceManager";
     private static MediaServiceManager instance;
@@ -1617,6 +1617,17 @@ public class MediaServiceManager {
                 mainHandler.post(onComplete);
             }
         });
+    }
+
+    @Override
+    public void restartService(String id) {
+        restartService(id, appContext);
+    }
+
+    @Override
+    public boolean isServiceRunning(String id) {
+        ManagedService ms = getService(id);
+        return ms != null && ms.isRunning();
     }
 
     public void restartService(String id, Context ctx) {
