@@ -47,6 +47,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -89,7 +90,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             16,
             60L,
             TimeUnit.SECONDS,
-            new LinkedBlockingQueue<>(32),
+            new SynchronousQueue<>(),
             new ThreadFactory() {
                 private final AtomicInteger count = new AtomicInteger(1);
                 @Override
@@ -99,25 +100,10 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     return t;
                 }
             },
-            new ThreadPoolExecutor.DiscardOldestPolicy()
+            new ThreadPoolExecutor.AbortPolicy()
     );
-    private final ExecutorService processExitExecutor = new ThreadPoolExecutor(
-            4,
-            16,
-            60L,
-            TimeUnit.SECONDS,
-            new LinkedBlockingQueue<>(32),
-            new ThreadFactory() {
-                private final AtomicInteger count = new AtomicInteger(1);
-                @Override
-                public Thread newThread(Runnable r) {
-                    Thread t = new Thread(r, "Fishbowl-ExitMonitor-" + count.getAndIncrement());
-                    t.setDaemon(true);
-                    return t;
-                }
-            },
-            new ThreadPoolExecutor.CallerRunsPolicy()
-    );
+    private final ProcessExitSupervisor processExitSupervisor = new ProcessExitSupervisor();
+    private final ExecutorService processExitExecutor = processExitSupervisor.getPrimaryExecutor();
     private final java.util.concurrent.ScheduledExecutorService dedupScheduler = Executors.newSingleThreadScheduledExecutor();
         private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ServiceHealthMonitor healthMonitor = new ServiceHealthMonitor();
@@ -1284,86 +1270,34 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " PROCESS_READY (PID " + pid + ")");
                 ms.appendLog("Process spawned (PID " + pid + " monitoring active)");
 
-                // Background stream reader (ProcessLog pool)
-                processLogExecutor.execute(() -> {
-                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                        String line;
-                        while ((line = reader.readLine()) != null) {
-                            ms.appendLog(line);
-                        }
-                    } catch (Throwable ignored) {}
-                });
-
-                // Background exit monitor (ProcessExit pool)
-                processExitExecutor.execute(() -> {
+                // Background stream reader (ProcessLog pool with zero silent task loss)
+                try {
+                    processLogExecutor.execute(() -> {
+                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                ms.appendLog(line);
+                            }
+                        } catch (Throwable ignored) {}
+                    });
+                } catch (RejectedExecutionException rex) {
+                    Log.e(TAG, "[ProcessLog] Stream reader registration rejected for " + ms.getDisplayName() + ". Aborting process to avoid pipe deadlock.", rex);
                     try {
-                        int exitCode = process.waitFor();
-                        activeProcesses.remove(id);
-                        ms.appendLog("Process exited with code: " + exitCode);
-                        Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " process exited with code " + exitCode);
-
-                        if (ms.isUserStopped() || ms.getState() == ServiceState.STOPPING) {
-                            ms.setState(ServiceState.STOPPED);
-                            ms.setHealthy(false);
-                            ms.setProcessPid(0);
-                            notifyListeners(id, ServiceState.STOPPED);
-                            Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STOPPED (intentional)");
-                        } else {
-                            // Check storage before auto-restart to prevent endless crash loops on low storage
-                            long exitStorageMb = 0;
-                            try {
-                                android.os.StatFs stat = new android.os.StatFs(TermuxConstants.TERMUX_FILES_DIR.getAbsolutePath());
-                                exitStorageMb = stat.getAvailableBytes() / (1024 * 1024);
-                            } catch (Throwable ignored) {}
-
-                            if (exitStorageMb < 50) {
-                                ms.setLastError("STORAGE_IS_FULL: Device storage is full (" + exitStorageMb + " MB free). Halting auto-restart.");
-                                ms.setState(ServiceState.ERROR);
-                                ms.setHealthy(false);
-                                ms.setProcessPid(0);
-                                notifyListeners(id, ServiceState.ERROR);
-                                Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " STORAGE_IS_FULL. Auto-restart halted.");
-                                return;
-                            }
-
-                            ms.recordCrash();
-                            int crashes = ms.getCrashCount();
-                            if (crashes > 5) {
-                                recordServiceActive(id, false);
-                                ms.setLastError("CRASH_LOOP_PROTECTION: Repeated failures (" + crashes + " crashes). Auto-restart halted.");
-                                ms.setState(ServiceState.CRASH_LOOP_PROTECTION);
-                                ms.setHealthy(false);
-                                ms.setProcessPid(0);
-                                notifyListeners(id, ServiceState.CRASH_LOOP_PROTECTION);
-                                Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " CRASH_LOOP_PROTECTION: Halted after " + crashes + " crashes");
-                            } else {
-                                // Exponential backoff: 5s, 15s, 30s, 60s, 300s
-                                long backoffMs;
-                                switch (crashes) {
-                                    case 1: backoffMs = 5000; break;
-                                    case 2: backoffMs = 15000; break;
-                                    case 3: backoffMs = 30000; break;
-                                    case 4: backoffMs = 60000; break;
-                                    default: backoffMs = 300000; break;
-                                }
-                                ms.setLastError("RECOVERING: Exited unexpectedly with code " + exitCode + ". Restarting in " + (backoffMs / 1000) + "s (Attempt " + crashes + "/5)");
-                                ms.setState(ServiceState.RECOVERING);
-                                ms.setHealthy(false);
-                                ms.setProcessPid(0);
-                                notifyListeners(id, ServiceState.RECOVERING);
-                                Log.w(TAG, "[ServiceManager] " + ms.getDisplayName() + " crashed (code " + exitCode + "). Auto-restarting in " + (backoffMs / 1000) + "s (attempt " + crashes + "/5)...");
-                                mainHandler.postDelayed(() -> {
-                                    if (!ms.isUserStopped() && !ms.isRunning() && ms.isEnabled() && !ms.isBlocked()) {
-                                        Log.i(TAG, "[ServiceManager] Auto-restarting " + ms.getDisplayName());
-                                        startService(id, ctx);
-                                    }
-                                }, backoffMs);
-                            }
-                        }
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
+                        process.destroyForcibly();
+                    } catch (Throwable ignored) {}
+                    activeProcesses.remove(id);
+                    ms.setProcessPid(0);
+                    ms.setLastError("STREAM_REGISTRATION_FAILED: Process log executor saturated. Process aborted to prevent pipe buffer deadlock.");
+                    ms.setState(ServiceState.ERROR);
+                    notifyListeners(id, ServiceState.ERROR);
+                    if (callback != null) {
+                        callback.onResult(new ServiceLifecycleResult.Failure(id, ms.getLastError(), rex));
                     }
-                });
+                    return;
+                }
+
+                // Background exit monitor (Guaranteed observation via primary pool or fallback supervisor)
+                superviseProcessExit(id, process, ctx);
 
                 // Socket and API readiness verification loop
                 serviceExecutor.execute(() -> {
@@ -1865,10 +1799,82 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         return ms != null && ms.isRunning();
     }
 
+    public void superviseProcessExit(final String id, final Process process, final Context ctx) {
+        processExitSupervisor.supervise(id, process, (exitCode) -> onProcessExited(id, exitCode, ctx));
+    }
+
+    private void onProcessExited(final String id, final int exitCode, final Context ctx) {
+        activeProcesses.remove(id);
+        processExitSupervisor.unregister(id);
+        ManagedService ms = services.get(id);
+        if (ms == null) return;
+        ms.appendLog("Process exited with code: " + exitCode);
+        Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " process exited with code " + exitCode);
+
+        if (ms.isUserStopped() || ms.getState() == ServiceState.STOPPING) {
+            ms.setState(ServiceState.STOPPED);
+            ms.setHealthy(false);
+            ms.setProcessPid(0);
+            notifyListeners(id, ServiceState.STOPPED);
+            Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STOPPED (intentional)");
+        } else {
+            // Check storage before auto-restart to prevent endless crash loops on low storage
+            long exitStorageMb = 0;
+            try {
+                android.os.StatFs stat = new android.os.StatFs(TermuxConstants.TERMUX_FILES_DIR.getAbsolutePath());
+                exitStorageMb = stat.getAvailableBytes() / (1024 * 1024);
+            } catch (Throwable ignored) {}
+
+            if (exitStorageMb < 50) {
+                ms.setLastError("STORAGE_IS_FULL: Device storage is full (" + exitStorageMb + " MB free). Halting auto-restart.");
+                ms.setState(ServiceState.ERROR);
+                ms.setHealthy(false);
+                ms.setProcessPid(0);
+                notifyListeners(id, ServiceState.ERROR);
+                Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " STORAGE_IS_FULL. Auto-restart halted.");
+                return;
+            }
+
+            ms.recordCrash();
+            int crashes = ms.getCrashCount();
+            if (crashes > 5) {
+                recordServiceActive(id, false);
+                ms.setLastError("CRASH_LOOP_PROTECTION: Repeated failures (" + crashes + " crashes). Auto-restart halted.");
+                ms.setState(ServiceState.CRASH_LOOP_PROTECTION);
+                ms.setHealthy(false);
+                ms.setProcessPid(0);
+                notifyListeners(id, ServiceState.CRASH_LOOP_PROTECTION);
+                Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " CRASH_LOOP_PROTECTION: Halted after " + crashes + " crashes");
+            } else {
+                // Exponential backoff: 5s, 15s, 30s, 60s, 300s
+                long backoffMs;
+                switch (crashes) {
+                    case 1: backoffMs = 5000; break;
+                    case 2: backoffMs = 15000; break;
+                    case 3: backoffMs = 30000; break;
+                    case 4: backoffMs = 60000; break;
+                    default: backoffMs = 300000; break;
+                }
+                ms.setLastError("RECOVERING: Exited unexpectedly with code " + exitCode + ". Restarting in " + (backoffMs / 1000) + "s (Attempt " + crashes + "/5)");
+                ms.setState(ServiceState.RECOVERING);
+                ms.setHealthy(false);
+                ms.setProcessPid(0);
+                notifyListeners(id, ServiceState.RECOVERING);
+                Log.w(TAG, "[ServiceManager] " + ms.getDisplayName() + " crashed (code " + exitCode + "). Auto-restarting in " + (backoffMs / 1000) + "s (attempt " + crashes + "/5)...");
+                mainHandler.postDelayed(() -> {
+                    if (!ms.isUserStopped() && !ms.isRunning() && ms.isEnabled() && !ms.isBlocked()) {
+                        Log.i(TAG, "[ServiceManager] Auto-restarting " + ms.getDisplayName());
+                        startService(id, ctx);
+                    }
+                }, backoffMs);
+            }
+        }
+    }
+
     public void shutdown() {
         serviceExecutor.shutdown();
         processLogExecutor.shutdown();
-        processExitExecutor.shutdown();
+        processExitSupervisor.shutdown();
         dedupScheduler.shutdown();
     }
 
