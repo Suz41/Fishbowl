@@ -2378,36 +2378,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
     // Returns the brand color for a service when running, white when off
     private int getServiceBrandColor(String serviceId) {
-        if (serviceId == null) return Color.WHITE;
-        if ("SRR".equals(serviceId)) {
-            return Color.parseColor("#CCFBFA");
-        }
-        switch (serviceId.toLowerCase(Locale.ROOT)) {
-            case "radarr":
-            case "rrr":          return Color.parseColor("#FF9E20");
-            case "sonarr":
-            case "snr":          return Color.parseColor("#CCFBFA");
-            case "prowlarr":
-            case "prr":          return Color.parseColor("#FFFC8C");
-            case "jackett":
-            case "jkt":
-            case "jk":           return Color.parseColor("#F97316");
-            case "transmission":
-            case "trr":          return Color.parseColor("#FF788D");
-            case "seerr":
-            case "srr":
-            case "se":
-            case "see":          return Color.parseColor("#55A9A0");
-            case "bazarr":
-            case "brr":          return Color.parseColor("#5D9253");
-            case "lidarr":
-            case "lrr":
-            case "ldr":          return Color.parseColor("#769826");
-            case "jellyfin":
-            case "jfn":
-            case "jf":           return Color.parseColor("#AB03A9");
-            default:             return Color.WHITE;
-        }
+        return com.fishbowl.app.ui.DashboardPresenter.getServiceBrandColor(serviceId);
     }
 
     private int getServiceIconRes(String serviceId) {
