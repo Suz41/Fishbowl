@@ -43,6 +43,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Centralized service management engine coordinating lifecycle, health checks,
@@ -59,7 +65,37 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     private static final Map<String, Integer> lmkRevivalAttempts = new ConcurrentHashMap<>();
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<ServiceListener> listeners = new CopyOnWriteArrayList<>();
-    private final ExecutorService serviceExecutor = Executors.newCachedThreadPool();
+        private final ExecutorService serviceExecutor = new ThreadPoolExecutor(
+            2,
+            4,
+            60L,
+            TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(64),
+            new ThreadFactory() {
+                private final AtomicInteger count = new AtomicInteger(1);
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "Fishbowl-LifecycleWorker-" + count.getAndIncrement());
+                    t.setDaemon(true);
+                    return t;
+                }
+            },
+            new RejectedExecutionHandler() {
+                @Override
+                public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
+                    Log.w(TAG, "[Executor] Lifecycle task rejected under high load: " + r);
+                }
+            }
+    );
+    private final ExecutorService processIoExecutor = Executors.newCachedThreadPool(new ThreadFactory() {
+        private final AtomicInteger count = new AtomicInteger(1);
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(r, "Fishbowl-ProcessIO-" + count.getAndIncrement());
+            t.setDaemon(true);
+            return t;
+        }
+    });
     private final java.util.concurrent.ScheduledExecutorService dedupScheduler = Executors.newSingleThreadScheduledExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private volatile boolean isBridgeInitialized = false;
@@ -1200,8 +1236,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " PROCESS_READY (PID " + pid + ")");
                 ms.appendLog("Process spawned (PID " + pid + " monitoring active)");
 
-                // Background stream reader
-                serviceExecutor.execute(() -> {
+                // Background stream reader (ProcessIO pool)
+                processIoExecutor.execute(() -> {
                     try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                         String line;
                         while ((line = reader.readLine()) != null) {
@@ -1210,8 +1246,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     } catch (Throwable ignored) {}
                 });
 
-                // Background exit monitor with crash loop protection & exponential backoff
-                serviceExecutor.execute(() -> {
+                // Background exit monitor (ProcessIO pool)
+                processIoExecutor.execute(() -> {
                     try {
                         int exitCode = process.waitFor();
                         activeProcesses.remove(id);
@@ -1409,14 +1445,20 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             return;
         }
 
-        serviceExecutor.execute(() -> {
+        synchronized (ms) {
+            if (ms.getState() == ServiceState.STOPPED || ms.getState() == ServiceState.STOPPING || ms.getState() == ServiceState.NOT_INSTALLED) {
+                Log.d(TAG, "Service " + id + " is already stopped or stopping. Ignoring redundant stop.");
+                return;
+            }
             ms.setUserStopped(true);
             ms.resetCrashCount();
             ms.setState(ServiceState.STOPPING);
-            notifyListeners(id, ServiceState.STOPPING);
-            Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STOPPING");
-            ms.appendLog("Stopping service...");
+        }
 
+        notifyListeners(id, ServiceState.STOPPING);
+        Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STOPPING");
+        ms.appendLog("Stopping service...");
+        serviceExecutor.execute(() -> {
             Process p = activeProcesses.remove(id);
             if (p != null) {
                 if ("transmission".equalsIgnoreCase(id)) {
@@ -1633,6 +1675,12 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     public void restartService(String id, Context ctx) {
         stopService(id);
         mainHandler.postDelayed(() -> startService(id, ctx), 1200);
+    }
+
+    public void shutdown() {
+        serviceExecutor.shutdown();
+        processIoExecutor.shutdown();
+        dedupScheduler.shutdown();
     }
 
     public void resetCrashLoop(String id) {
