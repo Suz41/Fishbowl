@@ -131,6 +131,21 @@ Fishbowl runs **Jellyfin Server 12.4.0** natively on compatible ARM64 Android de
 
 ---
 
+## Release Notes: v1.4.10-beta.2
+
+- **Kotlin Hybrid Architecture:** Integrated Kotlin 2.1.20 with AGP 8.13.2 targeting Java 8 bytecode compatibility.
+- **Service Lifecycle Contracts:** Introduced Kotlin service lifecycle and registry contracts implemented by MediaServiceManager.
+- **Bounded Concurrency:** Replaced uncontrolled cached thread pool with bounded workers (2 core, 4 max, 64-slot queue) and dedicated ProcessIO pool.
+- **Service Health Monitor:** Extracted multi-tier service readiness assessment distinguishing process life, port listening, HTTP response, and API readiness.
+- **Resource Monitoring:** Added lightweight on-demand system resource monitoring for RAM, storage thresholds, and thermal status.
+- **Fixes:**
+  - **Network IP Resolution:** Unified IP address calculation across activity, notifications, and home widgets with interface prioritization.
+  - **Widget Foreground Notification:** Replaced widget startService with PendingIntent.getForegroundService to ensure persistent foreground notification launch on Android 12+.
+  - **Seerr API Key Exposure:** Restored multi-path API key extraction and displayed in UI with copy support.
+  - **Readiness Checks:** Eliminated false positive health reporting when port socket is bound but HTTP endpoint fails.
+
+---
+
 ## Release Notes: v1.4.10-beta.1
 
 - **Performance:** Enforced .NET Workstation GC, capped thread pools, and limited Node.js memory to prevent multi-service startup hangs.
@@ -576,7 +591,8 @@ In the spirit of complete engineering honesty, transparency, and architectural c
 - **How AI Was Utilized in Development:**
   The Fishbowl project codebase, build infrastructure, and technical documentation were developed utilizing conversational agentic AI coding assistants (specifically Google Antigravity and Gemini models) in close collaboration with human developers. Specific areas where AI was employed include:
   - **Application Architecture & Component Logic:** Assisting in the authoring, refactoring, and modularization of native Android Java components (including JellyfinController, JellyfinServerService, FishbowlActivity, MediaStorageManager, and home screen supervision widgets).
-  - **CI/CD & Build Automation:** Generating and hardening Gradle build configurations, ABI-specific packaging rules, Dependabot version shielding, and GitHub Actions automation workflows (uild.yml, elease.yml, lint.yml).
+  - **CI/CD & Build Automation:** Generating and hardening Gradle build configurations, ABI-specific packaging rules, Dependabot version shielding, and GitHub Actions automation workflows (uild.yml, 
+elease.yml, lint.yml).
   - **Defensive Engineering & Security Hardening:** Identifying potential edge cases, path traversal risks (such as ZipSlip vulnerability analysis in archive extraction), and authoring robust unit test suites (BackupRestoreSecurityTest, MediaStorageCleanupTest, ProcessSupervisionTest, UpdateManagerSecurityTest).
   - **Documentation & Technical Schematics:** Drafting architectural documentation, port matrix tables, hardware codec capability guides, and Mermaid system workflow diagrams.
 
