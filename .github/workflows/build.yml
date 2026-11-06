@@ -55,8 +55,8 @@ jobs:
       - name: Download Termux Bootstraps
         run: ./gradlew downloadBootstraps
 
-      - name: Compile Java & Verify
-        run: ./gradlew :app:compileDebugJavaWithJavac
+      - name: Compile Kotlin & Java
+        run: ./gradlew :app:compileDebugKotlin :app:compileDebugJavaWithJavac
 
       - name: Run Unit Tests
         run: ./gradlew testDebugUnitTest
