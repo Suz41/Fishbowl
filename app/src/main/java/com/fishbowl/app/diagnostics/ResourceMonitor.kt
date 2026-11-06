@@ -45,7 +45,7 @@ class ResourceMonitor(private val context: Context) {
         try {
             val sm = MediaServiceManager.getInstance(context)
             if (sm != null) {
-                activeServices = sm.runningServicesCount
+                activeServices = sm.getRunningServicesCount()
             }
         } catch (_: Exception) {}
 

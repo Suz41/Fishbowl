@@ -1,6 +1,5 @@
 package com.fishbowl.app.ui
 
-import android.graphics.Color
 import com.fishbowl.app.model.ManagedService
 import com.fishbowl.app.model.ServiceState
 import java.util.Locale
@@ -22,23 +21,41 @@ data class ServiceStatusPresentation(
  */
 object DashboardPresenter {
 
+    private fun parseHexColor(colorStr: String): Int {
+        return try {
+            if (colorStr.startsWith("#")) {
+                val hex = colorStr.substring(1)
+                val color = hex.toLong(16)
+                if (hex.length == 6) {
+                    (color or 0xFF000000L).toInt()
+                } else {
+                    color.toInt()
+                }
+            } else {
+                -1
+            }
+        } catch (_: Exception) {
+            -1
+        }
+    }
+
     @JvmStatic
     fun getServiceBrandColor(serviceId: String?): Int {
-        if (serviceId == null) return Color.WHITE
-        if ("SRR" == serviceId) return Color.parseColor("#CCFBFA")
+        if (serviceId == null) return -1
+        if ("SRR" == serviceId) return parseHexColor("#CCFBFA")
 
         return when (serviceId.lowercase(Locale.ROOT)) {
-            "radarr", "rrr" -> Color.parseColor("#FF9E20")
-            "sonarr", "snr" -> Color.parseColor("#CCFBFA")
-            "prowlarr", "prr" -> Color.parseColor("#FFFC8C")
-            "jackett", "jkt", "jk" -> Color.parseColor("#F97316")
-            "transmission", "trr" -> Color.parseColor("#FF788D")
-            "seerr", "srr", "se", "see" -> Color.parseColor("#55A9A0")
-            "bazarr", "brr", "bzr" -> Color.parseColor("#5D9253")
-            "lidarr", "lrr", "ldr" -> Color.parseColor("#769826")
-            "flaresolverr", "flr" -> Color.parseColor("#34D399")
-            "jellyfin", "jfn", "jf" -> Color.parseColor("#AB03A9")
-            else -> Color.WHITE
+            "radarr", "rrr" -> parseHexColor("#FF9E20")
+            "sonarr", "snr" -> parseHexColor("#CCFBFA")
+            "prowlarr", "prr" -> parseHexColor("#FFFC8C")
+            "jackett", "jkt", "jk" -> parseHexColor("#F97316")
+            "transmission", "trr" -> parseHexColor("#FF788D")
+            "seerr", "srr", "se", "see" -> parseHexColor("#55A9A0")
+            "bazarr", "brr", "bzr" -> parseHexColor("#5D9253")
+            "lidarr", "lrr", "ldr" -> parseHexColor("#769826")
+            "flaresolverr", "flr" -> parseHexColor("#34D399")
+            "jellyfin", "jfn", "jf" -> parseHexColor("#AB03A9")
+            else -> -1
         }
     }
 
@@ -50,7 +67,7 @@ object DashboardPresenter {
         isJellyfinStarting: Boolean = false
     ): ServiceStatusPresentation {
         if (service == null) {
-            return ServiceStatusPresentation("UNKNOWN", Color.parseColor("#71717A"), Color.WHITE, isRunning = false, isStarting = false)
+            return ServiceStatusPresentation("UNKNOWN", parseHexColor("#71717A"), -1, isRunning = false, isStarting = false)
         }
 
         val id = service.id.lowercase(Locale.ROOT)
@@ -58,22 +75,22 @@ object DashboardPresenter {
             return when {
                 isJellyfinRunning -> ServiceStatusPresentation(
                     "RUNNING",
-                    Color.parseColor("#34D399"),
+                    parseHexColor("#34D399"),
                     getServiceBrandColor("jellyfin"),
                     isRunning = true,
                     isStarting = false
                 )
                 isJellyfinStarting -> ServiceStatusPresentation(
                     "STARTING",
-                    Color.parseColor("#F59E0B"),
-                    Color.parseColor("#F59E0B"),
+                    parseHexColor("#F59E0B"),
+                    parseHexColor("#F59E0B"),
                     isRunning = false,
                     isStarting = true
                 )
                 else -> ServiceStatusPresentation(
                     "OFF",
-                    Color.parseColor("#71717A"),
-                    Color.WHITE,
+                    parseHexColor("#71717A"),
+                    -1,
                     isRunning = false,
                     isStarting = false
                 )
@@ -86,64 +103,64 @@ object DashboardPresenter {
         return when (state) {
             ServiceState.RUNNING -> ServiceStatusPresentation(
                 "RUNNING",
-                Color.parseColor("#34D399"),
+                parseHexColor("#34D399"),
                 brandColor,
                 isRunning = true,
                 isStarting = false
             )
             ServiceState.STARTING, ServiceState.SOCKET_READY, ServiceState.PROCESS_READY -> ServiceStatusPresentation(
                 "STARTING",
-                Color.parseColor("#F59E0B"),
-                Color.parseColor("#F59E0B"),
+                parseHexColor("#F59E0B"),
+                parseHexColor("#F59E0B"),
                 isRunning = false,
                 isStarting = true
             )
             ServiceState.STOPPING -> ServiceStatusPresentation(
                 "STOPPING",
-                Color.parseColor("#F59E0B"),
-                Color.parseColor("#F59E0B"),
+                parseHexColor("#F59E0B"),
+                parseHexColor("#F59E0B"),
                 isRunning = false,
                 isStarting = false
             )
             ServiceState.RECOVERING -> ServiceStatusPresentation(
                 "RECOVERING",
-                Color.parseColor("#F59E0B"),
-                Color.parseColor("#F59E0B"),
+                parseHexColor("#F59E0B"),
+                parseHexColor("#F59E0B"),
                 isRunning = false,
                 isStarting = true
             )
             ServiceState.ERROR, ServiceState.CRASH_LOOP_PROTECTION -> ServiceStatusPresentation(
                 "FAILED",
-                Color.parseColor("#EF4444"),
-                Color.parseColor("#EF4444"),
+                parseHexColor("#EF4444"),
+                parseHexColor("#EF4444"),
                 isRunning = false,
                 isStarting = false
             )
             ServiceState.NOT_INSTALLED -> ServiceStatusPresentation(
                 "NOT INSTALLED",
-                Color.parseColor("#71717A"),
-                Color.parseColor("#71717A"),
+                parseHexColor("#71717A"),
+                parseHexColor("#71717A"),
                 isRunning = false,
                 isStarting = false
             )
             ServiceState.DISABLED -> ServiceStatusPresentation(
                 "DISABLED",
-                Color.parseColor("#71717A"),
-                Color.parseColor("#71717A"),
+                parseHexColor("#71717A"),
+                parseHexColor("#71717A"),
                 isRunning = false,
                 isStarting = false
             )
             ServiceState.BLOCKED -> ServiceStatusPresentation(
                 "BLOCKED",
-                Color.parseColor("#EF4444"),
-                Color.parseColor("#EF4444"),
+                parseHexColor("#EF4444"),
+                parseHexColor("#EF4444"),
                 isRunning = false,
                 isStarting = false
             )
             else -> ServiceStatusPresentation(
                 "OFF",
-                Color.parseColor("#71717A"),
-                Color.WHITE,
+                parseHexColor("#71717A"),
+                -1,
                 isRunning = false,
                 isStarting = false
             )
