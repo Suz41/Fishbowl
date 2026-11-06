@@ -97,7 +97,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         }
     });
     private final java.util.concurrent.ScheduledExecutorService dedupScheduler = Executors.newSingleThreadScheduledExecutor();
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+        private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ServiceHealthMonitor healthMonitor = new ServiceHealthMonitor();
     private volatile boolean isBridgeInitialized = false;
 
     private static final String PREF_ACTIVE_STACK = "fishbowl_active_stack";
@@ -2768,13 +2769,12 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         } catch (Throwable ignored) {}
     }
 
+    public ServiceHealthMonitor getHealthMonitor() {
+        return healthMonitor;
+    }
+
     public boolean isPortOccupied(int port) {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress("127.0.0.1", port), 350);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
+        return healthMonitor.isPortListening(port, 350);
     }
 
     public boolean checkApiReadiness(ManagedService ms) {
@@ -2784,25 +2784,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     }
 
     public boolean checkHealth(String healthUrlStr) {
-        HttpURLConnection conn = null;
-        try {
-            URL url = new URL(healthUrlStr);
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(1500);
-            conn.setReadTimeout(1500);
-            conn.setRequestMethod("GET");
-            // Do not follow redirects: 301/302 redirects (e.g. Jackett cookie check / login) indicate active HTTP responsiveness
-            conn.setInstanceFollowRedirects(false);
-            int code = conn.getResponseCode();
-            // HTTP 200/204/301/302 is OK, HTTP 401 Unauthorized (Radarr/Sonarr auth), and HTTP 409 Conflict (Transmission RPC check)
-            return (code >= 200 && code < 400) || code == 401 || code == 409;
-        } catch (Exception e) {
-            return false;
-        } finally {
-            if (conn != null) {
-                conn.disconnect();
-            }
-        }
+        return healthMonitor.checkEndpoint(healthUrlStr, null, 2500);
     }
 
     public boolean waitUntilServiceReady(String id, long timeoutMs) {
