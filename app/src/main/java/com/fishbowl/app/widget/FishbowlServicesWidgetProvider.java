@@ -15,6 +15,7 @@ import android.view.View;
 import android.widget.RemoteViews;
 
 import com.fishbowl.app.JellyfinController;
+import com.fishbowl.app.JellyfinServerService;
 import com.fishbowl.app.model.ManagedService;
 import com.fishbowl.app.model.ServiceState;
 import com.fishbowl.app.services.MediaServiceManager;
@@ -150,12 +151,17 @@ public class FishbowlServicesWidgetProvider extends AppWidgetProvider {
                     views.setInt(entry.iconId, "setColorFilter", Color.parseColor("#52525B"));
                 }
 
-                // Attach individual toggle intent to the tile
-                Intent toggleIntent = new Intent(context, FishbowlServicesWidgetProvider.class);
-                toggleIntent.setAction(ACTION_TOGGLE_SERVICE);
-                toggleIntent.putExtra(EXTRA_SERVICE_ID, entry.id);
+                // Attach individual toggle intent directly to JellyfinServerService via ForegroundService PendingIntent
+                Intent toggleIntent = new Intent(context, JellyfinServerService.class);
+                toggleIntent.setAction(JellyfinServerService.ACTION_TOGGLE_SERVICE);
+                toggleIntent.putExtra(JellyfinServerService.EXTRA_SERVICE_ID, entry.id);
 
-                PendingIntent pi = PendingIntent.getBroadcast(context, 300 + i, toggleIntent, flags);
+                PendingIntent pi;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    pi = PendingIntent.getForegroundService(context, 300 + i, toggleIntent, flags);
+                } else {
+                    pi = PendingIntent.getService(context, 300 + i, toggleIntent, flags);
+                }
                 views.setOnClickPendingIntent(entry.tileId, pi);
             }
         }
@@ -206,26 +212,37 @@ public class FishbowlServicesWidgetProvider extends AppWidgetProvider {
     }
 
     private void toggleService(Context context, String serviceId) {
-        JellyfinController jfCtrl = JellyfinController.getInstance();
-        MediaServiceManager sm = MediaServiceManager.getInstance(context);
-
-        if ("jellyfin".equalsIgnoreCase(serviceId)) {
-            if (jfCtrl != null && jfCtrl.getState() == JellyfinController.State.RUNNING) {
-                Log.i(TAG, "Stopping Jellyfin via widget");
-                jfCtrl.stop();
-            } else if (jfCtrl != null) {
-                Log.i(TAG, "Starting Jellyfin via widget");
-                jfCtrl.start(context);
+        Intent serviceIntent = new Intent(context, JellyfinServerService.class);
+        serviceIntent.setAction(JellyfinServerService.ACTION_TOGGLE_SERVICE);
+        serviceIntent.putExtra(JellyfinServerService.EXTRA_SERVICE_ID, serviceId);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent);
+            } else {
+                context.startService(serviceIntent);
             }
-        } else if (sm != null) {
-            ManagedService ms = sm.getService(serviceId);
-            if (ms != null) {
-                if (ms.isRunning()) {
-                    Log.i(TAG, "Stopping companion service via widget: " + serviceId);
-                    sm.stopService(serviceId);
-                } else {
-                    Log.i(TAG, "Starting companion service via widget: " + serviceId);
-                    sm.startService(serviceId, context);
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed startForegroundService from widget receiver fallback: " + t.getMessage());
+            JellyfinController jfCtrl = JellyfinController.getInstance();
+            MediaServiceManager sm = MediaServiceManager.getInstance(context);
+            if ("jellyfin".equalsIgnoreCase(serviceId)) {
+                if (jfCtrl != null && jfCtrl.getState() == JellyfinController.State.RUNNING) {
+                    Log.i(TAG, "Stopping Jellyfin via widget");
+                    jfCtrl.stop();
+                } else if (jfCtrl != null) {
+                    Log.i(TAG, "Starting Jellyfin via widget");
+                    jfCtrl.start(context);
+                }
+            } else if (sm != null) {
+                ManagedService ms = sm.getService(serviceId);
+                if (ms != null) {
+                    if (ms.isRunning()) {
+                        Log.i(TAG, "Stopping companion service via widget: " + serviceId);
+                        sm.stopService(serviceId);
+                    } else {
+                        Log.i(TAG, "Starting companion service via widget: " + serviceId);
+                        sm.startService(serviceId, context);
+                    }
                 }
             }
         }

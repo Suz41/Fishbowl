@@ -14,6 +14,7 @@ import android.util.Log;
 import android.widget.RemoteViews;
 
 import com.fishbowl.app.JellyfinController;
+import com.fishbowl.app.NetworkUtils;
 import com.fishbowl.app.FishbowlActivity;
 import com.fishbowl.app.JellyfinServerService;
 import com.fishbowl.app.JellyfinWebActivity;
@@ -259,22 +260,32 @@ public class FishbowlWidgetProvider extends AppWidgetProvider {
         PendingIntent piApp = PendingIntent.getActivity(context, 100, openAppIntent, flags);
         views.setOnClickPendingIntent(R.id.widget_root, piApp);
 
-        // Tap START -> broadcast ACTION_START_JELLYFIN (starts ONLY Jellyfin as requested)
-        Intent startIntent = new Intent(context, FishbowlWidgetProvider.class);
-        startIntent.setAction(ACTION_START_JELLYFIN);
-        PendingIntent piStart = PendingIntent.getBroadcast(context, 104, startIntent, flags);
+        // Tap START -> starts Jellyfin service directly via ForegroundService PendingIntent
+        Intent startIntent = new Intent(context, JellyfinServerService.class);
+        startIntent.setAction(JellyfinServerService.ACTION_START_JELLYFIN);
+        PendingIntent piStart;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            piStart = PendingIntent.getForegroundService(context, 104, startIntent, flags);
+        } else {
+            piStart = PendingIntent.getService(context, 104, startIntent, flags);
+        }
         views.setOnClickPendingIntent(R.id.widget_btn_start, piStart);
 
-        // Tap RESTART -> broadcast ACTION_RESTART_ALL
-        Intent restartIntent = new Intent(context, FishbowlWidgetProvider.class);
-        restartIntent.setAction(ACTION_RESTART_ALL);
-        PendingIntent piRestart = PendingIntent.getBroadcast(context, 105, restartIntent, flags);
+        // Tap RESTART -> starts restart via ForegroundService PendingIntent
+        Intent restartIntent = new Intent(context, JellyfinServerService.class);
+        restartIntent.setAction(JellyfinServerService.ACTION_RESTART_ALL);
+        PendingIntent piRestart;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            piRestart = PendingIntent.getForegroundService(context, 105, restartIntent, flags);
+        } else {
+            piRestart = PendingIntent.getService(context, 105, restartIntent, flags);
+        }
         views.setOnClickPendingIntent(R.id.widget_btn_restart, piRestart);
 
-        // Tap STOP -> broadcast ACTION_STOP_ALL
-        Intent stopIntent = new Intent(context, FishbowlWidgetProvider.class);
-        stopIntent.setAction(ACTION_STOP_ALL);
-        PendingIntent piStop = PendingIntent.getBroadcast(context, 106, stopIntent, flags);
+        // Tap STOP -> stops all services via Service PendingIntent
+        Intent stopIntent = new Intent(context, JellyfinServerService.class);
+        stopIntent.setAction(JellyfinServerService.ACTION_STOP_ALL);
+        PendingIntent piStop = PendingIntent.getService(context, 106, stopIntent, flags);
         views.setOnClickPendingIntent(R.id.widget_btn_stop, piStop);
 
         // Tap WEB UI -> open internal web activity
@@ -443,25 +454,9 @@ public class FishbowlWidgetProvider extends AppWidgetProvider {
         return String.format(Locale.ROOT, "%dm %02ds", m, s);
     }
 
-    private static String getLanAddress() {
-        try {
-            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
-            while (interfaces.hasMoreElements()) {
-                NetworkInterface iface = interfaces.nextElement();
-                if (iface.isLoopback() || !iface.isUp()) continue;
-                Enumeration<InetAddress> addresses = iface.getInetAddresses();
-                while (addresses.hasMoreElements()) {
-                    InetAddress addr = addresses.nextElement();
-                    if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
-                        String host = addr.getHostAddress();
-                        if (!host.startsWith("100.")) {
-                            return host + ":8096";
-                        }
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
-        return "127.0.0.1:8096";
+        private static String getLanAddress() {
+        String ip = NetworkUtils.getRawLanIp();
+        return (ip != null ? ip : "127.0.0.1") + ":8096";
     }
 
     public static String formatSpeed(long bytesPerSec) {
