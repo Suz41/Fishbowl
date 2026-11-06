@@ -3,7 +3,8 @@ name: Release Bot
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+*'
+      - 'v*.*.*'
+      - 'v*'
   workflow_dispatch:
     inputs:
       release_tag:
@@ -71,9 +72,12 @@ jobs:
 
           VER_NAME="${TAG#v}"
 
-          # Monotonic integer version code derivation (100000 + commit count)
-          COMMIT_COUNT=$(git rev-list --count HEAD)
-          VER_CODE=$((100000 + COMMIT_COUNT))
+          # Centrally managed, monotonically increasing version code extracted from app/build.gradle
+          VER_CODE=$(grep -E 'versionCode\s+[0-9]+' app/build.gradle | head -n 1 | awk '{print $2}')
+          if [ -z "$VER_CODE" ]; then
+            echo "Error: Could not extract centrally managed versionCode from app/build.gradle." >&2
+            exit 1
+          fi
 
           # Determine pre-release classification
           if [[ "$TAG" =~ -(alpha|beta|rc|test) ]]; then

@@ -1,6 +1,5 @@
 package com.fishbowl.app.diagnostics
 
-import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import android.os.Environment
@@ -9,28 +8,15 @@ import android.os.StatFs
 import com.fishbowl.app.services.MediaServiceManager
 
 /**
- * Lightweight, non-intrusive system resource monitor that samples
- * RAM, storage, process count, thermal state, and app memory usage on demand.
+ * Lightweight, non-intrusive diagnostics monitor for storage thresholds and thermal state.
+ * CPU monitoring is intentionally omitted and RAM monitoring has been removed to preserve resources.
  */
 class ResourceMonitor(private val context: Context) {
 
     /**
-     * Captures a point-in-time snapshot of system and application resources.
+     * Captures a point-in-time diagnostics snapshot of storage and thermal state.
      */
     fun captureSnapshot(): SystemResourceSnapshot {
-        val actManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        val memoryInfo = ActivityManager.MemoryInfo()
-        actManager?.getMemoryInfo(memoryInfo)
-
-        val totalRam = memoryInfo.totalMem
-        val availRam = memoryInfo.availMem
-        val isLowMem = memoryInfo.lowMemory
-
-        // App memory usage
-        val runtime = Runtime.getRuntime()
-        val appUsedRam = runtime.totalMemory() - runtime.freeMemory()
-
-        // Storage metrics
         var internalStorageFree = 0L
         var internalStorageTotal = 0L
         try {
@@ -40,7 +26,6 @@ class ResourceMonitor(private val context: Context) {
             internalStorageTotal = stat.totalBytes
         } catch (_: Exception) {}
 
-        // Active service count
         var activeServices = 0
         try {
             val sm = MediaServiceManager.getInstance(context)
@@ -50,13 +35,10 @@ class ResourceMonitor(private val context: Context) {
         } catch (_: Exception) {}
 
         return SystemResourceSnapshot(
-            totalRamBytes = totalRam,
-            availableRamBytes = availRam,
-            appUsedRamBytes = appUsedRam,
             internalStorageFreeBytes = internalStorageFree,
             internalStorageTotalBytes = internalStorageTotal,
-            isLowMemory = isLowMem,
             activeServicesCount = activeServices,
+            thermalStatus = getThermalStatus(),
             timestampMs = System.currentTimeMillis()
         )
     }
@@ -64,6 +46,7 @@ class ResourceMonitor(private val context: Context) {
     /**
      * Checks if available storage is below critical threshold (< 200MB).
      */
+    @JvmOverloads
     fun isStorageCriticallyLow(thresholdBytes: Long = 200L * 1024L * 1024L): Boolean {
         return try {
             val dataDir = context.filesDir ?: Environment.getDataDirectory()

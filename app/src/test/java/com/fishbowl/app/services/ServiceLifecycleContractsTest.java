@@ -10,6 +10,8 @@ import com.fishbowl.app.ui.ServiceStatusPresentation;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 /**
  * Unit test suite verifying Kotlin core models, service lifecycle contracts,
  * health monitoring assessments, and UI presentation components.
@@ -41,6 +43,19 @@ public class ServiceLifecycleContractsTest {
     }
 
     @Test
+    public void testServiceLifecycleCallbackIntegration() {
+        AtomicReference<ServiceLifecycleResult> ref = new AtomicReference<>();
+        ServiceLifecycleCallback callback = ref::set;
+
+        ServiceLifecycleResult res = new ServiceLifecycleResult.Success("jellyfin", "Operational");
+        callback.onResult(res);
+
+        Assert.assertNotNull(ref.get());
+        Assert.assertTrue(ref.get() instanceof ServiceLifecycleResult.Success);
+        Assert.assertEquals("jellyfin", ref.get().getServiceId());
+    }
+
+    @Test
     public void testServiceHealthSnapshotAndStates() {
         ServiceHealthSnapshot snapshot = new ServiceHealthSnapshot(
                 "jellyfin",
@@ -48,6 +63,7 @@ public class ServiceLifecycleContractsTest {
                 true,
                 true,
                 42L,
+                200,
                 null,
                 System.currentTimeMillis()
         );
@@ -57,6 +73,7 @@ public class ServiceLifecycleContractsTest {
         Assert.assertTrue(snapshot.isPortListening());
         Assert.assertTrue(snapshot.isApiResponding());
         Assert.assertEquals(42L, snapshot.getLatencyMs());
+        Assert.assertEquals(200, snapshot.getHttpStatusCode());
     }
 
     @Test
@@ -85,19 +102,16 @@ public class ServiceLifecycleContractsTest {
     @Test
     public void testSystemResourceSnapshotCalculations() {
         SystemResourceSnapshot snap = new SystemResourceSnapshot(
-                8000000000L,
-                4000000000L,
-                150000000L,
                 30000000000L,
                 64000000000L,
-                false,
                 4,
+                0,
                 System.currentTimeMillis()
         );
 
-        Assert.assertEquals(50.0f, snap.getRamUsagePercent(), 0.1f);
         Assert.assertEquals(4, snap.getActiveServicesCount());
-        Assert.assertFalse(snap.isLowMemory());
+        Assert.assertFalse(snap.isStorageLow());
+        Assert.assertTrue(snap.getStorageFreeMb() > 20000);
     }
 
     @Test
@@ -116,14 +130,41 @@ public class ServiceLifecycleContractsTest {
     }
 
     @Test
-    public void testServiceHealthMonitorWithUnboundPort() {
+    public void testServiceReadinessStatusCodes() {
         ServiceHealthMonitor monitor = new ServiceHealthMonitor(1000);
-        // Port 59199 is typically unbound in test environment
-        boolean listening = monitor.isPortListening(59199, 100);
-        Assert.assertFalse("Unbound port should return false", listening);
 
-        ServiceHealthSnapshot snap = monitor.assessHealth("dummy", 59199, null, null);
-        Assert.assertEquals(ServiceHealthState.STOPPED, snap.getState());
-        Assert.assertFalse(snap.isPortListening());
+        // Transmission accepts 409 Conflict as ready (standard CSRF challenge) and 200..399
+        Assert.assertTrue("Transmission 409 is ready", monitor.isReadyStatusCode("transmission", 409));
+        Assert.assertTrue("Transmission 200 is ready", monitor.isReadyStatusCode("transmission", 200));
+
+        // Other services MUST NOT classify 409 as ready
+        Assert.assertFalse("Radarr 409 is not ready", monitor.isReadyStatusCode("radarr", 409));
+        Assert.assertFalse("Sonarr 409 is not ready", monitor.isReadyStatusCode("sonarr", 409));
+        Assert.assertFalse("Jellyfin 409 is not ready", monitor.isReadyStatusCode("jellyfin", 409));
+
+        // HTTP 401 must not be classified as ready for any service
+        Assert.assertFalse("Radarr 401 is not ready", monitor.isReadyStatusCode("radarr", 401));
+        Assert.assertFalse("Sonarr 401 is not ready", monitor.isReadyStatusCode("sonarr", 401));
+        Assert.assertFalse("Jellyfin 401 is not ready", monitor.isReadyStatusCode("jellyfin", 401));
+
+        // Standard 200 is ready for all services
+        Assert.assertTrue("Radarr 200 is ready", monitor.isReadyStatusCode("radarr", 200));
+        Assert.assertTrue("Sonarr 200 is ready", monitor.isReadyStatusCode("sonarr", 200));
+        Assert.assertTrue("Jellyfin 200 is ready", monitor.isReadyStatusCode("jellyfin", 200));
+    }
+
+    @Test
+    public void testServiceHealthAssessmentGranularity() {
+        ServiceHealthMonitor monitor = new ServiceHealthMonitor(1000);
+
+        // Unbound port + process not alive -> STOPPED
+        ServiceHealthSnapshot stoppedSnap = monitor.assessHealth("test_svc", 59198, null, null, false);
+        Assert.assertEquals(ServiceHealthState.STOPPED, stoppedSnap.getState());
+        Assert.assertFalse(stoppedSnap.isPortListening());
+
+        // Unbound port + process alive -> PROCESS_RUNNING
+        ServiceHealthSnapshot runningSnap = monitor.assessHealth("test_svc", 59198, null, null, true);
+        Assert.assertEquals(ServiceHealthState.PROCESS_RUNNING, runningSnap.getState());
+        Assert.assertFalse(runningSnap.isPortListening());
     }
 }

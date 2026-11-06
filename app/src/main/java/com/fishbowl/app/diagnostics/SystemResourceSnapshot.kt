@@ -1,20 +1,22 @@
 package com.fishbowl.app.diagnostics
 
 /**
- * Lightweight snapshot of system resource utilization.
+ * Lightweight snapshot of system resource utilization focusing on storage and thermal diagnostics.
+ * Conforms to lean monitoring guidelines: no CPU monitoring, no RAM monitoring.
  */
-data class SystemResourceSnapshot(
-    val totalRamBytes: Long,
-    val availableRamBytes: Long,
-    val appUsedRamBytes: Long,
+data class SystemResourceSnapshot @JvmOverloads constructor(
     val internalStorageFreeBytes: Long,
     val internalStorageTotalBytes: Long,
-    val isLowMemory: Boolean,
     val activeServicesCount: Int,
+    val thermalStatus: Int = -1,
     val timestampMs: Long = System.currentTimeMillis()
 ) {
-    val ramUsagePercent: Float
-        get() = if (totalRamBytes > 0) {
-            ((totalRamBytes - availableRamBytes).toFloat() / totalRamBytes.toFloat()) * 100f
-        } else 0f
+    val isStorageLow: Boolean
+        get() = internalStorageFreeBytes < (200L * 1024L * 1024L)
+
+    val storageFreeMb: Long
+        get() = internalStorageFreeBytes / (1024L * 1024L)
+
+    val storageTotalMb: Long
+        get() = internalStorageTotalBytes / (1024L * 1024L)
 }
