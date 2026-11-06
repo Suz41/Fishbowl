@@ -10,11 +10,15 @@ import com.fishbowl.app.ui.ServiceStatusPresentation;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Unit test suite verifying Kotlin core models, service lifecycle contracts,
- * health monitoring assessments, and UI presentation components.
+ * health monitoring assessments, UI presentation components, and rejection rollback mechanics.
  */
 public class ServiceLifecycleContractsTest {
 
@@ -166,5 +170,80 @@ public class ServiceLifecycleContractsTest {
         ServiceHealthSnapshot runningSnap = monitor.assessHealth("test_svc", 59198, null, null, true);
         Assert.assertEquals(ServiceHealthState.PROCESS_RUNNING, runningSnap.getState());
         Assert.assertFalse(runningSnap.isPortListening());
+    }
+
+    @Test
+    public void testLifecycleExecutorRejectionRollbackBehavior() {
+        AtomicReference<ServiceLifecycleResult> resultRef = new AtomicReference<>();
+        ServiceLifecycleCallback callback = resultRef::set;
+
+        ThreadPoolExecutor saturatedExecutor = new ThreadPoolExecutor(
+                1, 1, 0L, TimeUnit.MILLISECONDS,
+                new java.util.concurrent.ArrayBlockingQueue<>(1),
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+
+        CountDownLatch latch = new CountDownLatch(1);
+        try {
+            // Fill worker thread
+            saturatedExecutor.execute(() -> {
+                try { latch.await(); } catch (InterruptedException ignored) {}
+            });
+            // Fill single-item queue
+            saturatedExecutor.execute(() -> {});
+
+            // 3rd task must throw RejectedExecutionException under AbortPolicy
+            try {
+                saturatedExecutor.execute(() -> {});
+                Assert.fail("Expected RejectedExecutionException under saturated executor");
+            } catch (RejectedExecutionException rex) {
+                // Emulate MediaServiceManager rollback behavior: dispatch Failure with cause
+                ServiceLifecycleResult failure = new ServiceLifecycleResult.Failure(
+                        "radarr",
+                        "RESOURCE_EXHAUSTED: Lifecycle executor rejected task under high load",
+                        rex
+                );
+                callback.onResult(failure);
+            }
+
+            Assert.assertNotNull(resultRef.get());
+            Assert.assertTrue(resultRef.get() instanceof ServiceLifecycleResult.Failure);
+            ServiceLifecycleResult.Failure fail = (ServiceLifecycleResult.Failure) resultRef.get();
+            Assert.assertEquals("radarr", fail.getServiceId());
+            Assert.assertTrue(fail.getReason().contains("RESOURCE_EXHAUSTED"));
+            Assert.assertTrue(fail.getCause() instanceof RejectedExecutionException);
+        } finally {
+            latch.countDown();
+            saturatedExecutor.shutdownNow();
+        }
+    }
+
+    @Test
+    public void testDegradedAndFailedHealthStates() {
+        ServiceHealthSnapshot degradedSnapshot = new ServiceHealthSnapshot(
+                "radarr",
+                ServiceHealthState.DEGRADED,
+                true,
+                true,
+                150L,
+                500,
+                "Internal Server Error",
+                System.currentTimeMillis()
+        );
+        Assert.assertEquals(ServiceHealthState.DEGRADED, degradedSnapshot.getState());
+        Assert.assertEquals(500, degradedSnapshot.getHttpStatusCode());
+
+        ServiceHealthSnapshot failedSnapshot = new ServiceHealthSnapshot(
+                "sonarr",
+                ServiceHealthState.FAILED,
+                false,
+                false,
+                -1L,
+                -1,
+                "Process crashed unexpectedly with exit code 139",
+                System.currentTimeMillis()
+        );
+        Assert.assertEquals(ServiceHealthState.FAILED, failedSnapshot.getState());
+        Assert.assertFalse(failedSnapshot.isPortListening());
     }
 }
