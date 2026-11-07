@@ -243,6 +243,15 @@
             </intent-filter>
         </receiver>
 
+        <!-- Fishbowl Jellyfin Password Reset PIN Notification Copy Action -->
+        <receiver
+            android:name="com.fishbowl.app.CopyPinReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.fishbowl.app.ACTION_COPY_PIN" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".shared.activities.ReportActivity$ReportActivityBroadcastReceiver"
             android:exported="false" />

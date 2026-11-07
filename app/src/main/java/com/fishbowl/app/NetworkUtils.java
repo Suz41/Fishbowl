@@ -3,10 +3,89 @@ package com.fishbowl.app;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Locale;
 
 public class NetworkUtils {
+
+    public static class LanEndpoint {
+        public final String interfaceName;
+        public final String ip;
+        public final String label;
+
+        public LanEndpoint(String interfaceName, String ip, String label) {
+            this.interfaceName = interfaceName;
+            this.ip = ip;
+            this.label = label;
+        }
+
+        public String getUrl(int port, String webPath) {
+            String path = (webPath == null || webPath.equals("/")) ? "" : webPath;
+            return "http://" + ip + ":" + port + path;
+        }
+
+        public String getDisplayLabel() {
+            return "[" + label + "] " + ip;
+        }
+    }
+
+    /**
+     * Discovers all active, usable LAN IPv4 endpoints across physical and tethered interfaces.
+     * Excludes carrier cellular CGNAT (192.0.0.2 / rmnet).
+     */
+    public static List<LanEndpoint> getAllAvailableLanEndpoints() {
+        List<LanEndpoint> list = new ArrayList<>();
+        try {
+            Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
+            if (ifaces == null) return list;
+            while (ifaces.hasMoreElements()) {
+                NetworkInterface intf = ifaces.nextElement();
+                if (!intf.isUp() || intf.isLoopback()) continue;
+                String name = intf.getName() != null ? intf.getName().toLowerCase(Locale.ROOT) : "";
+
+                // Exclude cellular, carrier CGNAT, and internal Qualcomm dummy interfaces
+                if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("pdp")
+                        || name.startsWith("radio") || name.startsWith("dummy") || name.startsWith("tun")
+                        || name.startsWith("sit") || name.startsWith("gre") || name.startsWith("ifb")
+                        || name.startsWith("ip_vti")) {
+                    continue;
+                }
+
+                String label;
+                if (name.startsWith("wlan")) {
+                    label = "Wi-Fi";
+                } else if (name.startsWith("rndis") || name.startsWith("usb")) {
+                    label = "USB Tether";
+                } else if (name.startsWith("eth")) {
+                    label = "Ethernet";
+                } else if (name.startsWith("ap") || name.startsWith("softap")) {
+                    label = "Hotspot";
+                } else if (name.startsWith("tailscale")) {
+                    label = "Tailscale";
+                } else {
+                    label = "LAN (" + name + ")";
+                }
+
+                Enumeration<InetAddress> addrs = intf.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    InetAddress addr = addrs.nextElement();
+                    if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
+                        String ip = addr.getHostAddress();
+                        if (ip == null) continue;
+                        if (ip.startsWith("192.0.0.") || ip.startsWith("100.64.")) continue; // cellular / CLAT
+                        if (isTailscaleIp(ip)) {
+                            list.add(new LanEndpoint(name, ip, "Tailscale"));
+                        } else {
+                            list.add(new LanEndpoint(name, ip, label));
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return list;
+    }
 
     /**
      * Determines whether an IPv4 address belongs to the Tailscale CGNAT range (100.64.0.0/10).

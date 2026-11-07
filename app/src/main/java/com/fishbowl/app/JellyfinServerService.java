@@ -99,6 +99,7 @@ public class JellyfinServerService extends Service implements JellyfinController
             serviceManager.addListener(this);
         }
         acquireLocks();
+        PasswordResetManager.getInstance(getApplicationContext()).startMonitoring();
         promoteToForeground(buildNotification("Jellyfin Server", "Starting...", false));
     }
 
@@ -247,6 +248,7 @@ public class JellyfinServerService extends Service implements JellyfinController
         if (serviceManager != null) {
             serviceManager.removeListener(this);
         }
+        PasswordResetManager.getInstance(getApplicationContext()).stopMonitoring();
         releaseLocks();
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {

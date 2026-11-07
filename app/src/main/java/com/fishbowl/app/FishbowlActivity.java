@@ -444,6 +444,9 @@ public final class FishbowlActivity extends AppCompatActivity
             MediaStorageManager.getInstance(getApplicationContext()).initializeOnLaunch(getApplicationContext());
         }, "FishbowlStorageInit").start();
 
+        // Start watching for Jellyfin password reset token files and notify user
+        PasswordResetManager.getInstance(getApplicationContext()).startMonitoring();
+
         setContentView(buildMainPixelShell());
         // Initialize native Chromium in-app Cloudflare solver (headless WebView on port 8191)
         com.fishbowl.app.services.NativeFlareSolver.getInstance().init(this);
@@ -562,6 +565,7 @@ public final class FishbowlActivity extends AppCompatActivity
     @Override
     protected void onResume() {
         super.onResume();
+        PasswordResetManager.getInstance(getApplicationContext()).checkOnce();
         if (controller != null) {
             controller.reconcileStateAsync();
         }
@@ -4605,47 +4609,110 @@ public final class FishbowlActivity extends AppCompatActivity
         ibLp.bottomMargin = dp(16);
         infoBox.setLayoutParams(ibLp);
 
-        // Item A: URL / Endpoint
+        // Item A: URL / Endpoints (All available LAN endpoints + Local Loopback)
         int defaultPort = svc.getManifest().getDefaultPort();
         String webPath = svc.getManifest().getWebPath();
         if (webPath == null) webPath = "/";
         String localUrl = "http://127.0.0.1:" + defaultPort + (webPath.equals("/") ? "" : webPath);
-        String rawLanIp = getRawLanIp();
-        String lanUrl = (rawLanIp != null) ? "http://" + rawLanIp + ":" + defaultPort + (webPath.equals("/") ? "" : webPath) : localUrl;
 
         TextView lblUrl = new TextView(this);
-        lblUrl.setText("LOCAL & NETWORK URL");
+        lblUrl.setText("NETWORK & LAN ACCESS URLS");
         lblUrl.setTextSize(8.5f);
         lblUrl.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         lblUrl.setTextColor(Color.parseColor("#71717A"));
         infoBox.addView(lblUrl);
 
-        LinearLayout urlRow = new LinearLayout(this);
-        urlRow.setOrientation(LinearLayout.HORIZONTAL);
-        urlRow.setGravity(Gravity.CENTER_VERTICAL);
-        urlRow.setPadding(0, dp(2), 0, dp(8));
+        java.util.List<NetworkUtils.LanEndpoint> endpoints = NetworkUtils.getAllAvailableLanEndpoints();
+        if (endpoints != null && !endpoints.isEmpty()) {
+            for (NetworkUtils.LanEndpoint ep : endpoints) {
+                String epUrl = ep.getUrl(defaultPort, webPath);
 
-        TextView valUrl = new TextView(this);
-        valUrl.setText(lanUrl);
-        valUrl.setTextSize(10.5f);
-        valUrl.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        valUrl.setTextColor(Color.WHITE);
-        valUrl.setSingleLine(true);
-        valUrl.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-        urlRow.addView(valUrl, new LinearLayout.LayoutParams(0, -2, 1.0f));
+                LinearLayout urlRow = new LinearLayout(this);
+                urlRow.setOrientation(LinearLayout.HORIZONTAL);
+                urlRow.setGravity(Gravity.CENTER_VERTICAL);
+                urlRow.setPadding(0, dp(2), 0, dp(4));
 
-        TextView btnCopyUrl = new TextView(this);
-        btnCopyUrl.setText("COPY");
-        btnCopyUrl.setTextSize(9f);
-        btnCopyUrl.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        btnCopyUrl.setTextColor(Color.parseColor("#38BDF8"));
-        btnCopyUrl.setPadding(dp(8), dp(4), dp(4), dp(4));
-        btnCopyUrl.setClickable(true);
-        btnCopyUrl.setFocusable(true);
-        btnCopyUrl.setOnClickListener(v -> copyUrlToClipboard(svc.getDisplayName() + " URL", lanUrl));
-        urlRow.addView(btnCopyUrl);
+                TextView lblBadge = new TextView(this);
+                lblBadge.setText(ep.label.toUpperCase(Locale.ROOT));
+                lblBadge.setTextSize(7.5f);
+                lblBadge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                lblBadge.setTextColor(Color.parseColor("#38BDF8"));
+                lblBadge.setPadding(dp(4), dp(2), dp(4), dp(2));
+                lblBadge.setBackground(createBorderedRoundedDrawable(Color.parseColor("#0C2333"), Color.parseColor("#0284C7"), dp(1), dp(3)));
+                LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(-2, -2);
+                badgeLp.rightMargin = dp(6);
+                urlRow.addView(lblBadge, badgeLp);
 
-        infoBox.addView(urlRow);
+                TextView valUrl = new TextView(this);
+                valUrl.setText(epUrl);
+                valUrl.setTextSize(10f);
+                valUrl.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                valUrl.setTextColor(Color.WHITE);
+                valUrl.setSingleLine(true);
+                valUrl.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+                urlRow.addView(valUrl, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+                TextView btnCopyUrl = new TextView(this);
+                btnCopyUrl.setText("COPY");
+                btnCopyUrl.setTextSize(9f);
+                btnCopyUrl.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                btnCopyUrl.setTextColor(Color.parseColor("#38BDF8"));
+                btnCopyUrl.setPadding(dp(8), dp(4), dp(4), dp(4));
+                btnCopyUrl.setClickable(true);
+                btnCopyUrl.setFocusable(true);
+                btnCopyUrl.setOnClickListener(v -> copyUrlToClipboard(svc.getDisplayName() + " " + ep.label + " URL", epUrl));
+                urlRow.addView(btnCopyUrl);
+
+                infoBox.addView(urlRow);
+            }
+        }
+
+        // Always show Local Loopback (127.0.0.1)
+        LinearLayout localRow = new LinearLayout(this);
+        localRow.setOrientation(LinearLayout.HORIZONTAL);
+        localRow.setGravity(Gravity.CENTER_VERTICAL);
+        localRow.setPadding(0, dp(2), 0, dp(4));
+
+        TextView lblLocal = new TextView(this);
+        lblLocal.setText("LOCAL");
+        lblLocal.setTextSize(7.5f);
+        lblLocal.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        lblLocal.setTextColor(Color.parseColor("#94A3B8"));
+        lblLocal.setPadding(dp(4), dp(2), dp(4), dp(2));
+        lblLocal.setBackground(createBorderedRoundedDrawable(Color.parseColor("#1E293B"), Color.parseColor("#475569"), dp(1), dp(3)));
+        LinearLayout.LayoutParams localBadgeLp = new LinearLayout.LayoutParams(-2, -2);
+        localBadgeLp.rightMargin = dp(6);
+        localRow.addView(lblLocal, localBadgeLp);
+
+        TextView valLocalUrl = new TextView(this);
+        valLocalUrl.setText(localUrl);
+        valLocalUrl.setTextSize(10f);
+        valLocalUrl.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        valLocalUrl.setTextColor(Color.WHITE);
+        valLocalUrl.setSingleLine(true);
+        valLocalUrl.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+        localRow.addView(valLocalUrl, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        TextView btnCopyLocal = new TextView(this);
+        btnCopyLocal.setText("COPY");
+        btnCopyLocal.setTextSize(9f);
+        btnCopyLocal.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        btnCopyLocal.setTextColor(Color.parseColor("#38BDF8"));
+        btnCopyLocal.setPadding(dp(8), dp(4), dp(4), dp(4));
+        btnCopyLocal.setClickable(true);
+        btnCopyLocal.setFocusable(true);
+        btnCopyLocal.setOnClickListener(v -> copyUrlToClipboard(svc.getDisplayName() + " Local URL", localUrl));
+        localRow.addView(btnCopyLocal);
+
+        infoBox.addView(localRow);
+
+        TextView sopNotice = new TextView(this);
+        sopNotice.setText("Note: Browsers isolate cookies per IP/host (Same-Origin Policy). Logging in on USB/Wi-Fi IP does not transfer to 127.0.0.1 or other IPs.");
+        sopNotice.setTextSize(8f);
+        sopNotice.setTypeface(Typeface.MONOSPACE);
+        sopNotice.setTextColor(Color.parseColor("#71717A"));
+        sopNotice.setPadding(0, dp(2), 0, dp(6));
+        infoBox.addView(sopNotice);
 
         // Item B: Credentials / API Key
         String credVal;
