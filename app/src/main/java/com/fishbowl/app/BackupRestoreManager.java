@@ -169,6 +169,14 @@ public final class BackupRestoreManager {
                     totalCount += stageConfigDir(configDir, stagingConfig, "config", itemsArray);
                 }
 
+                // 2b. Collect Jellyfin Database from TermuxConstants.TERMUX_HOME_DIR/.local/share/jellyfin/data
+                postProgress(callback, "Backing up Jellyfin user database...");
+                File jfDataDir = new File(homeDir, ".local/share/jellyfin/data");
+                File stagingJfData = new File(stagingDir, "jellyfin_data");
+                if (jfDataDir.exists() && jfDataDir.isDirectory()) {
+                    totalCount += stageConfigDir(jfDataDir, stagingJfData, "jellyfin_data", itemsArray);
+                }
+
                 // 3. Create Metadata Manifest
                 JSONObject meta = new JSONObject();
                 meta.put("formatVersion", 2);
@@ -338,6 +346,10 @@ public final class BackupRestoreManager {
                 if (liveConfig.exists() && liveConfig.isDirectory()) {
                     copyDirectory(liveConfig, new File(snapshotDir, "config"));
                 }
+                File liveJfData = new File(TermuxConstants.TERMUX_HOME_DIR, ".local/share/jellyfin/data");
+                if (liveJfData.exists() && liveJfData.isDirectory()) {
+                    copyDirectory(liveJfData, new File(snapshotDir, "jellyfin_data"));
+                }
                 snapshotCreated = true;
 
                 // 5. Restore SharedPreferences
@@ -367,6 +379,15 @@ public final class BackupRestoreManager {
                     configCount = copyDirectory(stagingConfig, targetConfig);
                 }
 
+                // 6b. Restore Jellyfin User Database & Data
+                File stagingJfData = new File(stagingDir, "jellyfin_data");
+                if (stagingJfData.exists() && stagingJfData.isDirectory()) {
+                    postProgress(callback, "Restoring Jellyfin user database...");
+                    File targetJfData = new File(TermuxConstants.TERMUX_HOME_DIR, ".local/share/jellyfin/data");
+                    if (!targetJfData.exists()) targetJfData.mkdirs();
+                    configCount += copyDirectory(stagingJfData, targetJfData);
+                }
+
                 // 7. POSIX block sync
                 flushDisk();
 
@@ -388,6 +409,10 @@ public final class BackupRestoreManager {
                         File snapConfig = new File(snapshotDir, "config");
                         if (snapConfig.exists()) {
                             copyDirectory(snapConfig, new File(TermuxConstants.TERMUX_HOME_DIR, ".config"));
+                        }
+                        File snapJfData = new File(snapshotDir, "jellyfin_data");
+                        if (snapJfData.exists()) {
+                            copyDirectory(snapJfData, new File(TermuxConstants.TERMUX_HOME_DIR, ".local/share/jellyfin/data"));
                         }
                         flushDisk();
                         Log.i(TAG, "Successfully rolled back to pre-restore snapshot.");
@@ -640,6 +665,93 @@ public final class BackupRestoreManager {
             byte[] data = new byte[(int) file.length()];
             fis.read(data);
             return new String(data, StandardCharsets.UTF_8);
+        }
+    }
+
+    /**
+     * Automatically mirrors the core Jellyfin user database (accounts, libraries, playback state)
+     * to persistent external storage (/sdcard/Fishbowl/data/ and Download/FishBowl_Backups/)
+     * so that accounts survive app uninstalls, data clearing, or system wipes.
+     */
+    public static void autoBackupJellyfinDatabase(Context context) {
+        EXECUTOR.execute(() -> {
+            try {
+                File jfDataDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".local/share/jellyfin/data");
+                File liveDb = new File(jfDataDir, "jellyfin.db");
+                if (!liveDb.exists() || liveDb.length() == 0) return;
+
+                // 1. Primary destination: /sdcard/Fishbowl/data/jellyfin.db
+                File fishbowlDataDir = new File(Environment.getExternalStorageDirectory(), "Fishbowl/data");
+                if (!fishbowlDataDir.exists()) fishbowlDataDir.mkdirs();
+                File target1 = new File(fishbowlDataDir, "jellyfin.db");
+                copyFile(liveDb, target1);
+
+                File liveWal = new File(jfDataDir, "jellyfin.db-wal");
+                if (liveWal.exists()) copyFile(liveWal, new File(fishbowlDataDir, "jellyfin.db-wal"));
+                File liveShm = new File(jfDataDir, "jellyfin.db-shm");
+                if (liveShm.exists()) copyFile(liveShm, new File(fishbowlDataDir, "jellyfin.db-shm"));
+
+                // 2. Secondary backup: Download/FishBowl_Backups/auto_jellyfin_backup.db
+                if (context != null) {
+                    File backupsDir = getBackupDirectory(context);
+                    File target2 = new File(backupsDir, "auto_jellyfin_backup.db");
+                    copyFile(liveDb, target2);
+                }
+
+                flushDisk();
+                Log.i(TAG, "Auto-backup of Jellyfin database completed (" + liveDb.length() + " bytes)");
+            } catch (Throwable t) {
+                Log.w(TAG, "Auto-backup of Jellyfin database failed: " + t.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Automatically restores the Jellyfin database if missing (such as after app reinstall or Clear Data).
+     * Returns true if database was restored, false otherwise.
+     */
+    public static boolean autoRestoreJellyfinDatabaseIfNeeded(Context context) {
+        try {
+            File jfDataDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".local/share/jellyfin/data");
+            File liveDb = new File(jfDataDir, "jellyfin.db");
+            if (liveDb.exists() && liveDb.length() > 0) {
+                return false; // Database already exists
+            }
+
+            // Search for persistent backup candidates
+            List<File> candidates = new ArrayList<>();
+            candidates.add(new File(Environment.getExternalStorageDirectory(), "Fishbowl/data/jellyfin.db"));
+            if (context != null) {
+                candidates.add(new File(getBackupDirectory(context), "auto_jellyfin_backup.db"));
+            }
+            candidates.add(new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "FishBowl_Backups/auto_jellyfin_backup.db"));
+
+            File sourceDb = null;
+            for (File c : candidates) {
+                if (c.exists() && c.length() > 0) {
+                    sourceDb = c;
+                    break;
+                }
+            }
+
+            if (sourceDb == null) return false;
+
+            Log.i(TAG, "Found persistent Jellyfin database backup at: " + sourceDb.getAbsolutePath() + " (" + sourceDb.length() + " bytes). Restoring...");
+            if (!jfDataDir.exists()) jfDataDir.mkdirs();
+
+            copyFile(sourceDb, liveDb);
+
+            File sourceWal = new File(sourceDb.getParentFile(), "jellyfin.db-wal");
+            if (sourceWal.exists()) copyFile(sourceWal, new File(jfDataDir, "jellyfin.db-wal"));
+            File sourceShm = new File(sourceDb.getParentFile(), "jellyfin.db-shm");
+            if (sourceShm.exists()) copyFile(sourceShm, new File(jfDataDir, "jellyfin.db-shm"));
+
+            flushDisk();
+            Log.i(TAG, "Successfully auto-restored Jellyfin database from persistent storage!");
+            return true;
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed auto-restoring Jellyfin database", t);
+            return false;
         }
     }
 

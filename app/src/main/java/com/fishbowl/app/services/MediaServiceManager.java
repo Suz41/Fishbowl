@@ -1198,16 +1198,16 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 }
                 if ("radarr".equalsIgnoreCase(id)) {
                     env.put("RADARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("RADARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("RADARR__SERVER__TRUSTEDNETWORKS", "127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12");
                 } else if ("sonarr".equalsIgnoreCase(id)) {
                     env.put("SONARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("SONARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("SONARR__SERVER__TRUSTEDNETWORKS", "127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12");
                 } else if ("prowlarr".equalsIgnoreCase(id)) {
                     env.put("PROWLARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("PROWLARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("PROWLARR__SERVER__TRUSTEDNETWORKS", "127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12");
                 } else if ("lidarr".equalsIgnoreCase(id)) {
                     env.put("LIDARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("LIDARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("LIDARR__SERVER__TRUSTEDNETWORKS", "127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12");
                 } else if ("jackett".equalsIgnoreCase(id)) {
                     env.put("JACKETT_PORT", String.valueOf(port));
                     env.put("JACKETT_DATA_FOLDER", dataDir.getAbsolutePath());
@@ -1221,8 +1221,10 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 env.put("DOTNET_gcServer", "0");
                 env.put("DOTNET_gcConcurrent", "1");
                 env.put("DOTNET_GCHighMemPercent", "75");
-                env.put("DOTNET_ThreadPool_MinThreads", "2");
-                env.put("DOTNET_ThreadPool_MaxThreads", "20");
+                env.put("DOTNET_ThreadPool_MinThreads", "4");
+                env.put("DOTNET_ThreadPool_MaxThreads", "64");
+                env.put("DOTNET_DefaultStackSize", "2097152");
+                env.put("COMPlus_DefaultStackSize", "2097152");
                 env.put("DOTNET_EnableWriteXorExecute", "0");
 
                 String nativeLibDir = appContext.getApplicationInfo().nativeLibraryDir;

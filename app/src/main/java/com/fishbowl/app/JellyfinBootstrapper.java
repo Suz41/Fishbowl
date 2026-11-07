@@ -535,6 +535,7 @@ public class JellyfinBootstrapper {
             }
 
             ensureNetworkConfig(context);
+            BackupRestoreManager.autoRestoreJellyfinDatabaseIfNeeded(context);
             Log.i(TAG, "Jellyfin self-contained environment initialized successfully!");
             if (callback != null) {
                 callback.onProgress("Runtime installation complete!", 100);
