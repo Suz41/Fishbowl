@@ -6026,7 +6026,7 @@ public final class FishbowlActivity extends AppCompatActivity
         TERMUX_POOL_MAP.put("libc++", "pool/main/libc/libc++/libc++_30_aarch64.deb");
         TERMUX_POOL_MAP.put("7zip", "pool/main/7/7zip/7zip_26.05_aarch64.deb");
         TERMUX_POOL_MAP.put("nodejs-lts", "pool/main/n/nodejs-lts/nodejs-lts_24.22.2_aarch64.deb");
-        TERMUX_POOL_MAP.put("zlib", "pool/main/z/zlib/zlib_1.3.2_aarch64.deb");
+        TERMUX_POOL_MAP.put("zlib", "pool/main/z/zlib/zlib_1.4_aarch64.deb");
         TERMUX_POOL_MAP.put("openssl", "pool/main/o/openssl/openssl_1:3.6.5_aarch64.deb");
         TERMUX_POOL_MAP.put("libicu", "pool/main/libi/libicu/libicu_78.3_aarch64.deb");
         TERMUX_POOL_MAP.put("libcrypt", "pool/main/libc/libcrypt/libcrypt_0.2-6_aarch64.deb");
@@ -6034,7 +6034,7 @@ public final class FishbowlActivity extends AppCompatActivity
         TERMUX_POOL_MAP.put("ncurses-ui-libs", "pool/main/n/ncurses-ui-libs/ncurses-ui-libs_6.6.20260307+really6.5.20250830_aarch64.deb");
         TERMUX_POOL_MAP.put("zstd", "pool/main/z/zstd/zstd_1.5.7-1_aarch64.deb");
         TERMUX_POOL_MAP.put("c-ares", "pool/main/c/c-ares/c-ares_1.34.9_aarch64.deb");
-        TERMUX_POOL_MAP.put("python", "pool/main/p/python/python_3.14.8_aarch64.deb");
+        TERMUX_POOL_MAP.put("python", "pool/main/p/python/python_3.14.10_aarch64.deb");
         TERMUX_POOL_MAP.put("libbz2", "pool/main/libb/libbz2/libbz2_1.0.8-8_aarch64.deb");
         TERMUX_POOL_MAP.put("libexpat", "pool/main/libe/libexpat/libexpat_2.10.0_aarch64.deb");
         TERMUX_POOL_MAP.put("libevent", "pool/main/libe/libevent/libevent_2.1.13_aarch64.deb");
@@ -6083,16 +6083,16 @@ public final class FishbowlActivity extends AppCompatActivity
             }
             URL url = new URL("https://packages-cf.termux.dev/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(12000);
-            conn.setRequestProperty("User-Agent", "Fishbowl-Installer/1.0");
+            conn.setConnectTimeout(15000);
+            conn.setReadTimeout(30000);
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
             if (conn.getResponseCode() == 200) {
-                try (java.util.zip.GZIPInputStream gzis = new java.util.zip.GZIPInputStream(conn.getInputStream())) {
+                try (java.util.zip.GZIPInputStream gzis = new java.util.zip.GZIPInputStream(new BufferedInputStream(conn.getInputStream(), 65536))) {
                     String match = parseDebFilenameFromPackages(gzis, pkgName);
                     if (match != null) {
                         String fullUrl = "https://packages-cf.termux.dev/apt/termux-main/" + match;
                         synchronized (sDynamicDebUrlCache) {
-                            sDynamicDebUrlCache.put(pkgName, fullUrl);
+                            sDynamicDebUrlCache.put(pkgName.toLowerCase(Locale.ROOT), fullUrl);
                         }
                         return fullUrl;
                     }
@@ -6105,19 +6105,29 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private static String parseDebFilenameFromPackages(InputStream in, String pkgName) throws IOException {
-        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8))) {
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8), 65536)) {
             String line;
             String curPkg = null;
+            String found = null;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
                 if (line.startsWith("Package: ")) {
-                    curPkg = line.substring(9).trim();
-                } else if (line.startsWith("Filename: ") && pkgName.equalsIgnoreCase(curPkg)) {
-                    return line.substring(10).trim();
+                    curPkg = line.substring(9).trim().toLowerCase(Locale.ROOT);
+                } else if (line.startsWith("Filename: ") && curPkg != null) {
+                    String fn = line.substring(10).trim();
+                    synchronized (sDynamicDebUrlCache) {
+                        sDynamicDebUrlCache.put(curPkg, "https://packages-cf.termux.dev/apt/termux-main/" + fn);
+                    }
+                    if (pkgName.equalsIgnoreCase(curPkg)) {
+                        found = fn;
+                    }
+                    curPkg = null;
+                } else if (line.isEmpty()) {
+                    curPkg = null;
                 }
             }
+            return found;
         }
-        return null;
     }
 
     private static boolean isDebPackageAlreadyInstalled(String pkgName, File prefixDir) {
@@ -6125,8 +6135,20 @@ public final class FishbowlActivity extends AppCompatActivity
         File bin = new File(prefixDir, "bin");
         File lib = new File(prefixDir, "lib");
         switch (pkgName.toLowerCase(Locale.ROOT)) {
-            case "libc++":
-                return new File(lib, "libc++_shared.so").exists();
+            case "libc++": {
+                File libCpp = new File(lib, "libc++_shared.so");
+                if (!libCpp.exists()) return false;
+                if (libCpp.length() >= 1400000L) return true;
+                try (FileInputStream fis = new FileInputStream(libCpp)) {
+                    byte[] data = new byte[(int) Math.min(libCpp.length(), 2097152L)];
+                    int r = fis.read(data);
+                    if (r > 0) {
+                        String str = new String(data, 0, r, java.nio.charset.StandardCharsets.ISO_8859_1);
+                        return str.contains("_ZNSt6__ndk113__hash_memory");
+                    }
+                } catch (Throwable ignored) {}
+                return false;
+            }
             case "zlib":
                 return new File(lib, "libz.so").exists();
             case "openssl":
