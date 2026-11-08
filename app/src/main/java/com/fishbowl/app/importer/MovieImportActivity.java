@@ -1324,10 +1324,6 @@ public final class MovieImportActivity extends AppCompatActivity {
             executeImportTransfer(sourceUri, sourceFilename, finalMeta, isMoveSelected[0], strategy, scannedCardViewToRemoveOnSuccess);
         });
 
-        LinearLayout.LayoutParams pExec = new LinearLayout.LayoutParams(-1, dp(44));
-        pExec.topMargin = dp(16);
-        content.addView(btnExecute, pExec);
-
         scroll.addView(content);
         dialog.setContentView(scroll);
         dialog.show();

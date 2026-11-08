@@ -1,7 +1,9 @@
 package com.fishbowl.app.services;
 
 import android.content.Context;
+import android.os.Build;
 import android.os.Handler;
+import java.util.concurrent.RejectedExecutionException;
 import android.os.Looper;
 import android.system.Os;
 import android.util.Log;
@@ -43,12 +45,19 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Centralized service management engine coordinating lifecycle, health checks,
  * port binding verification, and process supervision across all media services.
  */
-public class MediaServiceManager {
+public class MediaServiceManager implements ServiceLifecycleContract, ServiceRegistryContract {
 
     private static final String TAG = "MediaServiceManager";
     private static MediaServiceManager instance;
@@ -59,9 +68,45 @@ public class MediaServiceManager {
     private static final Map<String, Integer> lmkRevivalAttempts = new ConcurrentHashMap<>();
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<ServiceListener> listeners = new CopyOnWriteArrayList<>();
-    private final ExecutorService serviceExecutor = Executors.newCachedThreadPool();
+    private final ExecutorService serviceExecutor = new ThreadPoolExecutor(
+            2,
+            4,
+            60L,
+            TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(64),
+            new ThreadFactory() {
+                private final AtomicInteger count = new AtomicInteger(1);
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "Fishbowl-LifecycleWorker-" + count.getAndIncrement());
+                    t.setDaemon(true);
+                    return t;
+                }
+            },
+            new ThreadPoolExecutor.AbortPolicy()
+    );
+    private final ExecutorService processLogExecutor = new ThreadPoolExecutor(
+            4,
+            16,
+            60L,
+            TimeUnit.SECONDS,
+            new SynchronousQueue<>(),
+            new ThreadFactory() {
+                private final AtomicInteger count = new AtomicInteger(1);
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "Fishbowl-LogReader-" + count.getAndIncrement());
+                    t.setDaemon(true);
+                    return t;
+                }
+            },
+            new ThreadPoolExecutor.AbortPolicy()
+    );
+    private final ProcessExitSupervisor processExitSupervisor = new ProcessExitSupervisor();
+    private final ExecutorService processExitExecutor = processExitSupervisor.getPrimaryExecutor();
     private final java.util.concurrent.ScheduledExecutorService dedupScheduler = Executors.newSingleThreadScheduledExecutor();
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+        private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ServiceHealthMonitor healthMonitor = new ServiceHealthMonitor();
     private volatile boolean isBridgeInitialized = false;
 
     private static final String PREF_ACTIVE_STACK = "fishbowl_active_stack";
@@ -168,33 +213,15 @@ public class MediaServiceManager {
     public boolean isServiceHealthy(ManagedService s) {
         if (s == null) return false;
         int port = s.getManifest().getDefaultPort();
-        if (!isPortOccupied(port)) {
-            return false;
-        }
         String endpoint = s.getManifest().getHealthCheckPath();
-        if (endpoint == null || endpoint.trim().isEmpty() || "/".equals(endpoint)) {
-            return true;
+        if (endpoint == null || endpoint.trim().isEmpty()) {
+            endpoint = "/";
         }
         String apiKey = getServiceApiKey(s.getId());
         String urlStr = "http://127.0.0.1:" + port + endpoint;
-        if (apiKey != null && !apiKey.trim().isEmpty() && !urlStr.contains("apiKey=")) {
-            urlStr += (urlStr.contains("?") ? "&" : "?") + "apiKey=" + apiKey.trim();
-        }
-        try {
-            URL u = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) u.openConnection();
-            conn.setConnectTimeout(2000);
-            conn.setReadTimeout(2000);
-            conn.setRequestMethod("GET");
-            if (apiKey != null && !apiKey.trim().isEmpty()) {
-                conn.setRequestProperty("X-Api-Key", apiKey.trim());
-            }
-            int code = conn.getResponseCode();
-            conn.disconnect();
-            return code >= 200 && code < 500;
-        } catch (Throwable t) {
-            return isPortOccupied(port);
-        }
+        boolean processAlive = activeProcesses.containsKey(s.getId());
+        ServiceHealthSnapshot snapshot = healthMonitor.assessHealth(s.getId(), port, urlStr, apiKey, processAlive);
+        return snapshot.getState() == ServiceHealthState.READY;
     }
 
     public static int getLmkRevivalAttempts(String sid) {
@@ -766,6 +793,11 @@ public class MediaServiceManager {
      */
     public void reconcileRunningServices() {
         serviceExecutor.execute(() -> {
+            // Automatically clean up any zombie background processes holding service ports
+            try {
+                reclaimAllZombiePorts();
+            } catch (Throwable ignored) {}
+
             for (ManagedService ms : services.values()) {
                 if (ms.getManifest().isCore()) continue; // Handled by JellyfinController
 
@@ -838,13 +870,28 @@ public class MediaServiceManager {
         }
     }
 
+    @Override
     public void startService(String id) {
-        startService(id, appContext);
+        startService(id, appContext, null);
     }
 
     public void startService(String id, Context ctx) {
+        startService(id, ctx, null);
+    }
+
+    @Override
+    public void startService(String id, ServiceLifecycleCallback callback) {
+        startService(id, appContext, callback);
+    }
+
+    public void startService(String id, Context ctx, ServiceLifecycleCallback callback) {
         ManagedService ms = services.get(id);
-        if (ms == null) return;
+        if (ms == null) {
+            if (callback != null) {
+                callback.onResult(new ServiceLifecycleResult.Failure(id, "Service not found in registry", null));
+            }
+            return;
+        }
 
         // Ensure Foreground Server Service is active to protect process from Android background kills
         ensureForegroundServiceActive();
@@ -852,6 +899,9 @@ public class MediaServiceManager {
         if ("jellyfin".equalsIgnoreCase(id)) {
             recordServiceActive("jellyfin", true);
             JellyfinController.getInstance().start(ctx != null ? ctx : appContext);
+            if (callback != null) {
+                callback.onResult(new ServiceLifecycleResult.Success("jellyfin", "Jellyfin start initiated"));
+            }
             return;
         }
 
@@ -860,6 +910,9 @@ public class MediaServiceManager {
             ms.setLastError(ms.getBlockedReason());
             notifyListeners(id, ServiceState.BLOCKED);
             Log.w(TAG, "[ServiceManager] Cannot start " + ms.getDisplayName() + ": " + ms.getBlockedReason());
+            if (callback != null) {
+                callback.onResult(new ServiceLifecycleResult.Failure(id, ms.getBlockedReason(), null));
+            }
             return;
         }
 
@@ -868,6 +921,9 @@ public class MediaServiceManager {
             ms.setLastError("Service is disabled by configuration");
             notifyListeners(id, ServiceState.DISABLED);
             Log.w(TAG, "[ServiceManager] Cannot start " + ms.getDisplayName() + ": service is disabled");
+            if (callback != null) {
+                callback.onResult(new ServiceLifecycleResult.Failure(id, "Service is disabled by configuration", null));
+            }
             return;
         }
 
@@ -876,6 +932,9 @@ public class MediaServiceManager {
         synchronized (ms) {
             if (ms.isRunning() || ms.isStarting()) {
                 Log.d(TAG, "Service " + id + " is already running or starting. Ignoring redundant start.");
+                if (callback != null) {
+                    callback.onResult(new ServiceLifecycleResult.Skipped(id, "Service is already running or starting"));
+                }
                 return;
             }
             ms.setUserStopped(false);
@@ -886,8 +945,9 @@ public class MediaServiceManager {
         Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STARTING");
         ms.appendLog("Starting " + ms.getManifest().getDisplayName() + "...");
 
-        serviceExecutor.execute(() -> {
-            // Check storage pre-flight
+        try {
+            serviceExecutor.execute(() -> {
+                // Check storage pre-flight
             long freeStorageMb = 0;
             try {
                 android.os.StatFs stat = new android.os.StatFs(TermuxConstants.TERMUX_FILES_DIR.getAbsolutePath());
@@ -899,6 +959,9 @@ public class MediaServiceManager {
                 ms.setState(ServiceState.ERROR);
                 notifyListeners(id, ServiceState.ERROR);
                 Log.e(TAG, "[ServiceManager] Cannot start " + ms.getDisplayName() + ": storage full (" + freeStorageMb + " MB free)");
+                if (callback != null) {
+                    callback.onResult(new ServiceLifecycleResult.Failure(id, ms.getLastError(), null));
+                }
                 return;
             }
 
@@ -907,6 +970,9 @@ public class MediaServiceManager {
                 ms.setLastError("NOT_INSTALLED: Service files not found. Please install the service first.");
                 ms.setState(ServiceState.NOT_INSTALLED);
                 notifyListeners(id, ServiceState.NOT_INSTALLED);
+                if (callback != null) {
+                    callback.onResult(new ServiceLifecycleResult.Failure(id, ms.getLastError(), null));
+                }
                 return;
             }
 
@@ -923,6 +989,9 @@ public class MediaServiceManager {
                     ms.resetCrashCount();
                     notifyListeners(id, ServiceState.RUNNING);
                     Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " RUNNING (port already active & healthy)");
+                    if (callback != null) {
+                        callback.onResult(new ServiceLifecycleResult.Success(id, ms.getDisplayName() + " port already active & healthy"));
+                    }
                     return;
                 } else {
                     // Port is occupied but unresponsive: reclaim port for this service
@@ -934,12 +1003,18 @@ public class MediaServiceManager {
                             ms.setHealthy(true);
                             ms.resetCrashCount();
                             notifyListeners(id, ServiceState.RUNNING);
+                            if (callback != null) {
+                                callback.onResult(new ServiceLifecycleResult.Success(id, ms.getDisplayName() + " port active and ready"));
+                            }
                             return;
                         }
                         ms.setLastError("PORT_CONFLICT: Port " + port + " is occupied by an external process.");
                         ms.setState(ServiceState.ERROR);
                         notifyListeners(id, ServiceState.ERROR);
                         Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " PORT_CONFLICT on " + port);
+                        if (callback != null) {
+                            callback.onResult(new ServiceLifecycleResult.Failure(id, ms.getLastError(), null));
+                        }
                         return;
                     }
                 }
@@ -1128,16 +1203,16 @@ public class MediaServiceManager {
                 }
                 if ("radarr".equalsIgnoreCase(id)) {
                     env.put("RADARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("RADARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("RADARR__SERVER__TRUSTEDNETWORKS", "127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12");
                 } else if ("sonarr".equalsIgnoreCase(id)) {
                     env.put("SONARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("SONARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("SONARR__SERVER__TRUSTEDNETWORKS", "127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12");
                 } else if ("prowlarr".equalsIgnoreCase(id)) {
                     env.put("PROWLARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("PROWLARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("PROWLARR__SERVER__TRUSTEDNETWORKS", "127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12");
                 } else if ("lidarr".equalsIgnoreCase(id)) {
                     env.put("LIDARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("LIDARR__SERVER__TRUSTEDNETWORKS", "0.0.0.0/0,::/0");
+                    env.put("LIDARR__SERVER__TRUSTEDNETWORKS", "127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12");
                 } else if ("jackett".equalsIgnoreCase(id)) {
                     env.put("JACKETT_PORT", String.valueOf(port));
                     env.put("JACKETT_DATA_FOLDER", dataDir.getAbsolutePath());
@@ -1151,8 +1226,10 @@ public class MediaServiceManager {
                 env.put("DOTNET_gcServer", "0");
                 env.put("DOTNET_gcConcurrent", "1");
                 env.put("DOTNET_GCHighMemPercent", "75");
-                env.put("DOTNET_ThreadPool_MinThreads", "2");
-                env.put("DOTNET_ThreadPool_MaxThreads", "20");
+                env.put("DOTNET_ThreadPool_MinThreads", "4");
+                env.put("DOTNET_ThreadPool_MaxThreads", "64");
+                env.put("DOTNET_DefaultStackSize", "2097152");
+                env.put("COMPlus_DefaultStackSize", "2097152");
                 env.put("DOTNET_EnableWriteXorExecute", "0");
 
                 String nativeLibDir = appContext.getApplicationInfo().nativeLibraryDir;
@@ -1200,86 +1277,34 @@ public class MediaServiceManager {
                 Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " PROCESS_READY (PID " + pid + ")");
                 ms.appendLog("Process spawned (PID " + pid + " monitoring active)");
 
-                // Background stream reader
-                serviceExecutor.execute(() -> {
-                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                        String line;
-                        while ((line = reader.readLine()) != null) {
-                            ms.appendLog(line);
-                        }
-                    } catch (Throwable ignored) {}
-                });
-
-                // Background exit monitor with crash loop protection & exponential backoff
-                serviceExecutor.execute(() -> {
+                // Background stream reader (ProcessLog pool with zero silent task loss)
+                try {
+                    processLogExecutor.execute(() -> {
+                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                ms.appendLog(line);
+                            }
+                        } catch (Throwable ignored) {}
+                    });
+                } catch (RejectedExecutionException rex) {
+                    Log.e(TAG, "[ProcessLog] Stream reader registration rejected for " + ms.getDisplayName() + ". Aborting process to avoid pipe deadlock.", rex);
                     try {
-                        int exitCode = process.waitFor();
-                        activeProcesses.remove(id);
-                        ms.appendLog("Process exited with code: " + exitCode);
-                        Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " process exited with code " + exitCode);
-
-                        if (ms.isUserStopped() || ms.getState() == ServiceState.STOPPING) {
-                            ms.setState(ServiceState.STOPPED);
-                            ms.setHealthy(false);
-                            ms.setProcessPid(0);
-                            notifyListeners(id, ServiceState.STOPPED);
-                            Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STOPPED (intentional)");
-                        } else {
-                            // Check storage before auto-restart to prevent endless crash loops on low storage
-                            long exitStorageMb = 0;
-                            try {
-                                android.os.StatFs stat = new android.os.StatFs(TermuxConstants.TERMUX_FILES_DIR.getAbsolutePath());
-                                exitStorageMb = stat.getAvailableBytes() / (1024 * 1024);
-                            } catch (Throwable ignored) {}
-
-                            if (exitStorageMb < 50) {
-                                ms.setLastError("STORAGE_IS_FULL: Device storage is full (" + exitStorageMb + " MB free). Halting auto-restart.");
-                                ms.setState(ServiceState.ERROR);
-                                ms.setHealthy(false);
-                                ms.setProcessPid(0);
-                                notifyListeners(id, ServiceState.ERROR);
-                                Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " STORAGE_IS_FULL. Auto-restart halted.");
-                                return;
-                            }
-
-                            ms.recordCrash();
-                            int crashes = ms.getCrashCount();
-                            if (crashes > 5) {
-                                recordServiceActive(id, false);
-                                ms.setLastError("CRASH_LOOP_PROTECTION: Repeated failures (" + crashes + " crashes). Auto-restart halted.");
-                                ms.setState(ServiceState.CRASH_LOOP_PROTECTION);
-                                ms.setHealthy(false);
-                                ms.setProcessPid(0);
-                                notifyListeners(id, ServiceState.CRASH_LOOP_PROTECTION);
-                                Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " CRASH_LOOP_PROTECTION: Halted after " + crashes + " crashes");
-                            } else {
-                                // Exponential backoff: 5s, 15s, 30s, 60s, 300s
-                                long backoffMs;
-                                switch (crashes) {
-                                    case 1: backoffMs = 5000; break;
-                                    case 2: backoffMs = 15000; break;
-                                    case 3: backoffMs = 30000; break;
-                                    case 4: backoffMs = 60000; break;
-                                    default: backoffMs = 300000; break;
-                                }
-                                ms.setLastError("RECOVERING: Exited unexpectedly with code " + exitCode + ". Restarting in " + (backoffMs / 1000) + "s (Attempt " + crashes + "/5)");
-                                ms.setState(ServiceState.RECOVERING);
-                                ms.setHealthy(false);
-                                ms.setProcessPid(0);
-                                notifyListeners(id, ServiceState.RECOVERING);
-                                Log.w(TAG, "[ServiceManager] " + ms.getDisplayName() + " crashed (code " + exitCode + "). Auto-restarting in " + (backoffMs / 1000) + "s (attempt " + crashes + "/5)...");
-                                mainHandler.postDelayed(() -> {
-                                    if (!ms.isUserStopped() && !ms.isRunning() && ms.isEnabled() && !ms.isBlocked()) {
-                                        Log.i(TAG, "[ServiceManager] Auto-restarting " + ms.getDisplayName());
-                                        startService(id, ctx);
-                                    }
-                                }, backoffMs);
-                            }
-                        }
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
+                        process.destroyForcibly();
+                    } catch (Throwable ignored) {}
+                    activeProcesses.remove(id);
+                    ms.setProcessPid(0);
+                    ms.setLastError("STREAM_REGISTRATION_FAILED: Process log executor saturated. Process aborted to prevent pipe buffer deadlock.");
+                    ms.setState(ServiceState.ERROR);
+                    notifyListeners(id, ServiceState.ERROR);
+                    if (callback != null) {
+                        callback.onResult(new ServiceLifecycleResult.Failure(id, ms.getLastError(), rex));
                     }
-                });
+                    return;
+                }
+
+                // Background exit monitor (Guaranteed observation via primary pool or fallback supervisor)
+                superviseProcessExit(id, process, ctx);
 
                 // Socket and API readiness verification loop
                 serviceExecutor.execute(() -> {
@@ -1380,14 +1405,21 @@ public class MediaServiceManager {
                     notifyListeners(id, ServiceState.RUNNING);
                     Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " RUNNING");
                     ms.appendLog("Service is running and fully operational.");
+                    if (callback != null) {
+                        callback.onResult(new ServiceLifecycleResult.Success(id, ms.getDisplayName() + " running and operational"));
+                    }
 
                     // Automatically wire service with stack in background
                     final String svcToWire = id;
-                    serviceExecutor.execute(() -> {
-                        try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
-                        wireService(svcToWire, null);
-                    });
-                    scheduleAutoWireDebounced(2500);
+                    try {
+                        serviceExecutor.execute(() -> {
+                            try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
+                            wireService(svcToWire, null);
+                        });
+                        scheduleAutoWireDebounced(2500);
+                    } catch (RejectedExecutionException rex) {
+                        Log.w(TAG, "[ServiceManager] Service wiring deferred under load: " + rex.getMessage());
+                    }
                 });
 
             } catch (Exception e) {
@@ -1395,72 +1427,135 @@ public class MediaServiceManager {
                 ms.setLastError("PROCESS_START_FAILED: " + e.getMessage());
                 ms.setState(ServiceState.ERROR);
                 notifyListeners(id, ServiceState.ERROR);
+                if (callback != null) {
+                    callback.onResult(new ServiceLifecycleResult.Failure(id, "Failed to start service: " + e.getMessage(), e));
+                }
             }
         });
+        } catch (RejectedExecutionException rex) {
+            Log.e(TAG, "[ServiceManager] Lifecycle executor rejected start for " + id + ": queue saturated", rex);
+            synchronized (ms) {
+                ms.setState(ServiceState.ERROR);
+                ms.setLastError("RESOURCE_EXHAUSTED: Lifecycle executor rejected start task under high load.");
+            }
+            notifyListeners(id, ServiceState.ERROR);
+            if (callback != null) {
+                callback.onResult(new ServiceLifecycleResult.Failure(id, "Lifecycle executor rejected start task under high load", rex));
+            }
+        }
     }
 
+    @Override
     public void stopService(String id) {
+        stopService(id, null);
+    }
+
+    @Override
+    public void stopService(String id, ServiceLifecycleCallback callback) {
         recordServiceActive(id, false);
         ManagedService ms = services.get(id);
-        if (ms == null) return;
-
-        if ("jellyfin".equalsIgnoreCase(id)) {
-            JellyfinController.getInstance().stop();
+        if (ms == null) {
+            if (callback != null) {
+                callback.onResult(new ServiceLifecycleResult.Failure(id, "Service not found in registry", null));
+            }
             return;
         }
 
-        serviceExecutor.execute(() -> {
+        if ("jellyfin".equalsIgnoreCase(id)) {
+            JellyfinController.getInstance().stop();
+            if (callback != null) {
+                callback.onResult(new ServiceLifecycleResult.Success("jellyfin", "Jellyfin stop initiated"));
+            }
+            return;
+        }
+
+        final ServiceState previousState;
+        synchronized (ms) {
+            if (ms.getState() == ServiceState.STOPPED || ms.getState() == ServiceState.NOT_INSTALLED) {
+                Log.d(TAG, "Service " + id + " is already stopped. Ignoring redundant stop.");
+                if (callback != null) {
+                    callback.onResult(new ServiceLifecycleResult.Skipped(id, "Service is already stopped"));
+                }
+                return;
+            }
+            if (ms.getState() == ServiceState.STOPPING) {
+                Log.d(TAG, "Service " + id + " is already stopping. Ignoring redundant stop.");
+                if (callback != null) {
+                    callback.onResult(new ServiceLifecycleResult.Skipped(id, "Service is already stopping"));
+                }
+                return;
+            }
+            previousState = ms.getState();
             ms.setUserStopped(true);
             ms.resetCrashCount();
             ms.setState(ServiceState.STOPPING);
-            notifyListeners(id, ServiceState.STOPPING);
-            Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STOPPING");
-            ms.appendLog("Stopping service...");
+        }
 
-            Process p = activeProcesses.remove(id);
-            if (p != null) {
-                if ("transmission".equalsIgnoreCase(id)) {
-                    stopTransmissionGracefully(p, ms);
-                } else {
-                    p.destroy();
-                    try {
-                        boolean exited = false;
-                        for (int i = 0; i < 30; i++) {
-                            if (!p.isAlive()) {
-                                exited = true;
-                                break;
+        notifyListeners(id, ServiceState.STOPPING);
+        Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STOPPING");
+        ms.appendLog("Stopping service...");
+
+        try {
+            serviceExecutor.execute(() -> {
+                Process p = activeProcesses.remove(id);
+                if (p != null) {
+                    if ("transmission".equalsIgnoreCase(id)) {
+                        stopTransmissionGracefully(p, ms);
+                    } else {
+                        p.destroy();
+                        try {
+                            boolean exited = false;
+                            for (int i = 0; i < 30; i++) {
+                                if (!p.isAlive()) {
+                                    exited = true;
+                                    break;
+                                }
+                                Thread.sleep(100);
                             }
-                            Thread.sleep(100);
-                        }
-                        if (!exited) {
-                            p.destroyForcibly();
-                        }
+                            if (!exited) {
+                                p.destroyForcibly();
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                }
+
+                long recordedPid = ms.getProcessPid();
+                if (recordedPid > 0 && recordedPid != android.os.Process.myPid()) {
+                    try {
+                        android.os.Process.sendSignal((int) recordedPid, 15);
+                        android.os.Process.killProcess((int) recordedPid);
+                        android.os.Process.sendSignal((int) recordedPid, 9);
                     } catch (Throwable ignored) {}
                 }
-            }
 
-            long recordedPid = ms.getProcessPid();
-            if (recordedPid > 0 && recordedPid != android.os.Process.myPid()) {
-                try {
-                    android.os.Process.sendSignal((int) recordedPid, 15);
-                    android.os.Process.killProcess((int) recordedPid);
-                    android.os.Process.sendSignal((int) recordedPid, 9);
-                } catch (Throwable ignored) {}
-            }
+                int defaultPort = ms.getManifest().getDefaultPort();
+                reclaimPort(defaultPort, id);
 
-            int defaultPort = ms.getManifest().getDefaultPort();
-            reclaimPort(defaultPort, id);
+                if (ms.getState() != ServiceState.NOT_INSTALLED) {
+                    ms.setState(ServiceState.STOPPED);
+                    notifyListeners(id, ServiceState.STOPPED);
+                }
+                ms.setHealthy(false);
+                ms.setProcessPid(0);
+                ms.appendLog("Service stopped.");
+                Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STOPPED");
+                scheduleAutoWireDebounced(1500);
 
-            if (ms.getState() != ServiceState.NOT_INSTALLED) {
-                ms.setState(ServiceState.STOPPED);
-                notifyListeners(id, ServiceState.STOPPED);
+                if (callback != null) {
+                    callback.onResult(new ServiceLifecycleResult.Success(id, ms.getDisplayName() + " stopped successfully"));
+                }
+            });
+        } catch (RejectedExecutionException rex) {
+            Log.e(TAG, "[ServiceManager] Lifecycle executor rejected stop for " + id + ": queue saturated", rex);
+            synchronized (ms) {
+                ms.setState(previousState != null ? previousState : ServiceState.RUNNING);
+                ms.setLastError("RESOURCE_EXHAUSTED: Lifecycle executor rejected stop task under high load.");
             }
-            ms.setHealthy(false);
-            ms.setProcessPid(0);
-            ms.appendLog("Service stopped.");
-            Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STOPPED");
-            scheduleAutoWireDebounced(1500);
-        });
+            notifyListeners(id, ms.getState());
+            if (callback != null) {
+                callback.onResult(new ServiceLifecycleResult.Failure(id, "Lifecycle executor rejected stop task under high load", rex));
+            }
+        }
     }
 
     public static boolean deleteRecursive(File f) {
@@ -1619,9 +1714,175 @@ public class MediaServiceManager {
         });
     }
 
+    @Override
+    public void restartService(String id) {
+        restartService(id, appContext, null);
+    }
+
     public void restartService(String id, Context ctx) {
-        stopService(id);
-        mainHandler.postDelayed(() -> startService(id, ctx), 1200);
+        restartService(id, ctx, null);
+    }
+
+    @Override
+    public void restartService(String id, ServiceLifecycleCallback callback) {
+        restartService(id, appContext, callback);
+    }
+
+    public void restartService(String id, Context ctx, ServiceLifecycleCallback callback) {
+        ManagedService ms = services.get(id);
+        if (ms == null) {
+            if (callback != null) {
+                callback.onResult(new ServiceLifecycleResult.Failure(id, "Service not found in registry", null));
+            }
+            return;
+        }
+
+        Log.i(TAG, "[ServiceManager] Restart requested for " + ms.getDisplayName());
+        stopService(id, stopResult -> {
+            try {
+                serviceExecutor.execute(() -> {
+                    long deadline = System.currentTimeMillis() + 10000L;
+                    int port = ms.getManifest().getDefaultPort();
+
+                    while (System.currentTimeMillis() < deadline) {
+                        Process p = activeProcesses.get(id);
+                        boolean isProcAlive = false;
+                        if (p != null) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                isProcAlive = p.isAlive();
+                            } else {
+                                try {
+                                    p.exitValue();
+                                    isProcAlive = false;
+                                } catch (IllegalThreadStateException ignored) {
+                                    isProcAlive = true;
+                                }
+                            }
+                        }
+
+                        boolean portOccupied = isPortOccupied(port);
+                        if ("jellyfin".equalsIgnoreCase(id)) {
+                            boolean jfStopped = JellyfinController.getInstance().getState() == JellyfinController.State.STOPPED;
+                            if (jfStopped && !portOccupied) {
+                                Log.i(TAG, "[ServiceManager] Confirmed termination for Jellyfin. Proceeding with restart.");
+                                break;
+                            }
+                        } else {
+                            if (!isProcAlive && !portOccupied) {
+                                Log.i(TAG, "[ServiceManager] Confirmed termination for " + ms.getDisplayName() + ". Proceeding with restart.");
+                                break;
+                            }
+                        }
+
+                        try {
+                            Thread.sleep(150);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+
+                    Process remainingProc = activeProcesses.get(id);
+                    if (remainingProc != null) {
+                        Log.w(TAG, "[ServiceManager] Process for " + ms.getDisplayName() + " did not terminate cleanly within deadline. Destroying forcibly.");
+                        remainingProc.destroyForcibly();
+                        activeProcesses.remove(id);
+                    }
+
+                    startService(id, ctx, callback);
+                });
+            } catch (RejectedExecutionException rex) {
+                Log.e(TAG, "[ServiceManager] Lifecycle executor rejected restart wait for " + id, rex);
+                if (callback != null) {
+                    callback.onResult(new ServiceLifecycleResult.Failure(id, "Lifecycle executor rejected restart wait task", rex));
+                }
+            }
+        });
+    }
+
+    @Override
+    public boolean isServiceRunning(String id) {
+        ManagedService ms = getService(id);
+        return ms != null && ms.isRunning();
+    }
+
+    public void superviseProcessExit(final String id, final Process process, final Context ctx) {
+        processExitSupervisor.supervise(id, process, (exitCode) -> onProcessExited(id, exitCode, ctx));
+    }
+
+    private void onProcessExited(final String id, final int exitCode, final Context ctx) {
+        activeProcesses.remove(id);
+        processExitSupervisor.unregister(id);
+        ManagedService ms = services.get(id);
+        if (ms == null) return;
+        ms.appendLog("Process exited with code: " + exitCode);
+        Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " process exited with code " + exitCode);
+
+        if (ms.isUserStopped() || ms.getState() == ServiceState.STOPPING) {
+            ms.setState(ServiceState.STOPPED);
+            ms.setHealthy(false);
+            ms.setProcessPid(0);
+            notifyListeners(id, ServiceState.STOPPED);
+            Log.i(TAG, "[ServiceManager] " + ms.getDisplayName() + " STOPPED (intentional)");
+        } else {
+            // Check storage before auto-restart to prevent endless crash loops on low storage
+            long exitStorageMb = 0;
+            try {
+                android.os.StatFs stat = new android.os.StatFs(TermuxConstants.TERMUX_FILES_DIR.getAbsolutePath());
+                exitStorageMb = stat.getAvailableBytes() / (1024 * 1024);
+            } catch (Throwable ignored) {}
+
+            if (exitStorageMb < 50) {
+                ms.setLastError("STORAGE_IS_FULL: Device storage is full (" + exitStorageMb + " MB free). Halting auto-restart.");
+                ms.setState(ServiceState.ERROR);
+                ms.setHealthy(false);
+                ms.setProcessPid(0);
+                notifyListeners(id, ServiceState.ERROR);
+                Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " STORAGE_IS_FULL. Auto-restart halted.");
+                return;
+            }
+
+            ms.recordCrash();
+            int crashes = ms.getCrashCount();
+            if (crashes > 5) {
+                recordServiceActive(id, false);
+                ms.setLastError("CRASH_LOOP_PROTECTION: Repeated failures (" + crashes + " crashes). Auto-restart halted.");
+                ms.setState(ServiceState.CRASH_LOOP_PROTECTION);
+                ms.setHealthy(false);
+                ms.setProcessPid(0);
+                notifyListeners(id, ServiceState.CRASH_LOOP_PROTECTION);
+                Log.e(TAG, "[ServiceManager] " + ms.getDisplayName() + " CRASH_LOOP_PROTECTION: Halted after " + crashes + " crashes");
+            } else {
+                // Exponential backoff: 5s, 15s, 30s, 60s, 300s
+                long backoffMs;
+                switch (crashes) {
+                    case 1: backoffMs = 5000; break;
+                    case 2: backoffMs = 15000; break;
+                    case 3: backoffMs = 30000; break;
+                    case 4: backoffMs = 60000; break;
+                    default: backoffMs = 300000; break;
+                }
+                ms.setLastError("RECOVERING: Exited unexpectedly with code " + exitCode + ". Restarting in " + (backoffMs / 1000) + "s (Attempt " + crashes + "/5)");
+                ms.setState(ServiceState.RECOVERING);
+                ms.setHealthy(false);
+                ms.setProcessPid(0);
+                notifyListeners(id, ServiceState.RECOVERING);
+                Log.w(TAG, "[ServiceManager] " + ms.getDisplayName() + " crashed (code " + exitCode + "). Auto-restarting in " + (backoffMs / 1000) + "s (attempt " + crashes + "/5)...");
+                mainHandler.postDelayed(() -> {
+                    if (!ms.isUserStopped() && !ms.isRunning() && ms.isEnabled() && !ms.isBlocked()) {
+                        Log.i(TAG, "[ServiceManager] Auto-restarting " + ms.getDisplayName());
+                        startService(id, ctx);
+                    }
+                }, backoffMs);
+            }
+        }
+    }
+
+    public void shutdown() {
+        serviceExecutor.shutdown();
+        processLogExecutor.shutdown();
+        processExitSupervisor.shutdown();
+        dedupScheduler.shutdown();
     }
 
     public void resetCrashLoop(String id) {
@@ -1838,7 +2099,10 @@ public class MediaServiceManager {
         // 1. Target by known process name / patterns
         if (serviceId != null) {
             killProcessByPattern(serviceId);
-            if ("radarr".equalsIgnoreCase(serviceId)) {
+            if ("jellyfin".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("jellyfin.dll");
+                killProcessByPattern("jellyfin");
+            } else if ("radarr".equalsIgnoreCase(serviceId)) {
                 killProcessByPattern("Radarr.dll");
                 killProcessByPattern("radarr");
             } else if ("sonarr".equalsIgnoreCase(serviceId)) {
@@ -1889,6 +2153,30 @@ public class MediaServiceManager {
         }
 
         return !isPortOccupied(port);
+    }
+
+    public int reclaimAllZombiePorts() {
+        int reclaimedCount = 0;
+        int[] ports = {8096, 7878, 8989, 9696, 9117, 9091, 5055, 6767, 8686};
+        String[] ids = {"jellyfin", "radarr", "sonarr", "prowlarr", "jackett", "transmission", "seerr", "bazarr", "lidarr"};
+        for (int i = 0; i < ports.length; i++) {
+            int port = ports[i];
+            String id = ids[i];
+            boolean isManagedRunning = false;
+            if ("jellyfin".equalsIgnoreCase(id)) {
+                JellyfinController jc = JellyfinController.getInstance();
+                isManagedRunning = (jc != null && jc.isRunning());
+            } else {
+                ManagedService ms = getService(id);
+                isManagedRunning = (ms != null && ms.isRunning());
+            }
+            if (!isManagedRunning && isPortOccupied(port)) {
+                if (reclaimPort(port, id)) {
+                    reclaimedCount++;
+                }
+            }
+        }
+        return reclaimedCount;
     }
 
     private void stopTransmissionGracefully(Process p, ManagedService ms) {
@@ -2707,41 +2995,35 @@ public class MediaServiceManager {
         } catch (Throwable ignored) {}
     }
 
+    public ServiceHealthMonitor getHealthMonitor() {
+        return healthMonitor;
+    }
+
     public boolean isPortOccupied(int port) {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress("127.0.0.1", port), 350);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
+        return healthMonitor.isPortListening(port, 350);
     }
 
     public boolean checkApiReadiness(ManagedService ms) {
         if (ms == null) return false;
-        String healthUrlStr = ms.getManifest().getHealthUrl();
-        return checkHealth(healthUrlStr);
+        return isServiceHealthy(ms);
     }
 
     public boolean checkHealth(String healthUrlStr) {
-        HttpURLConnection conn = null;
-        try {
-            URL url = new URL(healthUrlStr);
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(1500);
-            conn.setReadTimeout(1500);
-            conn.setRequestMethod("GET");
-            // Do not follow redirects: 301/302 redirects (e.g. Jackett cookie check / login) indicate active HTTP responsiveness
-            conn.setInstanceFollowRedirects(false);
-            int code = conn.getResponseCode();
-            // HTTP 200/204/301/302 is OK, HTTP 401 Unauthorized (Radarr/Sonarr auth), and HTTP 409 Conflict (Transmission RPC check)
-            return (code >= 200 && code < 400) || code == 401 || code == 409;
-        } catch (Exception e) {
-            return false;
-        } finally {
-            if (conn != null) {
-                conn.disconnect();
-            }
+        return healthMonitor.checkEndpoint(healthUrlStr, null, 2500);
+    }
+
+    public ServiceHealthSnapshot assessServiceHealth(String id) {
+        ManagedService ms = services.get(id);
+        if (ms == null) return null;
+        int port = ms.getManifest().getDefaultPort();
+        String endpoint = ms.getManifest().getHealthCheckPath();
+        if (endpoint == null || endpoint.trim().isEmpty()) {
+            endpoint = "/";
         }
+        String apiKey = getServiceApiKey(id);
+        String urlStr = "http://127.0.0.1:" + port + endpoint;
+        boolean processAlive = activeProcesses.containsKey(id);
+        return healthMonitor.assessHealth(id, port, urlStr, apiKey, processAlive);
     }
 
     public boolean waitUntilServiceReady(String id, long timeoutMs) {
@@ -4830,17 +5112,45 @@ public class MediaServiceManager {
             }
         }
         if ("seerr".equals(id)) {
-            File cfg = new File(home, ".config/seerr/settings.json");
-            if (cfg.exists()) {
-                try {
+            File[] candidateFiles = new File[] {
+                new File(home, ".config/seerr/settings.json"),
+                new File(home, "services/seerr/config/settings.json"),
+                new File(home, "services/seerr/settings.json"),
+                new File(home, ".config/jellyseerr/settings.json")
+            };
+            for (File cfg : candidateFiles) {
+                if (cfg.exists()) {
+                    try {
+                        String text = readTextFile(cfg);
+                        if (text != null && !text.trim().isEmpty()) {
+                            org.json.JSONObject obj = new org.json.JSONObject(text);
+                            org.json.JSONObject main = obj.optJSONObject("main");
+                            if (main != null && main.has("apiKey")) {
+                                String key = main.optString("apiKey", "").trim();
+                                if (!key.isEmpty()) return key;
+                            }
+                            if (obj.has("apiKey")) {
+                                String key = obj.optString("apiKey", "").trim();
+                                if (!key.isEmpty()) return key;
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+            try {
+                ensureServiceConfigSanitized("seerr");
+                File cfg = new File(home, ".config/seerr/settings.json");
+                if (cfg.exists()) {
                     String text = readTextFile(cfg);
-                    if (text != null) {
+                    if (text != null && !text.trim().isEmpty()) {
                         org.json.JSONObject obj = new org.json.JSONObject(text);
                         org.json.JSONObject main = obj.optJSONObject("main");
-                        if (main != null) return main.optString("apiKey", null);
+                        if (main != null && main.has("apiKey")) {
+                            return main.optString("apiKey", null);
+                        }
                     }
-                } catch (Exception ignored) {}
-            }
+                }
+            } catch (Exception ignored) {}
         }
         if ("bazarr".equals(id)) {
             File cfg = new File(home, ".config/bazarr/config/config.yaml");

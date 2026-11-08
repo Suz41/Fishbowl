@@ -3,7 +3,8 @@ name: Release Bot
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+*'
+      - 'v*.*.*'
+      - 'v*'
   workflow_dispatch:
     inputs:
       release_tag:
@@ -36,34 +37,44 @@ jobs:
       commit_sha: ${{ steps.resolve.outputs.commit_sha }}
 
     steps:
-      - name: Validate Manual Dispatch Confirmation
-        if: github.event_name == 'workflow_dispatch'
+      - name: Validate Release Inputs & Tag Syntax
+        id: pre_check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+          INPUT_CONFIRM_RELEASE: ${{ github.event.inputs.confirm_release }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event.inputs.confirm_release }}" != "RELEASE" ]; then
-            echo "Error: Manual release dispatch was not confirmed with 'RELEASE'. Aborting." >&2
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$INPUT_CONFIRM_RELEASE" != "RELEASE" ]; then
+              echo "Error: Manual release dispatch was not confirmed with 'RELEASE'. Aborting." >&2
+              exit 1
+            fi
+            TARGET_TAG="$INPUT_RELEASE_TAG"
+          else
+            TARGET_TAG="$REF_NAME"
+          fi
+
+          # Strict semantic versioning tag validation before checkout or build operations
+          if [[ ! "$TARGET_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "Error: Tag '$TARGET_TAG' does not follow semantic versioning convention 'vMAJOR.MINOR.PATCH[-PRERELEASE]'." >&2
             exit 1
           fi
+
+          echo "target_tag=${TARGET_TAG}" >> $GITHUB_OUTPUT
 
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.release_tag || github.ref }}
+          ref: ${{ steps.pre_check.outputs.target_tag }}
 
       - name: Resolve and Validate Release Metadata
         id: resolve
+        env:
+          TARGET_TAG: ${{ steps.pre_check.outputs.target_tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.release_tag }}"
-          else
-            TAG="${{ github.ref_name }}"
-          fi
-
-          # Strict semantic versioning tag validation: vX.Y.Z or vX.Y.Z-suffix
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-            echo "Error: Tag '$TAG' does not follow semantic versioning convention 'vMAJOR.MINOR.PATCH[-PRERELEASE]'." >&2
-            exit 1
-          fi
+          TAG="$TARGET_TAG"
 
           # Verify git commit provenance against tag
           EXACT_COMMIT=$(git rev-parse HEAD)
@@ -71,9 +82,12 @@ jobs:
 
           VER_NAME="${TAG#v}"
 
-          # Monotonic integer version code derivation (100000 + commit count)
-          COMMIT_COUNT=$(git rev-list --count HEAD)
-          VER_CODE=$((100000 + COMMIT_COUNT))
+          # Centrally managed, monotonically increasing version code extracted from app/build.gradle
+          VER_CODE=$(grep -E 'versionCode\s+[0-9]+' app/build.gradle | head -n 1 | awk '{print $2}')
+          if [ -z "$VER_CODE" ]; then
+            echo "Error: Could not extract centrally managed versionCode from app/build.gradle." >&2
+            exit 1
+          fi
 
           # Determine pre-release classification
           if [[ "$TAG" =~ -(alpha|beta|rc|test) ]]; then
@@ -176,10 +190,13 @@ jobs:
           fi
 
       - name: Build Production Release APK
+        env:
+          APP_VERSION_CODE: ${{ needs.validate.outputs.version_code }}
+          APP_VERSION_NAME: ${{ needs.validate.outputs.version_name }}
         run: |
           ./gradlew assembleRelease \
-            -PappVersionCode=${{ needs.validate.outputs.version_code }} \
-            -PappVersionName=${{ needs.validate.outputs.version_name }}
+            -PappVersionCode="$APP_VERSION_CODE" \
+            -PappVersionName="$APP_VERSION_NAME"
 
       - name: Verify Release Assets & Generate SHA-256 Checksums
         id: checksums

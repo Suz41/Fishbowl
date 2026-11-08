@@ -1,5 +1,6 @@
 plugins {
     id "com.android.application"
+    id "org.jetbrains.kotlin.android"
 }
 
 ext {
@@ -16,6 +17,9 @@ android {
     namespace "com.termux"
 
     compileSdkVersion project.properties.compileSdkVersion.toInteger()
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
     def appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: ""
     def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
@@ -23,6 +27,7 @@ android {
     def splitAPKsForReleaseBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS") ?: "0" // F-Droid does not support split APKs #1904
 
     dependencies {
+        implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
         implementation "androidx.annotation:annotation:1.11.0"
         implementation "androidx.core:core:1.13.1"
         implementation "androidx.documentfile:documentfile:1.1.0"
@@ -47,8 +52,8 @@ android {
         applicationId "com.fishbowl.app"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 101417
-        versionName "1.4.10-beta.1"
+        versionCode 101418
+        versionName "1.4.10-beta.2"
 
         if (project.hasProperty("appVersionCode")) {
             versionCode project.property("appVersionCode").toInteger()
@@ -161,6 +166,11 @@ android {
         abortOnError false
         checkReleaseBuilds false
         disable 'ProtectedPermissions'
+        warningsAsErrors false
+        checkAllWarnings false
+        ignoreTestSources true
+        htmlReport true
+        xmlReport true
     }
 
     testOptions {

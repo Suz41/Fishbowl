@@ -705,10 +705,13 @@ public class JellyfinController {
     public void resetCrashLoop(Context context) {
         setContext(context);
         executor.execute(() -> {
+            try {
+                BackupRestoreManager.verifyAndHealJellyfinDatabase(context != null ? context : appContext);
+            } catch (Throwable ignored) {}
             synchronized (JellyfinController.this) {
                 if (currentState == State.CRASH_LOOP) {
                     autoRestartCount.set(0);
-                    appendLogLocked("Crash loop manually reset — ready to start");
+                    appendLogLocked("Crash loop manually reset & database verified — ready to start");
                     setStateLocked(State.STOPPED);
                 }
             }
@@ -762,6 +765,19 @@ public class JellyfinController {
                 } catch (InterruptedException ignored) {}
                 waitForPortRelease();
             }
+
+            // Automatically terminate any orphaned zombie processes occupying media service ports
+            try {
+                com.fishbowl.app.services.MediaServiceManager.getInstance(ctx != null ? ctx : appContext).reclaimAllZombiePorts();
+            } catch (Throwable ignored) {}
+
+            // Pre-flight database integrity verification & auto-healing
+            try {
+                BackupRestoreManager.verifyAndHealJellyfinDatabase(ctx != null ? ctx : appContext);
+            } catch (Throwable t) {
+                Log.w(TAG, "Pre-flight database healing error: " + t.getMessage());
+            }
+
             startupStartTimeMs = System.currentTimeMillis();
             listeningStartTimeMs = 0;
             setStateLocked(State.STARTING);
@@ -800,6 +816,7 @@ public class JellyfinController {
             if (!dataDir.exists()) {
                 dataDir.mkdirs();
             }
+            BackupRestoreManager.autoRestoreJellyfinDatabaseIfNeeded(ctx != null ? ctx : appContext);
 
             File homeDir     = TermuxConstants.TERMUX_HOME_DIR;
             File configDir   = new File(homeDir, ".config/jellyfin");
@@ -868,9 +885,12 @@ public class JellyfinController {
             env.put("DOTNET_gcServer", "0");
             env.put("DOTNET_gcConcurrent", "1");
             env.put("DOTNET_GCHighMemPercent", "80");
-            env.put("DOTNET_ThreadPool_MinThreads", "2");
-            env.put("DOTNET_ThreadPool_MaxThreads", "24");
+            env.put("DOTNET_ThreadPool_MinThreads", "4");
+            env.put("DOTNET_ThreadPool_MaxThreads", "48");
+            env.put("DOTNET_DefaultStackSize", "2097152");
+            env.put("COMPlus_DefaultStackSize", "2097152");
             env.put("DOTNET_EnableWriteXorExecute", "0");
+            env.put("DOTNET_TieredPGO", "0");
 
             // §2: Merge stdout+stderr to prevent blocked pipe
             pb.redirectErrorStream(true);
@@ -1135,14 +1155,20 @@ public class JellyfinController {
             lastError = null;
             setStateLocked(State.STOPPED);
         }
+        BackupRestoreManager.autoBackupJellyfinDatabase(appContext);
     }
 
     /** Wait until port 8096 is released before restart. */
     private void waitForPortRelease() {
+        try {
+            if (appContext != null) {
+                com.fishbowl.app.services.MediaServiceManager.getInstance(appContext).reclaimPort(8096, "jellyfin");
+            }
+        } catch (Throwable ignored) {}
         long deadline = System.currentTimeMillis() + PORT_RELEASE_TIMEOUT_S * 1000L;
         while (System.currentTimeMillis() < deadline) {
             if (!isHealthy()) return;
-            try { Thread.sleep(500); } catch (InterruptedException e) {
+            try { Thread.sleep(300); } catch (InterruptedException e) {
                 Thread.currentThread().interrupt(); return;
             }
         }
@@ -1160,8 +1186,40 @@ public class JellyfinController {
             return;
         }
 
+        // Automatic SQLite database health check & healing during crash recovery
+        try {
+            File dbFile = new File(TermuxConstants.TERMUX_HOME_DIR, ".local/share/jellyfin/data/jellyfin.db");
+            if (dbFile.exists() && !BackupRestoreManager.isDatabaseHealthy(dbFile)) {
+                synchronized (this) {
+                    appendLogLocked("Detected corrupted SQLite database or torn WAL log. Auto-healing before restart...");
+                }
+                boolean healed = BackupRestoreManager.verifyAndHealJellyfinDatabase(ctx != null ? ctx : appContext);
+                if (healed) {
+                    synchronized (this) {
+                        appendLogLocked("Database auto-healed successfully. Resetting crash counter.");
+                    }
+                    autoRestartCount.set(0);
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Database recovery error during crash handling: " + t.getMessage());
+        }
+
         int attempt = autoRestartCount.incrementAndGet();
         if (attempt > MAX_AUTO_RESTARTS) {
+            // Check if database was malformed and attempt last-resort healing before locking
+            try {
+                boolean healed = BackupRestoreManager.verifyAndHealJellyfinDatabase(ctx != null ? ctx : appContext);
+                if (healed) {
+                    synchronized (this) {
+                        appendLogLocked("Last-resort database healing succeeded. Retrying server launch...");
+                    }
+                    autoRestartCount.set(0);
+                    launchServer(ctx);
+                    return;
+                }
+            } catch (Throwable ignored) {}
+
             synchronized (this) {
                 lastError = "CRASH LOOP DETECTED — " + MAX_AUTO_RESTARTS
                         + " consecutive crashes. Auto-restart disabled.";
