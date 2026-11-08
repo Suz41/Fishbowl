@@ -993,6 +993,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (activeTab == 0) {
             refreshLanAddress();
             refreshHomeServicesBadge();
+            refreshHomeAccountsUI();
         } else if (activeTab == 1) {
             refreshServicesTabUI();
             refreshDownloadCenter();
@@ -5991,16 +5992,18 @@ public final class FishbowlActivity extends AppCompatActivity
         private final TextView titleTv;
         private final TextView messageTv;
         private final ProgressBar progressBar;
+        private final TextView statsTv;
         private final TextView pctTv;
         private final TextView cancelBtn;
         private final java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean(false);
         private Runnable onCancelListener;
 
-        public OledProgressDialog(Dialog dialog, TextView titleTv, TextView messageTv, ProgressBar progressBar, TextView pctTv, TextView cancelBtn) {
+        public OledProgressDialog(Dialog dialog, TextView titleTv, TextView messageTv, ProgressBar progressBar, TextView statsTv, TextView pctTv, TextView cancelBtn) {
             this.dialog = dialog;
             this.titleTv = titleTv;
             this.messageTv = messageTv;
             this.progressBar = progressBar;
+            this.statsTv = statsTv;
             this.pctTv = pctTv;
             this.cancelBtn = cancelBtn;
             if (this.cancelBtn != null) {
@@ -6015,6 +6018,7 @@ public final class FishbowlActivity extends AppCompatActivity
         public void cancel() {
             if (cancelled.compareAndSet(false, true)) {
                 if (messageTv != null) messageTv.setText("Cancelling installation...");
+                if (statsTv != null) statsTv.setText("Aborting active tasks...");
                 if (cancelBtn != null) {
                     cancelBtn.setEnabled(false);
                     cancelBtn.setAlpha(0.3f);
@@ -6040,8 +6044,59 @@ public final class FishbowlActivity extends AppCompatActivity
 
         public void setProgress(int pct) {
             if (isCancelled()) return;
-            if (progressBar != null) progressBar.setProgress(pct);
+            if (progressBar != null) {
+                progressBar.setIndeterminate(false);
+                progressBar.setProgress(pct);
+            }
             if (pctTv != null) pctTv.setText(pct + "%");
+        }
+
+        public void setIndeterminate(boolean indeterminate) {
+            if (isCancelled()) return;
+            if (progressBar != null) progressBar.setIndeterminate(indeterminate);
+        }
+
+        public void setStep(String stepDescription, String stats) {
+            if (isCancelled()) return;
+            if (messageTv != null && stepDescription != null) messageTv.setText(stepDescription);
+            if (statsTv != null && stats != null) statsTv.setText(stats);
+            if (progressBar != null) progressBar.setIndeterminate(true);
+            if (pctTv != null) pctTv.setText("");
+        }
+
+        public void updateDownloadProgress(String stepDescription, long currentBytes, long totalBytes, double speedKbps) {
+            if (isCancelled()) return;
+            if (messageTv != null && stepDescription != null) {
+                messageTv.setText(stepDescription);
+            }
+            if (totalBytes > 0) {
+                int pct = (int) Math.min(100, Math.max(0, (currentBytes * 100) / totalBytes));
+                if (progressBar != null) {
+                    progressBar.setIndeterminate(false);
+                    progressBar.setProgress(pct);
+                }
+                String stats = formatBytes(currentBytes) + " / " + formatBytes(totalBytes) + " • " + formatSpeed(speedKbps);
+                if (statsTv != null) statsTv.setText(stats);
+
+                String etaStr = "";
+                if (speedKbps > 5.0) {
+                    long remainingBytes = Math.max(0, totalBytes - currentBytes);
+                    long remainingSec = (long) ((remainingBytes / 1024.0) / speedKbps);
+                    if (remainingSec < 60) {
+                        etaStr = " (" + remainingSec + "s left)";
+                    } else {
+                        etaStr = " (" + (remainingSec / 60) + "m " + (remainingSec % 60) + "s left)";
+                    }
+                }
+                if (pctTv != null) pctTv.setText(pct + "%" + etaStr);
+            } else {
+                if (progressBar != null) {
+                    progressBar.setIndeterminate(true);
+                }
+                String stats = formatBytes(currentBytes) + (speedKbps > 0 ? " • " + formatSpeed(speedKbps) : "");
+                if (statsTv != null) statsTv.setText(stats);
+                if (pctTv != null) pctTv.setText("Downloading...");
+            }
         }
 
         public void dismiss() {
@@ -6110,13 +6165,20 @@ public final class FishbowlActivity extends AppCompatActivity
         footer.setGravity(Gravity.CENTER_VERTICAL);
         footer.setPadding(0, dp(8), 0, 0);
 
+        TextView statsTv = new TextView(this);
+        statsTv.setText("");
+        statsTv.setTextSize(9.5f);
+        statsTv.setTypeface(Typeface.MONOSPACE);
+        statsTv.setTextColor(Color.parseColor("#71717A"));
+        footer.addView(statsTv, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
         TextView pctTv = new TextView(this);
         pctTv.setText("0%");
         pctTv.setTextSize(9.5f);
         pctTv.setTypeface(Typeface.MONOSPACE);
-        pctTv.setTextColor(Color.parseColor("#71717A"));
+        pctTv.setTextColor(Color.parseColor("#A1A1AA"));
         pctTv.setGravity(Gravity.END);
-        footer.addView(pctTv, new LinearLayout.LayoutParams(-1, -2));
+        footer.addView(pctTv, new LinearLayout.LayoutParams(-2, -2));
 
         root.addView(footer);
 
@@ -6131,7 +6193,7 @@ public final class FishbowlActivity extends AppCompatActivity
             d.getWindow().setAttributes(lp);
         }
         d.show();
-        return new OledProgressDialog(d, titleTv, msgTv, pb, pctTv, cancelBtn);
+        return new OledProgressDialog(d, titleTv, msgTv, pb, statsTv, pctTv, cancelBtn);
     }
 
     private void showServiceInstallCompatibilityDialog(ManagedService svc) {
@@ -6352,7 +6414,9 @@ public final class FishbowlActivity extends AppCompatActivity
                         for (int i = 0; i < assets.length(); i++) {
                             JSONObject a = assets.getJSONObject(i);
                             String name = a.optString("name", "");
-                            if (name.contains(pattern) || (pattern.equals("bazarr.zip") && name.equalsIgnoreCase("bazarr.zip"))) {
+                            if ((name.contains(pattern) || (pattern.equals("bazarr.zip") && name.equalsIgnoreCase("bazarr.zip"))) && !name.contains("musl")) {
+                                String bUrl = a.optString("browser_download_url", "");
+                                if (!bUrl.isEmpty()) return bUrl;
                                 return a.optString("url", "");
                             }
                         }
@@ -6443,7 +6507,7 @@ public final class FishbowlActivity extends AppCompatActivity
                         out.write(buf, 0, len);
                         downloaded += len;
                         long now = SystemClock.uptimeMillis();
-                        if (cb != null && (now - lastReportTime >= 150 || downloaded == totalLength)) {
+                        if (cb != null && (now - lastReportTime >= 150 || (totalLength > 0 && downloaded == totalLength) || lastReportTime == 0)) {
                             long timeDelta = now - lastReportTime;
                             long bytesDelta = downloaded - lastDownloaded;
                             double speedKbps = (timeDelta > 0 && lastReportTime > 0) ? (bytesDelta * 1000.0) / (timeDelta * 1024.0) : 0;
@@ -6453,6 +6517,9 @@ public final class FishbowlActivity extends AppCompatActivity
                         }
                     }
                     out.flush();
+                    if (cb != null) {
+                        cb.onProgress(downloaded, totalLength > 0 ? totalLength : downloaded, 0);
+                    }
                 } catch (InterruptedException ie) {
                     if (destFile.exists()) destFile.delete();
                     throw ie;
@@ -6489,11 +6556,20 @@ public final class FishbowlActivity extends AppCompatActivity
                 if (!canonicalCurfile.startsWith(canonicalTarget + File.separator) && !canonicalCurfile.equals(canonicalTarget)) {
                     throw new SecurityException("Archive entry is outside target directory: " + entryName);
                 }
+                if (entry.isSymbolicLink()) {
+                    try {
+                        try { android.system.Os.remove(curfile.getAbsolutePath()); } catch (Throwable ignored) {}
+                        try { curfile.delete(); } catch (Throwable ignored) {}
+                        android.system.Os.symlink(entry.getLinkName(), curfile.getAbsolutePath());
+                    } catch (Throwable ignored) {}
+                    continue;
+                }
                 if (entry.isDirectory()) {
                     curfile.mkdirs();
                 } else {
                     File parent = curfile.getParentFile();
                     if (parent != null && !parent.exists()) parent.mkdirs();
+                    try { android.system.Os.remove(curfile.getAbsolutePath()); } catch (Throwable ignored) {}
                     try (OutputStream out = new BufferedOutputStream(new FileOutputStream(curfile))) {
                         byte[] buf = new byte[32768];
                         int len;
@@ -6582,7 +6658,8 @@ public final class FishbowlActivity extends AppCompatActivity
                             if (te.isSymbolicLink()) {
                                 try {
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                                        if (outFile.exists()) outFile.delete();
+                                        try { android.system.Os.remove(outFile.getAbsolutePath()); } catch (Throwable ignored) {}
+                                        try { outFile.delete(); } catch (Throwable ignored) {}
                                         android.system.Os.symlink(te.getLinkName(), outFile.getAbsolutePath());
                                     }
                                 } catch (Throwable ignored) {}
@@ -6808,27 +6885,21 @@ public final class FishbowlActivity extends AppCompatActivity
             runOnUiThread(() -> progress.setMessage(stepDescription));
         }
         File cacheDeb = new File(getCacheDir(), pkgName + ".deb");
-        final int[] lastReported = new int[]{-1};
+        final String step = stepDescription;
+        DownloadProgressCallback debCb = new DownloadProgressCallback() {
+            @Override
+            public void onProgress(long current, long total, double speedKbps) {
+                if (progress != null) {
+                    runOnUiThread(() -> progress.updateDownloadProgress(step, current, total, speedKbps));
+                }
+            }
+            @Override
+            public boolean isCancelled() {
+                return progress != null && progress.isCancelled();
+            }
+        };
         try {
-            downloadWithRedirects(debUrl, cacheDeb, new DownloadProgressCallback() {
-                @Override
-                public void onProgress(long current, long total, double speedKbps) {
-                    if (total > 0 && progress != null) {
-                        int pct = (int) ((current * 100) / total);
-                        if (pct != lastReported[0]) {
-                            lastReported[0] = pct;
-                            runOnUiThread(() -> {
-                                progress.setProgress(pct);
-                                progress.setMessage(stepDescription + "\n" + formatBytes(current) + " / " + formatBytes(total) + " (" + pct + "%) • " + formatSpeed(speedKbps));
-                            });
-                        }
-                    }
-                }
-                @Override
-                public boolean isCancelled() {
-                    return progress != null && progress.isCancelled();
-                }
-            });
+            downloadWithRedirects(debUrl, cacheDeb, debCb);
         } catch (InterruptedException ie) {
             if (cacheDeb.exists()) cacheDeb.delete();
             throw ie;
@@ -6844,25 +6915,7 @@ public final class FishbowlActivity extends AppCompatActivity
             String dynamicUrl = fetchDynamicTermuxDebUrl(pkgName);
             if (dynamicUrl != null && !dynamicUrl.equals(debUrl)) {
                 debUrl = dynamicUrl;
-                downloadWithRedirects(debUrl, cacheDeb, new DownloadProgressCallback() {
-                    @Override
-                    public void onProgress(long current, long total, double speedKbps) {
-                        if (total > 0 && progress != null) {
-                            int pct = (int) ((current * 100) / total);
-                            if (pct != lastReported[0]) {
-                                lastReported[0] = pct;
-                                runOnUiThread(() -> {
-                                    progress.setProgress(pct);
-                                    progress.setMessage(stepDescription + "\n" + formatBytes(current) + " / " + formatBytes(total) + " (" + pct + "%) • " + formatSpeed(speedKbps));
-                                });
-                            }
-                        }
-                    }
-                    @Override
-                    public boolean isCancelled() {
-                        return progress != null && progress.isCancelled();
-                    }
-                });
+                downloadWithRedirects(debUrl, cacheDeb, debCb);
             } else {
                 throw dlErr;
             }
@@ -6870,6 +6923,9 @@ public final class FishbowlActivity extends AppCompatActivity
         if (progress != null && progress.isCancelled()) {
             if (cacheDeb.exists()) cacheDeb.delete();
             throw new InterruptedException("Installation cancelled");
+        }
+        if (progress != null) {
+            runOnUiThread(() -> progress.setStep("Extracting " + pkgName + " packages...", "Unpacking runtime binaries..."));
         }
         extractDebPackage(cacheDeb, prefixDir);
         cacheDeb.delete();
@@ -6954,19 +7010,12 @@ public final class FishbowlActivity extends AppCompatActivity
             });
             File cacheZip = new File(getCacheDir(), "bazarr.zip");
             String bzUrl = "https://github.com/morpheus65535/bazarr/releases/latest/download/bazarr.zip";
-            final int[] lastReportedBz = new int[]{-1};
+            final String bzStep = "Downloading Bazarr release...";
             DownloadProgressCallback bzCallback = new DownloadProgressCallback() {
                 @Override
                 public void onProgress(long current, long total, double speedKbps) {
-                    if (total > 0 && progress != null) {
-                        int pct = (int) ((current * 100) / total);
-                        if (pct != lastReportedBz[0]) {
-                            lastReportedBz[0] = pct;
-                            runOnUiThread(() -> {
-                                progress.setProgress(pct);
-                                progress.setMessage("Downloading Bazarr release...\n" + formatBytes(current) + " / " + formatBytes(total) + " (" + pct + "%) • " + formatSpeed(speedKbps));
-                            });
-                        }
+                    if (progress != null) {
+                        runOnUiThread(() -> progress.updateDownloadProgress(bzStep, current, total, speedKbps));
                     }
                 }
                 @Override
@@ -6997,7 +7046,9 @@ public final class FishbowlActivity extends AppCompatActivity
             }
 
             runOnUiThread(() -> {
-                if (progress != null) progress.setMessage("Extracting Bazarr packages...\nPlease wait, this may take a moment.");
+                if (progress != null) {
+                    progress.setStep("Extracting Bazarr packages...", "Unpacking python components...");
+                }
             });
             File bzTarget = new File(servicesDir, "bazarr");
             if (!bzTarget.exists()) bzTarget.mkdirs();
@@ -7057,19 +7108,12 @@ public final class FishbowlActivity extends AppCompatActivity
             if (progress != null) progress.setMessage("Downloading " + svc.getDisplayName() + "...");
         });
         File cacheTar = new File(getCacheDir(), id + ".tar.gz");
-        final int[] lastReportedSv = new int[]{-1};
+        final String svStep = "Downloading " + svc.getDisplayName() + "...";
         DownloadProgressCallback svCallback = new DownloadProgressCallback() {
             @Override
             public void onProgress(long current, long total, double speedKbps) {
-                if (total > 0 && progress != null) {
-                    int pct = (int) ((current * 100) / total);
-                    if (pct != lastReportedSv[0]) {
-                        lastReportedSv[0] = pct;
-                        runOnUiThread(() -> {
-                            progress.setProgress(pct);
-                            progress.setMessage("Downloading " + svc.getDisplayName() + "...\n" + formatBytes(current) + " / " + formatBytes(total) + " (" + pct + "%) • " + formatSpeed(speedKbps));
-                        });
-                    }
+                if (progress != null) {
+                    runOnUiThread(() -> progress.updateDownloadProgress(svStep, current, total, speedKbps));
                 }
             }
             @Override
@@ -7100,37 +7144,57 @@ public final class FishbowlActivity extends AppCompatActivity
         }
 
         runOnUiThread(() -> {
-            if (progress != null) progress.setMessage("Extracting & configuring " + svc.getDisplayName() + " binaries...\nPlease wait, this may take a moment.");
+            if (progress != null) {
+                progress.setStep("Extracting " + svc.getDisplayName() + " binaries...", "Configuring runtime decoupling...");
+            }
         });
         File targetDir = new File(servicesDir, id);
-        if (targetDir.exists()) {
-            deleteRecursive(targetDir);
+        String capName = id.substring(0, 1).toUpperCase(Locale.ROOT) + id.substring(1);
+        File capDir = new File(servicesDir, capName);
+        if (targetDir.exists()) deleteRecursive(targetDir);
+        if (capDir.exists()) deleteRecursive(capDir);
+        File[] preExisting = servicesDir.listFiles();
+        if (preExisting != null) {
+            for (File f : preExisting) {
+                if (f.isDirectory() && f.getName().equalsIgnoreCase(id)) {
+                    deleteRecursive(f);
+                }
+            }
         }
 
         extractTarGzArchive(cacheTar, servicesDir);
         cacheTar.delete();
 
-        String capName = id.substring(0, 1).toUpperCase(Locale.ROOT) + id.substring(1);
-        File capDir = new File(servicesDir, capName);
-        if (capDir.exists() && !capDir.equals(targetDir)) {
-            if (!capDir.renameTo(targetDir)) {
-                try {
-                    BackupRestoreManager.copyDirectory(capDir, targetDir);
-                    deleteRecursive(capDir);
-                } catch (Throwable t) {
-                    Log.w(TAG, "Directory fallback copy failed: " + t.getMessage());
+        File[] postExisting = servicesDir.listFiles();
+        if (postExisting != null) {
+            for (File f : postExisting) {
+                if (f.isDirectory() && f.getName().equalsIgnoreCase(id) && !f.equals(targetDir)) {
+                    if (!f.renameTo(targetDir)) {
+                        try {
+                            BackupRestoreManager.copyDirectory(f, targetDir);
+                            deleteRecursive(f);
+                        } catch (Throwable t) {
+                            Log.w(TAG, "Directory fallback copy failed: " + t.getMessage());
+                        }
+                    }
+                    break;
                 }
             }
         }
 
         File dll = new File(svc.getManifest().getExecutableOrDllPath());
-        if ("jackett".equalsIgnoreCase(id) || !dll.exists()) {
-            File checkDll = new File(targetDir, "jackett.dll");
-            if (checkDll.exists()) {
-                dll = checkDll;
-            } else {
-                File checkCapDll = new File(targetDir, "Jackett.dll");
-                if (checkCapDll.exists()) dll = checkCapDll;
+        if (!dll.exists()) {
+            File checkCap = new File(targetDir, capName + ".dll");
+            File checkLow = new File(targetDir, id + ".dll");
+            if (checkCap.exists()) {
+                dll = checkCap;
+            } else if (checkLow.exists()) {
+                dll = checkLow;
+            } else if ("jackett".equalsIgnoreCase(id)) {
+                File checkJackett = new File(targetDir, "jackett.dll");
+                File checkCapJackett = new File(targetDir, "Jackett.dll");
+                if (checkJackett.exists()) dll = checkJackett;
+                else if (checkCapJackett.exists()) dll = checkCapJackett;
             }
         }
         File jackettBin = new File(targetDir, "jackett");
@@ -7139,13 +7203,8 @@ public final class FishbowlActivity extends AppCompatActivity
             try { android.system.Os.chmod(jackettBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
         }
         if (!dll.exists() && !"jackett".equalsIgnoreCase(id)) {
-            File checkCap = new File(targetDir, capName + ".dll");
-            if (checkCap.exists()) {
-                dll = checkCap;
-            } else {
-                File checkLow = new File(targetDir, id + ".dll");
-                if (checkLow.exists()) dll = checkLow;
-            }
+            File foundDll = findDllRecursively(targetDir, id);
+            if (foundDll != null) dll = foundDll;
         }
         if (!dll.exists() && !("jackett".equalsIgnoreCase(id) && jackettBin.exists())) {
             throw new IllegalStateException("Service binary not found after extraction: " + svc.getManifest().getExecutableOrDllPath());
@@ -7243,6 +7302,25 @@ public final class FishbowlActivity extends AppCompatActivity
         MediaServiceManager.getInstance(this).ensureServiceConfigSanitized(id);
         MediaServiceManager.getInstance(this).autoWireStack(null);
         svc.reconcileInstalledState();
+    }
+
+    private static File findDllRecursively(File dir, String id) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) return null;
+        File[] files = dir.listFiles();
+        if (files == null) return null;
+        String cap = id.substring(0, 1).toUpperCase(Locale.ROOT) + id.substring(1);
+        for (File f : files) {
+            if (f.isFile() && (f.getName().equalsIgnoreCase(id + ".dll") || f.getName().equalsIgnoreCase(cap + ".dll"))) {
+                return f;
+            }
+        }
+        for (File f : files) {
+            if (f.isDirectory()) {
+                File sub = findDllRecursively(f, id);
+                if (sub != null) return sub;
+            }
+        }
+        return null;
     }
 
     private void cleanupPartialServiceInstall(String id) {
@@ -9116,16 +9194,8 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
 
-        // Jellyfin User Accounts & Logical Credentials Manager
+        // Minimal Jellyfin User Accounts & Credentials Manager
         content.addView(buildSecurityJellyfinUsersCard());
-
-        TextView zombieStatus = new TextView(this);
-        zombieStatus.setText("Zombie process safeguard: ACTIVE (Auto-kill enabled on port conflicts)");
-        zombieStatus.setTextSize(10f);
-        zombieStatus.setTypeface(Typeface.MONOSPACE);
-        zombieStatus.setTextColor(Color.parseColor("#71717A"));
-        zombieStatus.setPadding(0, dp(10), 0, dp(4));
-        content.addView(zombieStatus);
 
         return buildCollapsibleCard(
                 "Security & Identity",
@@ -9142,33 +9212,25 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout hdr = new LinearLayout(this);
         hdr.setOrientation(LinearLayout.HORIZONTAL);
         hdr.setGravity(Gravity.CENTER_VERTICAL);
-        hdr.setPadding(0, dp(2), 0, dp(4));
+        hdr.setPadding(0, dp(2), 0, dp(6));
 
         TextView title = new TextView(this);
         title.setText("JELLYFIN ACCOUNTS");
-        title.setTextSize(11.5f);
-        title.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        title.setTextSize(11f);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         title.setTextColor(Color.WHITE);
         hdr.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         TextView btnRefresh = new TextView(this);
         btnRefresh.setText("REFRESH");
-        btnRefresh.setTextSize(9.5f);
-        btnRefresh.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        btnRefresh.setTextColor(Color.parseColor("#38BDF8"));
+        btnRefresh.setTextSize(10f);
+        btnRefresh.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        btnRefresh.setTextColor(getAccentColor());
         btnRefresh.setPadding(dp(6), dp(2), dp(6), dp(2));
         btnRefresh.setOnClickListener(v -> refreshSecurityUsersUI());
         hdr.addView(btnRefresh);
 
         card.addView(hdr);
-
-        TextView sub = new TextView(this);
-        sub.setText("Direct database credentials management");
-        sub.setTextSize(10f);
-        sub.setTypeface(Typeface.MONOSPACE);
-        sub.setTextColor(Color.parseColor("#71717A"));
-        sub.setPadding(0, 0, 0, dp(8));
-        card.addView(sub);
 
         securityUsersContainer = new LinearLayout(this);
         securityUsersContainer.setOrientation(LinearLayout.VERTICAL);
@@ -9201,30 +9263,30 @@ public final class FishbowlActivity extends AppCompatActivity
                 for (com.fishbowl.app.security.FishbowlSecurityManager.JellyfinUserRecord u : users) {
                     LinearLayout uRow = new LinearLayout(this);
                     uRow.setOrientation(LinearLayout.VERTICAL);
-                    uRow.setPadding(dp(10), dp(8), dp(10), dp(8));
+                    uRow.setPadding(dp(12), dp(10), dp(12), dp(10));
                     uRow.setBackground(createBorderedRoundedDrawable(
-                            Color.parseColor("#0E1015"), Color.parseColor("#27272A"), dp(1), dp(6)));
+                            Color.parseColor("#0E1015"), Color.parseColor("#27272A"), dp(1), dp(8)));
                     LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-                    lp.bottomMargin = dp(6);
+                    lp.bottomMargin = dp(8);
                     uRow.setLayoutParams(lp);
 
-                    // Top Row: Username + Admin Badge + Password Status Badge
+                    // Top Row: Username + Admin Badge + Password Status
                     LinearLayout topRow = new LinearLayout(this);
                     topRow.setOrientation(LinearLayout.HORIZONTAL);
                     topRow.setGravity(Gravity.CENTER_VERTICAL);
 
                     TextView nameTv = new TextView(this);
                     nameTv.setText(u.getUsername());
-                    nameTv.setTextSize(12.5f);
-                    nameTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                    nameTv.setTextSize(13f);
+                    nameTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
                     nameTv.setTextColor(Color.WHITE);
                     topRow.addView(nameTv, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
                     if (u.isAdmin()) {
                         TextView bAdmin = new TextView(this);
                         bAdmin.setText("ADMIN");
-                        bAdmin.setTextSize(8f);
-                        bAdmin.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                        bAdmin.setTextSize(8.5f);
+                        bAdmin.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
                         bAdmin.setTextColor(Color.parseColor("#A78BFA"));
                         bAdmin.setPadding(dp(5), dp(2), dp(5), dp(2));
                         bAdmin.setBackground(createBorderedRoundedDrawable(Color.parseColor("#18181B"), Color.parseColor("#7C3AED"), dp(1), dp(4)));
@@ -9236,8 +9298,8 @@ public final class FishbowlActivity extends AppCompatActivity
                     boolean hasPass = u.getHasPassword();
                     TextView bPass = new TextView(this);
                     bPass.setText(hasPass ? "PASSWORD SET" : "NO PASSWORD");
-                    bPass.setTextSize(8f);
-                    bPass.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                    bPass.setTextSize(8.5f);
+                    bPass.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
                     bPass.setTextColor(hasPass ? Color.parseColor("#34D399") : Color.parseColor("#F59E0B"));
                     bPass.setPadding(dp(5), dp(2), dp(5), dp(2));
                     bPass.setBackground(createBorderedRoundedDrawable(
@@ -9248,18 +9310,11 @@ public final class FishbowlActivity extends AppCompatActivity
 
                     uRow.addView(topRow);
 
-                    // Password Visibility & Control Row
+                    // Minimal Password Row
                     LinearLayout passRow = new LinearLayout(this);
                     passRow.setOrientation(LinearLayout.HORIZONTAL);
                     passRow.setGravity(Gravity.CENTER_VERTICAL);
-                    passRow.setPadding(0, dp(6), 0, dp(4));
-
-                    TextView passLabel = new TextView(this);
-                    passLabel.setText("PASSWORD: ");
-                    passLabel.setTextSize(10.5f);
-                    passLabel.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-                    passLabel.setTextColor(Color.parseColor("#94A3B8"));
-                    passRow.addView(passLabel);
+                    passRow.setPadding(0, dp(4), 0, dp(6));
 
                     final String knownPlain = u.getKnownPlaintextPassword();
                     final String storedHash = u.getStoredHash();
@@ -9267,19 +9322,18 @@ public final class FishbowlActivity extends AppCompatActivity
 
                     final TextView passValue = new TextView(this);
                     passValue.setTextSize(11f);
-                    passValue.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
                     passValue.setSingleLine(true);
                     passValue.setEllipsize(TextUtils.TruncateAt.END);
 
                     if (!hasPass) {
-                        passValue.setText("(Blank / No Password)");
+                        passValue.setText("No password configured");
                         passValue.setTextColor(Color.parseColor("#F59E0B"));
                     } else if (isPlainKnown) {
                         passValue.setText("••••••••");
                         passValue.setTextColor(Color.parseColor("#34D399"));
                     } else {
-                        passValue.setText("(Hashed in DB)");
-                        passValue.setTextColor(Color.parseColor("#38BDF8"));
+                        passValue.setText("Set via Web Client");
+                        passValue.setTextColor(Color.parseColor("#71717A"));
                     }
                     passRow.addView(passValue, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
@@ -9288,8 +9342,8 @@ public final class FishbowlActivity extends AppCompatActivity
                         TextView btnToggle = new TextView(this);
                         btnToggle.setText("SHOW");
                         btnToggle.setTextSize(9f);
-                        btnToggle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-                        btnToggle.setTextColor(Color.parseColor("#38BDF8"));
+                        btnToggle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+                        btnToggle.setTextColor(getAccentColor());
                         btnToggle.setPadding(dp(6), dp(2), dp(6), dp(2));
                         btnToggle.setOnClickListener(v -> {
                             isRevealed[0] = !isRevealed[0];
@@ -9308,8 +9362,8 @@ public final class FishbowlActivity extends AppCompatActivity
                                     passValue.setText("••••••••");
                                     passValue.setTextColor(Color.parseColor("#34D399"));
                                 } else {
-                                    passValue.setText("(Hashed in DB)");
-                                    passValue.setTextColor(Color.parseColor("#38BDF8"));
+                                    passValue.setText("Set via Web Client");
+                                    passValue.setTextColor(Color.parseColor("#71717A"));
                                 }
                             }
                         });
@@ -9318,8 +9372,8 @@ public final class FishbowlActivity extends AppCompatActivity
                         TextView btnCopy = new TextView(this);
                         btnCopy.setText("COPY");
                         btnCopy.setTextSize(9f);
-                        btnCopy.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-                        btnCopy.setTextColor(Color.parseColor("#38BDF8"));
+                        btnCopy.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+                        btnCopy.setTextColor(getAccentColor());
                         btnCopy.setPadding(dp(6), dp(2), dp(6), dp(2));
                         btnCopy.setOnClickListener(v -> {
                             if (isPlainKnown) {
@@ -9335,22 +9389,11 @@ public final class FishbowlActivity extends AppCompatActivity
 
                     uRow.addView(passRow);
 
-                    // Activity details
-                    TextView detailsTv = new TextView(this);
-                    String lastAct = (u.getLastActivityDate() != null && !u.getLastActivityDate().isEmpty())
-                            ? u.getLastActivityDate().replace("T", " ").split("\\.")[0]
-                            : "Never";
-                    detailsTv.setText("Last active: " + lastAct + (u.getInvalidLoginAttempts() > 0 ? " | " + u.getInvalidLoginAttempts() + " invalid attempts" : ""));
-                    detailsTv.setTextSize(10f);
-                    detailsTv.setTextColor(Color.parseColor("#71717A"));
-                    detailsTv.setPadding(0, dp(2), 0, dp(8));
-                    uRow.addView(detailsTv);
-
-                    // Action buttons: [SET NEW PASSWORD] and [RESET TO BLANK]
+                    // Clean Minimal Action Buttons
                     LinearLayout btnRow = new LinearLayout(this);
                     btnRow.setOrientation(LinearLayout.HORIZONTAL);
 
-                    Button btnSetPass = createPixelButton("SET NEW PASSWORD", Color.parseColor("#27272A"), Color.WHITE);
+                    Button btnSetPass = createPixelButton("SET PASSWORD", Color.parseColor("#27272A"), Color.WHITE);
                     btnSetPass.setTextSize(9.5f);
                     btnSetPass.setOnClickListener(v -> showSetPasswordDialog(u.getUsername()));
                     btnRow.addView(btnSetPass, new LinearLayout.LayoutParams(0, dp(32), 1.0f));
@@ -10464,6 +10507,8 @@ public final class FishbowlActivity extends AppCompatActivity
         descTv.setPadding(0, dp(2), 0, dp(10));
         content.addView(descTv);
 
+        content.addView(buildRuntimeStatusItem());
+
         // Subheading: System Architecture & Specifications
         TextView archHeading = new TextView(this);
         archHeading.setText("SYSTEM ARCHITECTURE & SPECS");
@@ -10845,6 +10890,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 contentContainer.setVisibility(View.VISIBLE);
                 divider.setVisibility(View.VISIBLE);
                 arrow.animate().rotation(180f).setDuration(220).start();
+                if ("Permissions & Background Survival".equals(titleText)) {
+                    refreshPermissionsUI();
+                } else if ("Security & Identity".equals(titleText)) {
+                    refreshSecurityUsersUI();
+                }
             }
         });
 
@@ -11199,12 +11249,9 @@ public final class FishbowlActivity extends AppCompatActivity
 
         if (btnGrantAllPermissions != null) {
             if (allEssentialGranted) {
-                btnGrantAllPermissions.setText("ALL ESSENTIAL PERMISSIONS GRANTED");
-                btnGrantAllPermissions.setEnabled(false);
-                btnGrantAllPermissions.setBackground(createBorderedRoundedDrawable(
-                        Color.parseColor("#064E3B"), Color.parseColor("#059669"), dp(1), dp(8)));
-                btnGrantAllPermissions.setTextColor(Color.parseColor("#34D399"));
+                btnGrantAllPermissions.setVisibility(View.GONE);
             } else {
+                btnGrantAllPermissions.setVisibility(View.VISIBLE);
                 btnGrantAllPermissions.setText("GRANT ALL PERMISSIONS");
                 btnGrantAllPermissions.setEnabled(true);
                 btnGrantAllPermissions.setBackground(createBorderedRoundedDrawable(getAccentColor(), colorWithAlpha(Color.WHITE, 45), dp(1), dp(10)));
@@ -11214,12 +11261,9 @@ public final class FishbowlActivity extends AppCompatActivity
 
         if (setupBtnGrantAll != null) {
             if (allEssentialGranted) {
-                setupBtnGrantAll.setText("ALL PERMISSIONS GRANTED");
-                setupBtnGrantAll.setEnabled(false);
-                setupBtnGrantAll.setBackground(createBorderedRoundedDrawable(
-                        Color.parseColor("#064E3B"), Color.parseColor("#059669"), dp(1), dp(8)));
-                setupBtnGrantAll.setTextColor(Color.parseColor("#34D399"));
+                setupBtnGrantAll.setVisibility(View.GONE);
             } else {
+                setupBtnGrantAll.setVisibility(View.VISIBLE);
                 setupBtnGrantAll.setText("GRANT ALL PERMISSIONS");
                 setupBtnGrantAll.setEnabled(true);
                 setupBtnGrantAll.setBackground(createBorderedRoundedDrawable(getAccentColor(), colorWithAlpha(Color.WHITE, 45), dp(1), dp(10)));

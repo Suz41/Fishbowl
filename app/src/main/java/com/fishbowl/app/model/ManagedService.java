@@ -45,9 +45,15 @@ public class ManagedService {
             return f.exists() && nodeBin.exists();
         }
         if ("bazarr".equalsIgnoreCase(manifest.getId())) {
-            File f = new File(manifest.getExecutableOrDllPath());
-            File pyBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/python3");
-            return f.exists() && pyBin.exists();
+            File f1 = manifest.getExecutableOrDllPath() != null ? new File(manifest.getExecutableOrDllPath()) : null;
+            File home = TermuxConstants.TERMUX_HOME_DIR;
+            File f2 = new File(home, "services/bazarr/main.py");
+            File f3 = new File(home, "services/bazarr/bazarr/main.py");
+            boolean fOk = (f1 != null && f1.exists()) || f2.exists() || f3.exists();
+            File pyBin1 = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/python3");
+            File pyBin2 = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/python");
+            boolean pyOk = pyBin1.exists() || pyBin2.exists();
+            return fOk && pyOk;
         }
         if ("jackett".equalsIgnoreCase(manifest.getId())) {
             File fBin = new File(manifest.getInstallDir(), "jackett");
@@ -58,7 +64,17 @@ public class ManagedService {
         }
         if (manifest.getExecutableOrDllPath() != null) {
             File f = new File(manifest.getExecutableOrDllPath());
-            return f.exists();
+            if (f.exists()) return true;
+        }
+        if (manifest.getInstallDir() != null) {
+            File dir = new File(manifest.getInstallDir());
+            if (dir.exists() && dir.isDirectory()) {
+                String id = manifest.getId();
+                String cap = id.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + id.substring(1);
+                if (new File(dir, cap + ".dll").exists() || new File(dir, id + ".dll").exists() || new File(dir, id).exists()) {
+                    return true;
+                }
+            }
         }
         File dir = new File(manifest.getInstallDir());
         return dir != null && dir.exists() && dir.isDirectory() && dir.list() != null && dir.list().length > 0;

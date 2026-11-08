@@ -1039,6 +1039,17 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 }
 
                 File targetDllOrBin = new File(ms.getManifest().getExecutableOrDllPath());
+                if (!targetDllOrBin.exists() && ms.getManifest().getInstallDir() != null) {
+                    File installDir = new File(ms.getManifest().getInstallDir());
+                    String cap = id.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + id.substring(1);
+                    File altCap = new File(installDir, cap + ".dll");
+                    File altLow = new File(installDir, id.toLowerCase(java.util.Locale.ROOT) + ".dll");
+                    if (altCap.exists()) {
+                        targetDllOrBin = altCap;
+                    } else if (altLow.exists()) {
+                        targetDllOrBin = altLow;
+                    }
+                }
                 ProcessBuilder pb;
 
                 if ("jackett".equalsIgnoreCase(id)) {

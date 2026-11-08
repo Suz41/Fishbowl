@@ -817,6 +817,7 @@ public class JellyfinController {
                 dataDir.mkdirs();
             }
             BackupRestoreManager.autoRestoreJellyfinDatabaseIfNeeded(ctx != null ? ctx : appContext);
+            JellyfinBootstrapper.ensureNativeLibrarySymlinks();
 
             File homeDir     = TermuxConstants.TERMUX_HOME_DIR;
             File configDir   = new File(homeDir, ".config/jellyfin");

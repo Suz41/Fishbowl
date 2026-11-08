@@ -198,12 +198,16 @@ public final class BackupRestoreManager {
                 // 4. Compress Staging Directory to Final ZIP
                 postProgress(callback, "Compressing backup archive...");
                 File destDir = getBackupDirectory(context);
+
+                // Automatically clear any existing older backups prior to writing the new one
+                pruneOldBackups(destDir, 0);
+
                 String timestampStr = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
                 File zipFile = new File(destDir, "FishBowl_Backup_" + timestampStr + ".zip");
 
                 zipDirectory(stagingDir, zipFile);
 
-                // Automatically prune older backups to retain only the latest single backup archive
+                // Ensure single latest backup archive is maintained
                 pruneOldBackups(destDir, 1);
 
                 // Flush file blocks to disk

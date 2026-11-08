@@ -255,24 +255,78 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                     "    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes';" +
                     "    document.getElementsByTagName('head')[0].appendChild(meta);" +
                     "  }" +
+                    "  if (window._fbHooksInstalled) return;" +
+                    "  window._fbHooksInstalled = true;" +
+                    "  function parseJsonBody(b) {" +
+                    "    if (!b) return null;" +
+                    "    try { if (typeof b === 'string') return JSON.parse(b); } catch (e) {}" +
+                    "    return null;" +
+                    "  }" +
+                    "  function handleAuthPayload(uUrl, data) {" +
+                    "    if (!data || !window.FishbowlBridge) return;" +
+                    "    try {" +
+                    "      var pw = data.NewPw || data.newPw || data.Password || data.password || data.Pw || data.pw || '';" +
+                    "      var u = data.Name || data.name || data.Username || data.username || data.UserName || '';" +
+                    "      if (pw) { window.FishbowlBridge.notifyPasswordChanged(u, pw); }" +
+                    "    } catch (e) {}" +
+                    "  }" +
+                    "  if (window.fetch) {" +
+                    "    var origFetch = window.fetch;" +
+                    "    window.fetch = function() {" +
+                    "      var uArg = arguments[0];" +
+                    "      var init = arguments[1];" +
+                    "      if (init && init.body) {" +
+                    "        var strU = typeof uArg === 'string' ? uArg : (uArg && uArg.url ? uArg.url : '');" +
+                    "        var parsed = parseJsonBody(init.body);" +
+                    "        if (parsed) handleAuthPayload(strU, parsed);" +
+                    "      }" +
+                    "      return origFetch.apply(this, arguments);" +
+                    "    };" +
+                    "  }" +
+                    "  var origSend = XMLHttpRequest.prototype.send;" +
+                    "  XMLHttpRequest.prototype.send = function(b) {" +
+                    "    if (b) {" +
+                    "      var parsed = parseJsonBody(b);" +
+                    "      if (parsed) handleAuthPayload(this._fbUrl || '', parsed);" +
+                    "    }" +
+                    "    return origSend.apply(this, arguments);" +
+                    "  };" +
+                    "  var origOpen = XMLHttpRequest.prototype.open;" +
+                    "  XMLHttpRequest.prototype.open = function(m, u) {" +
+                    "    this._fbUrl = u;" +
+                    "    return origOpen.apply(this, arguments);" +
+                    "  };" +
+                    "  function scanAndNotifyPassword() {" +
+                    "    var pInputs = document.querySelectorAll('input[type=\"password\"]');" +
+                    "    var pw = '';" +
+                    "    for (var i = 0; i < pInputs.length; i++) {" +
+                    "      if (pInputs[i].value) { pw = pInputs[i].value; break; }" +
+                    "    }" +
+                    "    if (pw && window.FishbowlBridge) {" +
+                    "      var uInputs = document.querySelectorAll('input[id*=\"Name\"], input[id*=\"User\"], input[name*=\"user\"], input[name*=\"Name\"]');" +
+                    "      var u = '';" +
+                    "      for (var j = 0; j < uInputs.length; j++) {" +
+                    "        if (uInputs[j].value) { u = uInputs[j].value; break; }" +
+                    "      }" +
+                    "      window.FishbowlBridge.notifyPasswordChanged(u, pw);" +
+                    "    }" +
+                    "  }" +
+                    "  document.addEventListener('click', function(e) {" +
+                    "    var t = e.target;" +
+                    "    if (!t) return;" +
+                    "    var tag = (t.tagName || '').toLowerCase();" +
+                    "    var type = (t.type || '').toLowerCase();" +
+                    "    var txt = (t.innerText || t.textContent || '').toLowerCase();" +
+                    "    if (tag === 'button' || type === 'submit' || txt.indexOf('save') >= 0 || txt.indexOf('submit') >= 0 || txt.indexOf('reset') >= 0 || txt.indexOf('sign in') >= 0 || txt.indexOf('change') >= 0) {" +
+                    "      setTimeout(scanAndNotifyPassword, 120);" +
+                    "    }" +
+                    "  }, true);" +
                     "  function attachPasswordWatchers() {" +
                     "    document.querySelectorAll('form').forEach(function(f) {" +
                     "      if (f._fbWatched) return;" +
                     "      f._fbWatched = true;" +
                     "      f.addEventListener('submit', function() {" +
-                    "        var pInputs = f.querySelectorAll('input[type=\"password\"]');" +
-                    "        var pw = '';" +
-                    "        for (var i = 0; i < pInputs.length; i++) {" +
-                    "          if (pInputs[i].value) { pw = pInputs[i].value; break; }" +
-                    "        }" +
-                    "        var uInputs = f.querySelectorAll('input[id*=\"Name\"], input[id*=\"User\"], input[name*=\"user\"], input[name*=\"Name\"]');" +
-                    "        var u = '';" +
-                    "        for (var j = 0; j < uInputs.length; j++) {" +
-                    "          if (uInputs[j].value) { u = uInputs[j].value; break; }" +
-                    "        }" +
-                    "        if (pw && window.FishbowlBridge) {" +
-                    "          window.FishbowlBridge.notifyPasswordChanged(u, pw);" +
-                    "        }" +
+                    "        setTimeout(scanAndNotifyPassword, 50);" +
                     "      });" +
                     "    });" +
                     "  }" +

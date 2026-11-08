@@ -203,6 +203,7 @@ public class JellyfinBootstrapper {
             // Ensure Jellyfin network configuration explicitly enables binding across all interfaces (0.0.0.0)
             ensureJellyfinNetworkXml();
             ensureStorageSymlinks();
+            ensureNativeLibrarySymlinks();
         } catch (Exception e) {
             Log.e(TAG, "Failed to write network config: " + e.getMessage(), e);
         }
@@ -271,6 +272,57 @@ public class JellyfinBootstrapper {
             JellyfinEncodingConfig.ensureDefaultEncodingXml(null);
         } catch (Exception e) {
             Log.e(TAG, "Failed to write network.xml: " + e.getMessage(), e);
+        }
+    }
+
+    public static void ensureNativeLibrarySymlinks() {
+        try {
+            File libDir = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib");
+            if (!libDir.exists() || !libDir.isDirectory()) return;
+
+            // 1. Repair libexpat.so.1 soname symlink if missing or pointing to non-existent target
+            File expatLink = new File(libDir, "libexpat.so.1");
+            boolean repairExpat = false;
+            try {
+                if (!expatLink.exists()) {
+                    repairExpat = true;
+                } else {
+                    File target = expatLink.getCanonicalFile();
+                    if (!target.exists()) repairExpat = true;
+                }
+            } catch (Throwable t) {
+                repairExpat = true;
+            }
+
+            if (repairExpat) {
+                File[] expatCandidates = libDir.listFiles((dir, name) -> name.startsWith("libexpat.so.1.") && !name.endsWith(".tmp"));
+                if (expatCandidates != null && expatCandidates.length > 0) {
+                    File best = expatCandidates[0];
+                    for (File f : expatCandidates) {
+                        if (f.isFile() && f.length() > 0) {
+                            best = f;
+                            break;
+                        }
+                    }
+                    try {
+                        expatLink.delete();
+                        Os.symlink(best.getName(), expatLink.getAbsolutePath());
+                        Log.i(TAG, "Repaired native library symlink: libexpat.so.1 -> " + best.getName());
+                    } catch (Throwable e) {
+                        Log.w(TAG, "Failed to repair libexpat.so.1 symlink: " + e.getMessage());
+                    }
+                }
+            }
+
+            // 2. Also ensure libexpat.so points to a valid file
+            File expatSo = new File(libDir, "libexpat.so");
+            if (!expatSo.exists() && expatLink.exists()) {
+                try {
+                    Os.symlink("libexpat.so.1", expatSo.getAbsolutePath());
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "ensureNativeLibrarySymlinks error: " + t.getMessage());
         }
     }
 
@@ -510,6 +562,7 @@ public class JellyfinBootstrapper {
             File jellyfinDll = new File(prefixDir, "lib/jellyfin/jellyfin.dll");
             Log.i(TAG, "Post-extraction check: dotnetBin=" + dotnetBin.getAbsolutePath() + " exists=" + dotnetBin.exists() + ", jellyfinDll=" + jellyfinDll.getAbsolutePath() + " exists=" + jellyfinDll.exists());
 
+            ensureNativeLibrarySymlinks();
             patchJellyfin124Version(context);
 
             if (!marker.getParentFile().exists()) {
