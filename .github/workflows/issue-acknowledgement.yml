@@ -2,7 +2,7 @@ name: Issue Acknowledgement
 
 on:
   issues:
-    types: [opened]
+    types: [opened, labeled]
 
 permissions:
   issues: write
@@ -25,26 +25,12 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            // Check existing comments for idempotency
-            const comments = await github.rest.issues.listComments({
-              owner,
-              repo,
-              issue_number: issueNumber
-            });
+            const labels = Array.isArray(issue.labels)
+              ? issue.labels.map(l => (typeof l === 'string' ? l : (l && l.name) ? l.name : '')).filter(Boolean)
+              : [];
 
             const bugAck = "Thanks for reporting this bug! Your report has been received by the Fishbowl maintainers. We'll review the details and may request additional logs or information if needed.";
             const featureAck = "Thanks for suggesting an improvement! Your idea has been received. We'll review its usefulness, feasibility, and compatibility with Fishbowl.";
-
-            const alreadyAcknowledged = comments.data.some(c =>
-              c.body && (c.body.includes(bugAck) || c.body.includes(featureAck))
-            );
-
-            if (alreadyAcknowledged) {
-              console.log(`Issue #${issueNumber} already acknowledged. Skipping.`);
-              return;
-            }
-
-            const labels = (issue.labels || []).map(l => typeof l === 'string' ? l : l.name);
 
             let ackMessage = null;
             if (labels.includes('bug')) {
@@ -54,7 +40,24 @@ jobs:
             }
 
             if (!ackMessage) {
-              console.log(`Issue #${issueNumber} has neither 'bug' nor 'enhancement' label. No acknowledgement posted.`);
+              console.log(`Issue #${issueNumber} does not carry 'bug' or 'enhancement' label. No acknowledgement posted.`);
+              return;
+            }
+
+            // Paginated check of all existing comments for complete idempotency
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: issueNumber,
+              per_page: 100
+            });
+
+            const alreadyAcknowledged = comments.some(c =>
+              c.body && (c.body.includes(bugAck) || c.body.includes(featureAck))
+            );
+
+            if (alreadyAcknowledged) {
+              console.log(`Issue #${issueNumber} already acknowledged. Skipping.`);
               return;
             }
 

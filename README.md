@@ -17,7 +17,8 @@
 
 <p align="center">
   <a href="https://github.com/Suz41/Fishbowl/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/Suz41/Fishbowl/build.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="Build Status" /></a>
-  <a href="https://github.com/Suz41/Fishbowl/releases/tag/v1.4.10-beta.1"><img src="https://img.shields.io/badge/Release-v1.4.10--beta.1-00A4DC?style=flat-square" alt="Release" /></a>
+  <a href="https://github.com/Suz41/Fishbowl/releases/tag/v1.4.10-beta.1"><img src="https://img.shields.io/badge/Latest%20Release-v1.4.10--beta.1-00A4DC?style=flat-square" alt="Latest Release" /></a>
+  <img src="https://img.shields.io/badge/Version-1.4.10--beta.2%20(code%20101418)-00A4DC?style=flat-square" alt="Version" />
   <a href="https://jellyfin.org"><img src="https://img.shields.io/badge/Jellyfin%20Core-12.4.0-9B59B6?style=flat-square&logo=jellyfin&logoColor=white" alt="Jellyfin" /></a>
   <a href="https://dotnet.microsoft.com"><img src="https://img.shields.io/badge/.NET-10.0%20ARM64-512BD4?style=flat-square&logo=dotnet&logoColor=white" alt=".NET" /></a>
   <a href="https://android.com"><img src="https://img.shields.io/badge/Platform-Android%20ARM64-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android" /></a>
@@ -30,7 +31,7 @@
 
 <p align="center">
   <a href="#quick-start"><b>Quick Start</b></a> &bull;
-  <a href="#release-notes-v1410-beta1"><b>Release Notes</b></a> &bull;
+  <a href="#release-notes-v1410-beta2"><b>Release Notes</b></a> &bull;
   <a href="#system-architecture"><b>Architecture</b></a> &bull;
   <a href="#key-features"><b>Features</b></a> &bull;
   <a href="#service-endpoint--network-port-matrix"><b>Ports & Endpoints</b></a> &bull;
@@ -166,7 +167,7 @@ Fishbowl runs **Jellyfin Server 12.4.0** natively on compatible ARM64 Android de
 ## Table of Contents
 
 - [Quick Start](#quick-start)
-- [Release Notes (v1.4.10-beta.1)](#release-notes-v1410-beta1)
+- [Release Notes (v1.4.10-beta.2)](#release-notes-v1410-beta2)
 - [System Architecture](#system-architecture)
 - [Key Features](#key-features)
 - [Bundled Packages & System Components](#bundled-packages--system-components)
@@ -242,7 +243,7 @@ flowchart TD
     subgraph Storage["Consolidated POSIX Storage Layer"]
         INT["Internal Storage (/storage/emulated/0/FishbowlMedia/)"]
         EXT["External Storage (USB OTG / MicroSD Guaranteed App Data)"]
-        BACKUP["1-Tap Disaster Recovery (fishbowl_backup_*.tar.gz)"]
+        BACKUP["1-Tap Disaster Recovery (FishBowl_Backup_*.zip)"]
     end
 
     Clients --> Network
@@ -267,7 +268,7 @@ flowchart TD
 - **Port Conflict & Health Guard:** Active socket loopback probing and HTTP readiness polling (`/system/info/public` and `/health`) to verify genuine server readiness and prevent collisions.
 
 ### Media Automation & Management Suite
-- **1-Tap Configuration Backup & Restore:** Package all Jellyfin, Sonarr, Radarr, Prowlarr, and Transmission configs, credentials, and databases into a single timestamped `.tar.gz` archive with seamless 1-tap restore.
+- **1-Tap Configuration Backup & Restore:** Package all Jellyfin, Sonarr, Radarr, Prowlarr, and Transmission configs, credentials, and databases into a single timestamped `.zip` archive (`FishBowl_Backup_*.zip`) with seamless 1-tap restore.
 - **ZipSlip & Rollback Disaster Recovery:** Canonical path boundary validation against ZipSlip directory traversal attacks, paired with automatic pre-restore safety rollback snapshots to preserve working server configurations if an imported archive is damaged.
 - **Dedicated Download Directory Routing:** Dedicated download staging paths for Radarr (`Downloads/radarr`) and Sonarr (`Downloads/sonarr`) to bypass label-drop issues and ensure zero import collisions.
 - **Automated Deduplication Watcher:** Background storage guardian that auto-detects and purges completed staging duplicates once media is successfully imported into library folders, conserving critical flash storage.

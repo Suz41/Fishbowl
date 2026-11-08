@@ -106,6 +106,100 @@ public class NetworkUtils {
     }
 
     /**
+     * Resolves the default carrier / fixed endpoint address.
+     * Discovers rmnet/cellular IPv4 address if available (e.g. 192.0.0.2).
+     * Defaults to "192.0.0.2" if not dynamically discoverable.
+     */
+    public static String getDefaultIp() {
+        try {
+            Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
+            if (ifaces != null) {
+                while (ifaces.hasMoreElements()) {
+                    NetworkInterface intf = ifaces.nextElement();
+                    if (!intf.isUp() || intf.isLoopback()) continue;
+                    String name = intf.getName() != null ? intf.getName().toLowerCase(Locale.ROOT) : "";
+                    if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("pdp") || name.startsWith("radio")) {
+                        Enumeration<InetAddress> addrs = intf.getInetAddresses();
+                        while (addrs.hasMoreElements()) {
+                            InetAddress addr = addrs.nextElement();
+                            if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
+                                String ip = addr.getHostAddress();
+                                if (ip != null && !ip.isEmpty()) {
+                                    return ip;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return "192.0.0.2";
+    }
+
+    /**
+     * Resolves the active LAN endpoint (Wi-Fi, USB Tether, Ethernet, or Hotspot)
+     * with its human-readable interface label and IP address.
+     */
+    public static LanEndpoint getActiveLanEndpoint() {
+        try {
+            Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
+            if (ifaces == null) return null;
+            LanEndpoint tetherEp = null;
+            LanEndpoint fallbackEp = null;
+            while (ifaces.hasMoreElements()) {
+                NetworkInterface intf = ifaces.nextElement();
+                if (!intf.isUp() || intf.isLoopback()) continue;
+                String name = intf.getName() != null ? intf.getName().toLowerCase(Locale.ROOT) : "";
+
+                if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("pdp")
+                        || name.startsWith("radio") || name.startsWith("dummy") || name.startsWith("tun")
+                        || name.startsWith("tailscale") || name.startsWith("sit") || name.startsWith("gre")
+                        || name.startsWith("ifb") || name.startsWith("ip_vti")) {
+                    continue;
+                }
+
+                String label;
+                if (name.startsWith("wlan")) {
+                    label = "Wi-Fi";
+                } else if (name.startsWith("rndis") || name.startsWith("usb")) {
+                    label = "USB Tether";
+                } else if (name.startsWith("eth")) {
+                    label = "Ethernet";
+                } else if (name.startsWith("ap") || name.startsWith("softap")) {
+                    label = "Hotspot";
+                } else {
+                    label = "LAN";
+                }
+
+                Enumeration<InetAddress> addrs = intf.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    InetAddress addr = addrs.nextElement();
+                    if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
+                        String ip = addr.getHostAddress();
+                        if (ip == null) continue;
+                        if (isTailscaleIp(ip)) continue;
+                        if (ip.startsWith("192.0.0.") || ip.startsWith("100.64.")) continue;
+
+                        if (name.startsWith("wlan")) {
+                            return new LanEndpoint(name, ip, label);
+                        }
+                        if (name.startsWith("rndis") || name.startsWith("usb") || name.startsWith("eth")) {
+                            tetherEp = new LanEndpoint(name, ip, label);
+                        } else if (name.startsWith("ap") || name.startsWith("softap")) {
+                            fallbackEp = new LanEndpoint(name, ip, label);
+                        } else if (fallbackEp == null) {
+                            fallbackEp = new LanEndpoint(name, ip, label);
+                        }
+                    }
+                }
+            }
+            if (tetherEp != null) return tetherEp;
+            return fallbackEp;
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    /**
      * Resolves the primary LAN IPv4 address of the device using unified interface prioritization:
      * 1. Wi-Fi interface (wlan*)
      * 2. USB Tethering / Ethernet (rndis*, usb*, eth*)

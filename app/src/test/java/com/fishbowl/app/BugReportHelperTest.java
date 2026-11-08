@@ -79,4 +79,42 @@ public class BugReportHelperTest {
         Assert.assertTrue(url.startsWith(BugReportHelper.GITHUB_NEW_ISSUE_URL));
         Assert.assertTrue("URL must be <= 1800 chars even with massive logs", url.length() <= BugReportHelper.MAX_SAFE_URL_LENGTH);
     }
+
+    @Test
+    public void testBuildGitHubIssueUrlSafelyEncodesSpecialCharacters() {
+        String trickyTitle = "Crash & Fail: <NullPointerException> #42";
+        String trickyLog = "Line 1 & 2\nLine 3 = [error: 'failed' + \"retry\"]";
+
+        String url = BugReportHelper.buildGitHubIssueUrl(null, trickyTitle, trickyLog);
+        Assert.assertFalse("URL must not contain raw unencoded ampersands in param values", url.contains(" & "));
+        Assert.assertFalse("URL must not contain raw unencoded angle brackets", url.contains("<NullPointerException>"));
+        Assert.assertTrue(url.contains("template=bug_report.md"));
+        Assert.assertTrue(url.contains("labels=bug"));
+    }
+
+    @Test
+    public void testDeviceInformationAccurateAndSafeFromSensitiveData() {
+        BugReportHelper.DeviceInfo info = BugReportHelper.collectDeviceInfo(null);
+        String md = BugReportHelper.formatDeviceInfoMarkdown(info);
+
+        Assert.assertFalse("Report must not contain password field", md.toLowerCase().contains("password"));
+        Assert.assertFalse("Report must not contain token field", md.toLowerCase().contains("token"));
+        Assert.assertFalse("Report must not contain imei", md.toLowerCase().contains("imei"));
+        Assert.assertFalse("Report must not contain auth credentials", md.toLowerCase().contains("credential"));
+    }
+
+    @Test
+    public void testUnknownArchitectureFallback() {
+        BugReportHelper.DeviceInfo info = new BugReportHelper.DeviceInfo(
+                "Generic",
+                "VirtualDevice",
+                "15",
+                35,
+                "1.4.10-beta.2",
+                101418L,
+                "unknown"
+        );
+        String md = BugReportHelper.formatDeviceInfoMarkdown(info);
+        Assert.assertTrue("Must render unknown architecture when detection fails", md.contains("- Architecture: unknown"));
+    }
 }

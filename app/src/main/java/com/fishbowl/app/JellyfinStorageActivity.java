@@ -11,6 +11,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -23,6 +24,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -30,6 +32,7 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.content.ContextCompat;
@@ -40,7 +43,7 @@ import androidx.core.view.WindowInsetsControllerCompat;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Locale;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -48,16 +51,17 @@ import java.util.Set;
 
 public final class JellyfinStorageActivity extends AppCompatActivity {
 
+    // Color tokens synchronized with FishbowlActivity design tokens
     private static final int COLOR_BG = Color.parseColor("#000000");
-    private static final int COLOR_SURFACE = Color.parseColor("#0C0D10");
-    private static final int COLOR_ELEVATED = Color.parseColor("#15161A");
-    private static final int COLOR_BORDER = Color.argb(12, 255, 255, 255);
-    private static final int COLOR_ACCENT = Color.parseColor("#10B981");
+    private static final int COLOR_SURFACE = Color.parseColor("#0C0C0E");
+    private static final int COLOR_ELEVATED = Color.parseColor("#16171B");
+    private static final int COLOR_BORDER = Color.argb(20, 255, 255, 255);
+    private static final int COLOR_ACCENT = Color.parseColor("#38BDF8");
     private static final int COLOR_TEXT_PRIMARY = Color.parseColor("#F4F4F5");
-    private static final int COLOR_TEXT_MUTED = Color.parseColor("#71717A");
-    private static final int COLOR_SUCCESS = Color.parseColor("#10B981");
-    private static final int COLOR_WARNING = Color.parseColor("#F59E0B");
-    private static final int COLOR_DANGER = Color.parseColor("#EF4444");
+    private static final int COLOR_TEXT_MUTED = Color.parseColor("#A1A1AA");
+    private static final int COLOR_SUCCESS = Color.parseColor("#34D399");
+    private static final int COLOR_WARNING = Color.parseColor("#FFD51E");
+    private static final int COLOR_DANGER = Color.parseColor("#FF1744");
 
     private SharedPreferences prefs;
     private String activeSelectedPath = "/storage/emulated/0/FishbowlMedia/Movies";
@@ -67,11 +71,6 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     private TextView activePathStatus;
     private Button btnCopyActivePath;
     private View permissionBanner;
-    private LinearLayout diagRowsContainer;
-    private LinearLayout stagingRowsContainer;
-    private TextView stagingRetentionText;
-    private TextView stagingStatusBadge;
-    private MediaStorageManager.StagingAnalysisReport lastStagingReport;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private final ActivityResultLauncher<Intent> folderPickerLauncher =
@@ -93,7 +92,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                             refreshUI();
                             StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, resolved);
                             if (ver.isUsbStorage && !ver.posixAccessible) {
-                                new androidx.appcompat.app.AlertDialog.Builder(this)
+                                new AlertDialog.Builder(this)
                                         .setTitle("External USB Storage Notice")
                                         .setMessage("Storage Access Framework (SAF) permission granted for:\n\n" + resolved +
                                                 "\n\nImportant: On standard Android 11+ devices, Android's security sandbox (SELinux/Scoped Storage) allows Java apps to view external USB drives via SAF, but blocks native Linux processes like Jellyfin and FFmpeg from accessing USB paths directly via POSIX.\n\nRecommended: For seamless playback, store media in Internal Storage (/storage/emulated/0/FishbowlMedia/Movies).")
@@ -108,7 +107,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                                 Toast.makeText(this, "SAF Granted: " + resolved, Toast.LENGTH_SHORT).show();
                             }
                         } else {
-                            new androidx.appcompat.app.AlertDialog.Builder(this)
+                            new AlertDialog.Builder(this)
                                     .setTitle("Virtual Cloud Storage (On Hold)")
                                     .setMessage("The selected location (" + treeUri.getLastPathSegment() + ") is hosted by a virtual DocumentProvider (e.g. Google Drive, Nextcloud, or RSAF). Jellyfin requires direct POSIX filesystem paths. Cloud and drive root mapping are currently in beta testing mode and on hold.")
                                     .setPositiveButton("OK", null)
@@ -189,19 +188,14 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         // Active Selected Path Card (Prominent at the top)
         root.addView(buildActivePathCard());
 
-        // Fishbowl Media Storage Diagnostics Card (v1.4.8-beta.1)
-        root.addView(buildFishbowlMediaDiagnosticsCard());
-
-        // Staging & Duplicate Lifecycle Manager Card (Spec Sections 15, 16, 17)
-        root.addView(buildStagingAndDuplicateManagerCard());
-
-        // Detected Storage Drives Card
+        // Connected Storage Drives Header & Container
         TextView drivesHeader = new TextView(this);
         drivesHeader.setText("CONNECTED STORAGE DRIVES");
         drivesHeader.setTextSize(11);
         drivesHeader.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         drivesHeader.setTextColor(COLOR_TEXT_MUTED);
-        drivesHeader.setPadding(0, dp(20), 0, dp(8));
+        drivesHeader.setLetterSpacing(0.08f);
+        drivesHeader.setPadding(0, dp(16), 0, dp(8));
         root.addView(drivesHeader);
 
         drivesContainer = new LinearLayout(this);
@@ -214,7 +208,8 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         savedHeader.setTextSize(11);
         savedHeader.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         savedHeader.setTextColor(COLOR_TEXT_MUTED);
-        savedHeader.setPadding(0, dp(20), 0, dp(8));
+        savedHeader.setLetterSpacing(0.08f);
+        savedHeader.setPadding(0, dp(16), 0, dp(8));
         root.addView(savedHeader);
 
         savedListContainer = new LinearLayout(this);
@@ -240,10 +235,10 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         header.setGravity(Gravity.CENTER_VERTICAL);
 
         // Back Button
-        android.widget.ImageView btnBack = new android.widget.ImageView(this);
+        ImageView btnBack = new ImageView(this);
         btnBack.setImageResource(R.drawable.ic_back);
         btnBack.setColorFilter(COLOR_TEXT_PRIMARY);
-        btnBack.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        btnBack.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         btnBack.setPadding(dp(8), dp(8), dp(8), dp(8));
         btnBack.setClickable(true);
         btnBack.setFocusable(true);
@@ -255,10 +250,10 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         header.addView(btnBack);
 
         // Fishbowl Logo Mark
-        android.widget.ImageView logo = new android.widget.ImageView(this);
+        ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.ic_fishbowl_logo);
         logo.setColorFilter(Color.WHITE);
-        logo.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(24), dp(24));
         logoParams.rightMargin = dp(10);
         header.addView(logo, logoParams);
@@ -276,7 +271,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         titleCol.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText("DRIVES & LIBRARY ROOTS");
+        sub.setText("DRIVES & LIBRARY PATHS");
         sub.setTextSize(9.5f);
         sub.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
         sub.setTextColor(COLOR_TEXT_MUTED);
@@ -295,7 +290,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
         // Hairline divider
         View border = new View(this);
-        border.setBackgroundColor(Color.argb(12, 255, 255, 255));
+        border.setBackgroundColor(COLOR_BORDER);
         LinearLayout.LayoutParams pDiv = new LinearLayout.LayoutParams(-1, dp(1));
         pDiv.topMargin = dp(8);
         rootHeader.addView(border, pDiv);
@@ -351,38 +346,6 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         }
 
         return banner;
-    }
-
-    private View createKeyValueRow(String label, String value) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(4), 0, dp(4));
-
-        TextView tvLabel = new TextView(this);
-        tvLabel.setText(label);
-        tvLabel.setTextSize(12.5f);
-        tvLabel.setTextColor(COLOR_TEXT_MUTED);
-        row.addView(tvLabel, new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-        TextView tvVal = new TextView(this);
-        tvVal.setText(value);
-        tvVal.setTextSize(12.5f);
-        tvVal.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        tvVal.setTextColor(COLOR_TEXT_PRIMARY);
-        row.addView(tvVal);
-
-        return row;
-    }
-
-    private View createHairlineDivider() {
-        View v = new View(this);
-        v.setBackgroundColor(Color.argb(12, 255, 255, 255));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(1));
-        lp.topMargin = dp(6);
-        lp.bottomMargin = dp(6);
-        v.setLayoutParams(lp);
-        return v;
     }
 
     private View buildActivePathCard() {
@@ -487,480 +450,6 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         return card;
     }
 
-    private View buildFishbowlMediaDiagnosticsCard() {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        card.setBackground(createCardDrawable(COLOR_SURFACE, dp(12)));
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
-        p.topMargin = dp(14);
-        card.setLayoutParams(p);
-
-        // Header Row
-        LinearLayout headerRow = new LinearLayout(this);
-        headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView title = new TextView(this);
-        title.setText("STORAGE STATUS & HARDLINKS");
-        title.setTextSize(10.5f);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        title.setTextColor(COLOR_TEXT_MUTED);
-        title.setLetterSpacing(0.08f);
-        headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-        TextView badge = createBadge("SHARED INTERNAL", COLOR_ELEVATED, COLOR_SUCCESS);
-        headerRow.addView(badge);
-        card.addView(headerRow);
-
-        TextView subtitle = new TextView(this);
-        subtitle.setText("Unified media root at /storage/emulated/0/FishbowlMedia");
-        subtitle.setTextSize(11f);
-        subtitle.setTextColor(COLOR_TEXT_MUTED);
-        subtitle.setPadding(0, dp(4), 0, dp(10));
-        card.addView(subtitle);
-
-        diagRowsContainer = new LinearLayout(this);
-        diagRowsContainer.setOrientation(LinearLayout.VERTICAL);
-        diagRowsContainer.setPadding(0, 0, 0, dp(12));
-        card.addView(diagRowsContainer);
-
-        // Action Buttons Row: [PROBE STORAGE] [MIGRATE LEGACY] [SELECT MOVIES]
-        LinearLayout btnRow = new LinearLayout(this);
-        btnRow.setOrientation(LinearLayout.HORIZONTAL);
-
-        Button btnDiagProbe = createPillSmallButton("PROBE STORAGE", COLOR_ELEVATED, COLOR_TEXT_PRIMARY);
-        btnDiagProbe.setOnClickListener(v -> triggerDiagnosticsProbe(true));
-        btnRow.addView(btnDiagProbe, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
-
-        View s1 = new View(this);
-        btnRow.addView(s1, new LinearLayout.LayoutParams(dp(6), 1));
-
-        Button btnDiagMigrate = createPillSmallButton("MIGRATE LEGACY", COLOR_ELEVATED, COLOR_WARNING);
-        btnDiagMigrate.setOnClickListener(v -> triggerLegacyMigration());
-        btnRow.addView(btnDiagMigrate, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
-
-        View s2 = new View(this);
-        btnRow.addView(s2, new LinearLayout.LayoutParams(dp(6), 1));
-
-        Button btnDiagSelectMovies = createPillSmallButton("SELECT MOVIES", COLOR_ELEVATED, COLOR_ACCENT);
-        btnDiagSelectMovies.setOnClickListener(v -> {
-            String moviesPath = MediaStorageManager.DEFAULT_MEDIA_ROOT + "/Movies";
-            setActivePath(moviesPath, true);
-            refreshUI();
-            Toast.makeText(this, "Selected " + moviesPath + " for Jellyfin", Toast.LENGTH_SHORT).show();
-        });
-        btnRow.addView(btnDiagSelectMovies, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
-
-        card.addView(btnRow);
-
-        // Initial probe in background
-        triggerDiagnosticsProbe(false);
-
-        return card;
-    }
-
-    private View buildStagingAndDuplicateManagerCard() {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        card.setBackground(createCardDrawable(COLOR_SURFACE, dp(12)));
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
-        p.topMargin = dp(14);
-        card.setLayoutParams(p);
-
-        // Header Row: Title + Badge
-        LinearLayout headerRow = new LinearLayout(this);
-        headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView title = new TextView(this);
-        title.setText("DOWNLOAD STAGING & DUPLICATES");
-        title.setTextSize(10.5f);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        title.setTextColor(COLOR_TEXT_MUTED);
-        title.setLetterSpacing(0.08f);
-        headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-        stagingStatusBadge = createBadge("SCANNING", COLOR_ELEVATED, COLOR_WARNING);
-        headerRow.addView(stagingStatusBadge);
-        card.addView(headerRow);
-
-        TextView subtitle = new TextView(this);
-        subtitle.setText("Preserves Transmission seeding and monitors temporary downloads");
-        subtitle.setTextSize(11f);
-        subtitle.setTextColor(COLOR_TEXT_MUTED);
-        subtitle.setPadding(0, dp(4), 0, dp(10));
-        card.addView(subtitle);
-
-        stagingRowsContainer = new LinearLayout(this);
-        stagingRowsContainer.setOrientation(LinearLayout.VERTICAL);
-        stagingRowsContainer.setPadding(0, 0, 0, dp(10));
-        card.addView(stagingRowsContainer);
-
-        // Retention Policy Row: Label + Change Button
-        LinearLayout policyRow = new LinearLayout(this);
-        policyRow.setOrientation(LinearLayout.HORIZONTAL);
-        policyRow.setGravity(Gravity.CENTER_VERTICAL);
-        policyRow.setPadding(dp(10), dp(6), dp(10), dp(6));
-        policyRow.setBackground(createBorderedRoundedDrawable(COLOR_ELEVATED, COLOR_BORDER, 1, 8));
-        LinearLayout.LayoutParams pPol = new LinearLayout.LayoutParams(-1, -2);
-        pPol.bottomMargin = dp(12);
-        policyRow.setLayoutParams(pPol);
-
-        stagingRetentionText = new TextView(this);
-        stagingRetentionText.setTextSize(11f);
-        stagingRetentionText.setTextColor(COLOR_TEXT_MUTED);
-        stagingRetentionText.setText("Retention: " + MediaStorageManager.getInstance(this).getRetentionPolicyDisplayName());
-        policyRow.addView(stagingRetentionText, new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-        Button btnChangePolicy = createPillSmallButton("CHANGE", COLOR_SURFACE, COLOR_ACCENT);
-        btnChangePolicy.setOnClickListener(v -> showRetentionPolicyDialog());
-        policyRow.addView(btnChangePolicy, new LinearLayout.LayoutParams(dp(75), dp(30)));
-        card.addView(policyRow);
-
-        // Action Buttons Row: [SCAN STAGING] [CLEAN SAFE] [REVIEW FILES]
-        LinearLayout btnRow = new LinearLayout(this);
-        btnRow.setOrientation(LinearLayout.HORIZONTAL);
-
-        Button btnScan = createPillSmallButton("SCAN STAGING", COLOR_ELEVATED, COLOR_TEXT_PRIMARY);
-        btnScan.setOnClickListener(v -> triggerStagingScan(true));
-        btnRow.addView(btnScan, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
-
-        View s1 = new View(this);
-        btnRow.addView(s1, new LinearLayout.LayoutParams(dp(6), 1));
-
-        Button btnClean = createPillSmallButton("CLEAN SAFE", COLOR_ELEVATED, COLOR_SUCCESS);
-        btnClean.setOnClickListener(v -> triggerCleanSafeDuplicates());
-        btnRow.addView(btnClean, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
-
-        View s2 = new View(this);
-        btnRow.addView(s2, new LinearLayout.LayoutParams(dp(6), 1));
-
-        Button btnReview = createPillSmallButton("REVIEW FILES", COLOR_ELEVATED, COLOR_ACCENT);
-        btnReview.setOnClickListener(v -> showReviewFilesDialog());
-        btnRow.addView(btnReview, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
-
-        card.addView(btnRow);
-
-        // Initial scan in background
-        triggerStagingScan(false);
-
-        return card;
-    }
-
-    private void triggerStagingScan(boolean showToast) {
-        new Thread(() -> {
-            MediaStorageManager msm = MediaStorageManager.getInstance(getApplicationContext());
-            MediaStorageManager.StagingAnalysisReport report = msm.scanStagingAndDuplicates();
-            lastStagingReport = report;
-            mainHandler.post(() -> {
-                if (stagingRowsContainer != null) {
-                    stagingRowsContainer.removeAllViews();
-                    stagingRowsContainer.addView(createKeyValueRow("Files in Staging", report.items.size() + " files"));
-                    stagingRowsContainer.addView(createHairlineDivider());
-                    stagingRowsContainer.addView(createKeyValueRow("Logical Download Size", MediaStorageManager.formatBytes(report.totalStagingLogicalBytes)));
-                    stagingRowsContainer.addView(createHairlineDivider());
-                    stagingRowsContainer.addView(createKeyValueRow("Physical Disk Usage", MediaStorageManager.formatBytes(report.totalStagingPhysicalBytes)));
-                    stagingRowsContainer.addView(createHairlineDivider());
-                    stagingRowsContainer.addView(createKeyValueRow("Hardlink Deduplicated", report.hardlinkCount + " files (0 extra space)"));
-                    stagingRowsContainer.addView(createHairlineDivider());
-                    stagingRowsContainer.addView(createKeyValueRow("Physical Duplicates", report.duplicateCount + " files (" + MediaStorageManager.formatBytes(report.totalPotentialSavingsBytes) + ")"));
-                    stagingRowsContainer.addView(createHairlineDivider());
-                    stagingRowsContainer.addView(createKeyValueRow("Protected Seeding Torrents", report.activeSeedingCount + " active"));
-                    stagingRowsContainer.addView(createHairlineDivider());
-                    stagingRowsContainer.addView(createKeyValueRow("Safe to Clean", report.safeToCleanCount + " files (" + MediaStorageManager.formatBytes(report.safeToCleanBytes) + ")"));
-                }
-
-                if (stagingStatusBadge != null) {
-                    if (report.safeToCleanCount > 0) {
-                        stagingStatusBadge.setText("CLEANABLE (" + report.safeToCleanCount + ")");
-                        stagingStatusBadge.setTextColor(COLOR_WARNING);
-                    } else if (report.duplicateCount == 0 && report.orphanCount == 0) {
-                        stagingStatusBadge.setText("OPTIMIZED");
-                        stagingStatusBadge.setTextColor(COLOR_SUCCESS);
-                    } else {
-                        stagingStatusBadge.setText("PROTECTED");
-                        stagingStatusBadge.setTextColor(COLOR_ACCENT);
-                    }
-                }
-
-                if (stagingRetentionText != null) {
-                    stagingRetentionText.setText("Retention: " + msm.getRetentionPolicyDisplayName());
-                }
-
-                if (showToast) {
-                    Toast.makeText(this, "Staging scan complete (" + report.items.size() + " files analyzed)", Toast.LENGTH_SHORT).show();
-                }
-            });
-        }).start();
-    }
-
-    private void showRetentionPolicyDialog() {
-        MediaStorageManager msm = MediaStorageManager.getInstance(this);
-        String current = msm.getRetentionPolicy();
-
-        String[] options = new String[]{
-                "Immediate upon import (Zero duplicates - Recommended)",
-                "Keep until torrent removed",
-                "Keep for 24 hours after import",
-                "Keep for 3 days after import",
-                "Keep for 7 days after import",
-                "Manual cleanup only"
-        };
-        String[] values = new String[]{
-                MediaStorageManager.RETENTION_IMMEDIATE_ON_IMPORT,
-                MediaStorageManager.RETENTION_UNTIL_TORRENT_REMOVED,
-                MediaStorageManager.RETENTION_24_HOURS,
-                MediaStorageManager.RETENTION_3_DAYS,
-                MediaStorageManager.RETENTION_7_DAYS,
-                MediaStorageManager.RETENTION_MANUAL
-        };
-
-        int selectedIndex = 0;
-        for (int i = 0; i < values.length; i++) {
-            if (values[i].equals(current)) {
-                selectedIndex = i;
-                break;
-            }
-        }
-
-        new androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Download Staging Retention Policy")
-                .setSingleChoiceItems(options, selectedIndex, (dialog, which) -> {
-                    msm.setRetentionPolicy(values[which]);
-                    dialog.dismiss();
-                    if (stagingRetentionText != null) {
-                        stagingRetentionText.setText("Retention: " + msm.getRetentionPolicyDisplayName());
-                    }
-                    triggerStagingScan(false);
-                    Toast.makeText(this, "Updated to: " + options[which], Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private void triggerCleanSafeDuplicates() {
-        if (lastStagingReport == null || lastStagingReport.safeToCleanCount == 0) {
-            Toast.makeText(this, "No staging files currently safe for automated cleanup.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        new androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Clean Safe Staging Files")
-                .setMessage("Found " + lastStagingReport.safeToCleanCount + " staging files (" +
-                        MediaStorageManager.formatBytes(lastStagingReport.safeToCleanBytes) + ") that have verified permanent library copies and are not actively seeding in Transmission.\n\n" +
-                        "Active seeding torrents will remain protected.\n\nProceed with cleanup?")
-                .setPositiveButton("CLEAN FILES", (dialog, which) -> {
-                    new Thread(() -> {
-                        MediaStorageManager msm = MediaStorageManager.getInstance(getApplicationContext());
-                        int cleaned = msm.cleanupAllSafeDuplicates(false);
-                        mainHandler.post(() -> {
-                            Toast.makeText(this, "Cleaned " + cleaned + " staging files safely.", Toast.LENGTH_LONG).show();
-                            triggerStagingScan(false);
-                            triggerDiagnosticsProbe(false);
-                        });
-                    }).start();
-                })
-                .setNegativeButton("CANCEL", null)
-                .show();
-    }
-
-    private void showReviewFilesDialog() {
-        if (lastStagingReport == null || lastStagingReport.items.isEmpty()) {
-            Toast.makeText(this, "No files found in Downloads/radarr or Downloads/sonarr.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        android.widget.ScrollView sv = new android.widget.ScrollView(this);
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(dp(16), dp(12), dp(16), dp(12));
-        sv.addView(container);
-
-        androidx.appcompat.app.AlertDialog dialog = new androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Staging Files (" + lastStagingReport.items.size() + ")")
-                .setView(sv)
-                .setPositiveButton("CLOSE", null)
-                .create();
-
-        for (MediaStorageManager.StagingMediaItem item : lastStagingReport.items) {
-            LinearLayout itemCard = new LinearLayout(this);
-            itemCard.setOrientation(LinearLayout.VERTICAL);
-            itemCard.setPadding(dp(12), dp(10), dp(12), dp(10));
-            itemCard.setBackground(createCardDrawable(COLOR_ELEVATED, dp(10)));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.bottomMargin = dp(10);
-            itemCard.setLayoutParams(lp);
-
-            // Row 1: Category + Size + Status Tag
-            LinearLayout topRow = new LinearLayout(this);
-            topRow.setOrientation(LinearLayout.HORIZONTAL);
-            topRow.setGravity(Gravity.CENTER_VERTICAL);
-
-            TextView catText = new TextView(this);
-            catText.setText(item.category.toUpperCase(Locale.US) + " • " + MediaStorageManager.formatBytes(item.sizeBytes));
-            catText.setTextSize(11);
-            catText.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-            catText.setTextColor(COLOR_ACCENT);
-            topRow.addView(catText, new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-            int badgeColor = item.isHardlink ? COLOR_SUCCESS :
-                    (item.isPhysicalDuplicate ? COLOR_WARNING : (item.isOrphan ? COLOR_TEXT_MUTED : COLOR_ACCENT));
-            String badgeLabel = item.isHardlink ? "HARDLINK" :
-                    (item.isPhysicalDuplicate ? "DUPLICATE" : (item.isOrphan ? "ORPHAN" : "ACTIVE DL"));
-            TextView b = createBadge(badgeLabel, COLOR_SURFACE, badgeColor);
-            topRow.addView(b);
-            itemCard.addView(topRow);
-
-            // Row 2: Filename
-            TextView fileName = new TextView(this);
-            fileName.setText(item.stagingFile.getName());
-            fileName.setTextSize(12);
-            fileName.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-            fileName.setTextColor(COLOR_TEXT_PRIMARY);
-            fileName.setPadding(0, dp(4), 0, dp(2));
-            itemCard.addView(fileName);
-
-            // Row 3: Library Copy Info
-            TextView libInfo = new TextView(this);
-            libInfo.setTextSize(10);
-            if (item.libraryFile != null) {
-                libInfo.setText("Library Copy: " + item.libraryFile.getName());
-                libInfo.setTextColor(COLOR_SUCCESS);
-            } else {
-                libInfo.setText("No verified library copy");
-                libInfo.setTextColor(COLOR_TEXT_MUTED);
-            }
-            itemCard.addView(libInfo);
-
-            // Row 4: Transmission Torrent Info
-            TextView trInfo = new TextView(this);
-            trInfo.setTextSize(10);
-            trInfo.setTextColor(item.isSeeding ? COLOR_ACCENT : COLOR_TEXT_MUTED);
-            trInfo.setText("Torrent: " + item.torrentStatusString + (item.torrentName != null ? (" (" + item.torrentName + ")") : ""));
-            trInfo.setPadding(0, dp(2), 0, dp(6));
-            itemCard.addView(trInfo);
-
-            // Row 5: Action Buttons
-            LinearLayout itemBtnRow = new LinearLayout(this);
-            itemBtnRow.setOrientation(LinearLayout.HORIZONTAL);
-
-            Button btnKeep = createPillSmallButton("KEEP BOTH", COLOR_SURFACE, COLOR_TEXT_PRIMARY);
-            btnKeep.setOnClickListener(v -> Toast.makeText(this, "Preserved in staging: " + item.stagingFile.getName(), Toast.LENGTH_SHORT).show());
-            itemBtnRow.addView(btnKeep, new LinearLayout.LayoutParams(0, dp(30), 1.0f));
-
-            if (item.isPhysicalDuplicate) {
-                View sep1 = new View(this);
-                itemBtnRow.addView(sep1, new LinearLayout.LayoutParams(dp(4), 1));
-
-                Button btnRepair = createPillSmallButton("HARDLINK", COLOR_SURFACE, COLOR_ACCENT);
-                btnRepair.setOnClickListener(v -> {
-                    new Thread(() -> {
-                        boolean ok = MediaStorageManager.getInstance(getApplicationContext()).repairDuplicateWithHardlink(item);
-                        mainHandler.post(() -> {
-                            if (ok) {
-                                Toast.makeText(this, "Repaired duplicate via hardlink!", Toast.LENGTH_SHORT).show();
-                            } else {
-                                Toast.makeText(this, "Hardlink repair failed: " + MediaStorageManager.getInstance(getApplicationContext()).getHardlinkSupportReason(), Toast.LENGTH_LONG).show();
-                            }
-                            dialog.dismiss();
-                            triggerStagingScan(false);
-                            triggerDiagnosticsProbe(false);
-                        });
-                    }).start();
-                });
-                itemBtnRow.addView(btnRepair, new LinearLayout.LayoutParams(0, dp(30), 1.0f));
-            }
-
-            View sep2 = new View(this);
-            itemBtnRow.addView(sep2, new LinearLayout.LayoutParams(dp(4), 1));
-
-            Button btnRemove = createPillSmallButton("REMOVE", COLOR_SURFACE, COLOR_DANGER);
-            btnRemove.setOnClickListener(v -> {
-                if (item.isSeeding) {
-                    new androidx.appcompat.app.AlertDialog.Builder(this)
-                            .setTitle("Active Torrent Warning")
-                            .setMessage("Warning: " + item.stagingFile.getName() + " is currently seeding in Transmission. Deleting it will stop seeding for this torrent.\n\nForce delete anyway?")
-                            .setPositiveButton("FORCE DELETE", (d2, w2) -> {
-                                new Thread(() -> {
-                                    MediaStorageManager.getInstance(getApplicationContext()).cleanupStagingFile(item, true);
-                                    mainHandler.post(() -> {
-                                        dialog.dismiss();
-                                        triggerStagingScan(false);
-                                        triggerDiagnosticsProbe(false);
-                                        Toast.makeText(this, "Removed staging copy", Toast.LENGTH_SHORT).show();
-                                    });
-                                }).start();
-                            })
-                            .setNegativeButton("CANCEL", null)
-                            .show();
-                } else {
-                    new Thread(() -> {
-                        MediaStorageManager.getInstance(getApplicationContext()).cleanupStagingFile(item, false);
-                        mainHandler.post(() -> {
-                            dialog.dismiss();
-                            triggerStagingScan(false);
-                            triggerDiagnosticsProbe(false);
-                            Toast.makeText(this, "Removed staging copy", Toast.LENGTH_SHORT).show();
-                        });
-                    }).start();
-                }
-            });
-            itemBtnRow.addView(btnRemove, new LinearLayout.LayoutParams(0, dp(30), 1.0f));
-
-            itemCard.addView(itemBtnRow);
-            container.addView(itemCard);
-        }
-
-        dialog.show();
-    }
-
-    private void triggerDiagnosticsProbe(boolean showToast) {
-        new Thread(() -> {
-            MediaStorageManager msm = MediaStorageManager.getInstance(getApplicationContext());
-            MediaStorageManager.StorageDiagnosticResult diag = msm.runDiagnostics();
-            mainHandler.post(() -> {
-                if (diagRowsContainer != null) {
-                    diagRowsContainer.removeAllViews();
-                    diagRowsContainer.addView(createKeyValueRow("Unified Media Root", diag.mediaRoot));
-                    diagRowsContainer.addView(createHairlineDivider());
-                    diagRowsContainer.addView(createKeyValueRow("Filesystem Access", (diag.rootReadable && diag.rootWritable) ? "Read & Write Verified" : "Permission Check Required"));
-                    diagRowsContainer.addView(createHairlineDivider());
-                    diagRowsContainer.addView(createKeyValueRow("Hardlink Deduplication", diag.hardlinkSupported ? "Supported (Zero space duplicates)" : "Single-copy storage"));
-                    diagRowsContainer.addView(createHairlineDivider());
-                    diagRowsContainer.addView(createKeyValueRow("Jellyfin Access", diag.jellyfinAccess ? "Verified" : "Missing Folders"));
-                    diagRowsContainer.addView(createHairlineDivider());
-                    diagRowsContainer.addView(createKeyValueRow("Companion Services", (diag.transmissionAccess && diag.radarrAccess && diag.sonarrAccess) ? "All Connected" : "Partial Access"));
-                }
-                if (showToast) {
-                    Toast.makeText(this, "Storage Probe Complete", Toast.LENGTH_SHORT).show();
-                }
-            });
-        }).start();
-    }
-
-    private void triggerLegacyMigration() {
-        new Thread(() -> {
-            MediaStorageManager msm = MediaStorageManager.getInstance(getApplicationContext());
-            if (!msm.hasLegacyMedia()) {
-                mainHandler.post(() -> {
-                    Toast.makeText(this, "No legacy media found to migrate.", Toast.LENGTH_SHORT).show();
-                });
-                return;
-            }
-            mainHandler.post(() -> {
-                Toast.makeText(this, "Starting migration of legacy media...", Toast.LENGTH_SHORT).show();
-            });
-            MediaStorageManager.MigrationResult res = msm.performLegacyMigration();
-            mainHandler.post(() -> {
-                Toast.makeText(this, res.message, Toast.LENGTH_LONG).show();
-                triggerDiagnosticsProbe(false);
-                refreshUI();
-            });
-        }).start();
-    }
-
     private void refreshUI() {
         // Update Permission Banner
         if (permissionBanner != null) {
@@ -976,8 +465,6 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         updateActivePathVerification();
         renderDrives();
         renderSavedFolders();
-        triggerDiagnosticsProbe(false);
-        triggerStagingScan(false);
     }
 
     private void updateActivePathVerification() {
@@ -990,7 +477,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             if (ver.isSafVerified && !ver.posixAccessible) {
                 activePathStatus.setText("SAF GRANTED BUT POSIX BLOCKED (" + ver.mediaFileCount + " media files detected via SAF)\n" +
                         "Warning: Android Scoped Storage blocks native Jellyfin from reading external USB paths directly. Media library will fail to scan.");
-                activePathStatus.setTextColor(Color.parseColor("#E06C75"));
+                activePathStatus.setTextColor(COLOR_DANGER);
             } else if (ver.isAppSpecific && ver.posixAccessible) {
                 activePathStatus.setText("VERIFIED APP DATA STORAGE (" + ver.mediaFileCount + " media files, " + ver.itemCount + " items) - 100% Native Jellyfin Access");
                 activePathStatus.setTextColor(COLOR_SUCCESS);
@@ -999,7 +486,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 activePathStatus.setTextColor(COLOR_WARNING);
             } else if (ver.hasPermissionError || !ver.canRead || !ver.posixAccessible) {
                 activePathStatus.setText("SELINUX PERMISSION BLOCKED (Android blocks native Jellyfin from reading this path. Use Internal Storage /storage/emulated/0/FishbowlMedia/)");
-                activePathStatus.setTextColor(Color.parseColor("#E06C75"));
+                activePathStatus.setTextColor(COLOR_DANGER);
             } else if (ver.mediaFileCount == 0 && ver.itemCount == 0) {
                 activePathStatus.setText("EMPTY FOLDER DETECTED (0 media files found - Jellyfin library will be empty)");
                 activePathStatus.setTextColor(COLOR_WARNING);
@@ -1035,7 +522,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
             TextView driveName = new TextView(this);
             driveName.setText(drive.name);
-            driveName.setTextSize(15);
+            driveName.setTextSize(14.5f);
             driveName.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
             driveName.setTextColor(COLOR_TEXT_PRIMARY);
             topRow.addView(driveName, new LinearLayout.LayoutParams(0, -2, 1.0f));
@@ -1046,32 +533,22 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             View spacer = new View(this);
             topRow.addView(spacer, new LinearLayout.LayoutParams(dp(6), 1));
 
-            if (!drive.isPrimary) {
-                topRow.addView(createBadge("USB / SAF ONLY", Color.parseColor("#3A2E1A"), COLOR_WARNING));
-                View spacerBeta = new View(this);
-                topRow.addView(spacerBeta, new LinearLayout.LayoutParams(dp(6), 1));
+            boolean isInUse = activeSelectedPath != null && activeSelectedPath.startsWith(drive.rootPath);
+            if (isInUse) {
+                topRow.addView(createBadge("IN USE", COLOR_ELEVATED, COLOR_SUCCESS));
+            } else {
+                topRow.addView(createBadge("MOUNTED", COLOR_ELEVATED, COLOR_TEXT_MUTED));
             }
-
-            topRow.addView(createBadge("ACTIVE", COLOR_ELEVATED, COLOR_SUCCESS));
             driveCard.addView(topRow);
 
             // Row 2: Mount Root Path
             TextView pathView = new TextView(this);
             pathView.setText(drive.rootPath);
-            pathView.setTextSize(12);
+            pathView.setTextSize(11.5f);
             pathView.setTypeface(Typeface.MONOSPACE);
             pathView.setTextColor(COLOR_TEXT_MUTED);
-            pathView.setPadding(0, dp(4), 0, dp(drive.isPrimary ? 6 : 2));
+            pathView.setPadding(0, dp(4), 0, dp(4));
             driveCard.addView(pathView);
-
-            if (!drive.isPrimary) {
-                TextView betaNotice = new TextView(this);
-                betaNotice.setText("Notice: External USB drives are restricted to Java SAF on standard Android 11+. Jellyfin requires direct POSIX access; recommend Internal Storage (/storage/emulated/0/FishbowlMedia/).");
-                betaNotice.setTextSize(11);
-                betaNotice.setTextColor(COLOR_WARNING);
-                betaNotice.setPadding(0, 0, 0, dp(6));
-                driveCard.addView(betaNotice);
-            }
 
             // Row 3: Space Bar & Info
             if (drive.totalBytes > 0) {
@@ -1103,7 +580,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
                 for (String folder : drive.mediaFolders) {
                     String fullFolder = drive.rootPath + "/" + folder;
-                    String displayLabel = folder.contains("com.fishbowl.app/files") ? "App Data (Guaranteed)" : folder;
+                    String displayLabel = folder.contains("com.fishbowl.app/files") ? "App Data" : folder;
                     TextView chip = createInteractiveChip(displayLabel, fullFolder.equalsIgnoreCase(activeSelectedPath));
                     chip.setOnClickListener(v -> setActivePath(fullFolder, true));
                     chipRow.addView(chip);
@@ -1113,70 +590,23 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 driveCard.addView(chipScroll);
             }
 
-            // Row 5: Action Buttons
-            LinearLayout actionsRow1 = new LinearLayout(this);
-            actionsRow1.setOrientation(LinearLayout.HORIZONTAL);
-            actionsRow1.setPadding(0, dp(12), 0, 0);
+            // Row 5: Action Buttons (Minimal, clean layout)
+            LinearLayout actionsRow = new LinearLayout(this);
+            actionsRow.setOrientation(LinearLayout.HORIZONTAL);
+            actionsRow.setPadding(0, dp(12), 0, 0);
 
-            Button btnBrowse = createSmallActionButton("BROWSE (SAF)");
+            Button btnBrowse = createSmallActionButton("BROWSE FOLDER (SAF)");
             btnBrowse.setOnClickListener(v -> openFolderPicker());
-            actionsRow1.addView(btnBrowse, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+            actionsRow.addView(btnBrowse, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
 
-            View btnSpacer1 = new View(this);
-            actionsRow1.addView(btnSpacer1, new LinearLayout.LayoutParams(dp(8), 1));
+            View btnSpacer = new View(this);
+            actionsRow.addView(btnSpacer, new LinearLayout.LayoutParams(dp(8), 1));
 
-            Button btnEnter = createSmallActionButton("ENTER PATH");
-            btnEnter.setOnClickListener(v -> showCustomPathDialog(drive.rootPath + "/"));
-            actionsRow1.addView(btnEnter, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
-
-            driveCard.addView(actionsRow1);
-
-            LinearLayout actionsRow2 = new LinearLayout(this);
-            actionsRow2.setOrientation(LinearLayout.HORIZONTAL);
-            actionsRow2.setPadding(0, dp(8), 0, 0);
-
-            Button btnRoot = createSmallActionButton("USE DRIVE ROOT (" + drive.rootPath + ")");
+            Button btnRoot = createSmallActionButton("USE DRIVE ROOT");
             btnRoot.setOnClickListener(v -> setActivePath(drive.rootPath, true));
+            actionsRow.addView(btnRoot, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
 
-            if (!drive.isPrimary) {
-                actionsRow2.addView(btnRoot, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
-
-                View sp2 = new View(this);
-                actionsRow2.addView(sp2, new LinearLayout.LayoutParams(dp(8), 1));
-
-                Button btnProvision = createSmallActionButton("PROVISION MEDIA FOLDERS");
-                btnProvision.setOnClickListener(v -> {
-                    List<String> created = StorageDriveHelper.provisionAppDataMediaFolders(this, drive.rootPath);
-                    String primaryTarget = drive.rootPath + "/Android/data/" + getPackageName() + "/files/Movies";
-                    StorageDriveHelper.PathVerification pVer = StorageDriveHelper.verifyPath(this, primaryTarget);
-                    if (pVer.posixAccessible) {
-                        setActivePath(primaryTarget, true);
-                        copyPathToClipboard(primaryTarget);
-                        Toast.makeText(this, "External Storage Ready! Media folders provisioned same as internal. Path copied.", Toast.LENGTH_LONG).show();
-                    } else {
-                        new androidx.appcompat.app.AlertDialog.Builder(this)
-                                .setTitle("External USB Storage Limitation")
-                                .setMessage("Fishbowl attempted to provision media directories on " + drive.name + ".\n\nHowever, Android Scoped Storage blocks native Linux processes (including Jellyfin) from reading secondary USB media directly via POSIX.\n\nTo ensure Jellyfin can read your media, please use Internal Storage (/storage/emulated/0/FishbowlMedia/Movies) or format this drive as Adopted Storage.")
-                                .setPositiveButton("USE INTERNAL STORAGE", (d, w) -> {
-                                    String internalMovies = "/storage/emulated/0/FishbowlMedia/Movies";
-                                    setActivePath(internalMovies, true);
-                                    copyPathToClipboard(internalMovies);
-                                    refreshUI();
-                                })
-                                .setNegativeButton("KEEP EXTERNAL PATH", (d, w) -> {
-                                    setActivePath(primaryTarget, true);
-                                    refreshUI();
-                                })
-                                .show();
-                    }
-                    refreshUI();
-                });
-                actionsRow2.addView(btnProvision, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
-            } else {
-                actionsRow2.addView(btnRoot, new LinearLayout.LayoutParams(-1, dp(36)));
-            }
-
-            driveCard.addView(actionsRow2);
+            driveCard.addView(actionsRow);
             drivesContainer.addView(driveCard);
         }
     }
@@ -1188,7 +618,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         Set<String> rawSavedSet = prefs.getStringSet("saved_folders", new HashSet<>());
         if (rawSavedSet.isEmpty()) {
             TextView emptyText = new TextView(this);
-            emptyText.setText("No custom folders saved yet. Use Browse Folder or tap a folder chip above.");
+            emptyText.setText("No custom folders saved yet. Tap a folder chip or browse above.");
             emptyText.setTextSize(12);
             emptyText.setTextColor(COLOR_TEXT_MUTED);
             emptyText.setPadding(0, dp(4), 0, dp(8));
@@ -1208,7 +638,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         }
 
         List<String> list = new ArrayList<>(normalizedSet);
-        java.util.Collections.sort(list);
+        Collections.sort(list);
 
         for (String path : list) {
             LinearLayout row = new LinearLayout(this);
@@ -1235,7 +665,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             statusTv.setTextSize(10);
             if (vCheck.isSafVerified && !vCheck.posixAccessible) {
                 statusTv.setText(vCheck.mediaFileCount + " media files (SAF only - POSIX blocked for Jellyfin)");
-                statusTv.setTextColor(Color.parseColor("#E06C75"));
+                statusTv.setTextColor(COLOR_WARNING);
             } else if (vCheck.isAppSpecific && vCheck.posixAccessible) {
                 statusTv.setText(vCheck.mediaFileCount + " media files (App Data - Native Access)");
                 statusTv.setTextColor(COLOR_SUCCESS);
@@ -1244,7 +674,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 statusTv.setTextColor(COLOR_WARNING);
             } else if (vCheck.hasPermissionError || !vCheck.canRead || !vCheck.posixAccessible) {
                 statusTv.setText("Permission blocked by SELinux / Scoped Storage");
-                statusTv.setTextColor(Color.parseColor("#E06C75"));
+                statusTv.setTextColor(COLOR_DANGER);
             } else if (vCheck.mediaFileCount == 0) {
                 statusTv.setText("0 media files detected");
                 statusTv.setTextColor(COLOR_WARNING);
@@ -1311,7 +741,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, normalizedPath);
 
         if (!ver.exists) {
-            new androidx.appcompat.app.AlertDialog.Builder(this)
+            new AlertDialog.Builder(this)
                     .setTitle("Folder Not Found")
                     .setMessage("The directory:\n" + normalizedPath + "\ndoes not exist on disk. If you add this path to Jellyfin, library indexing will fail.\n\nDo you still want to copy this path?")
                     .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath))
@@ -1321,7 +751,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         }
 
         if (ver.isSafVerified && !ver.posixAccessible) {
-            new androidx.appcompat.app.AlertDialog.Builder(this)
+            new AlertDialog.Builder(this)
                     .setTitle("External USB Storage - POSIX Blocked")
                     .setMessage("This folder is verified via Android Storage Access Framework (SAF), but Android Scoped Storage blocks native Linux processes like Jellyfin from reading files directly at:\n\n" + normalizedPath +
                             "\n\nIf you paste this path into Jellyfin, Jellyfin will report:\n'Could not find a part of the path'.\n\nRecommended: Use Internal Storage (/storage/emulated/0/FishbowlMedia/Movies) for full native POSIX compatibility.")
@@ -1338,24 +768,23 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         }
 
         if (ver.hasPermissionError || !ver.canRead || !ver.posixAccessible) {
-            androidx.appcompat.app.AlertDialog.Builder b = new androidx.appcompat.app.AlertDialog.Builder(this);
-            b.setTitle("SELinux Permission Warning");
-            String msg = "Android security (SELinux / Scoped Storage) blocks native processes like Jellyfin from reading files at this path:\n\n" + normalizedPath + "\n\nIf you add this path to Jellyfin, your library will be EMPTY.\n\nRecommended: Use Internal Storage (/storage/emulated/0/FishbowlMedia/Movies).";
-            b.setMessage(msg);
-            b.setNeutralButton("SWITCH TO INTERNAL", (d, w) -> {
-                String internalPath = "/storage/emulated/0/FishbowlMedia/Movies";
-                setActivePath(internalPath, true);
-                doCopy(internalPath);
-                refreshUI();
-            });
-            b.setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath));
-            b.setNegativeButton("CANCEL", null);
-            b.show();
+            new AlertDialog.Builder(this)
+                    .setTitle("SELinux Permission Warning")
+                    .setMessage("Android security (SELinux / Scoped Storage) blocks native processes like Jellyfin from reading files at this path:\n\n" + normalizedPath + "\n\nIf you add this path to Jellyfin, your library will be EMPTY.\n\nRecommended: Use Internal Storage (/storage/emulated/0/FishbowlMedia/Movies).")
+                    .setNeutralButton("SWITCH TO INTERNAL", (d, w) -> {
+                        String internalPath = "/storage/emulated/0/FishbowlMedia/Movies";
+                        setActivePath(internalPath, true);
+                        doCopy(internalPath);
+                        refreshUI();
+                    })
+                    .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath))
+                    .setNegativeButton("CANCEL", null)
+                    .show();
             return;
         }
 
         if (ver.mediaFileCount == 0) {
-            new androidx.appcompat.app.AlertDialog.Builder(this)
+            new AlertDialog.Builder(this)
                     .setTitle("Empty Folder Warning")
                     .setMessage("No video or audio files (.mp4, .mkv, .mp3, etc.) were detected in:\n\n" + normalizedPath + "\n\nIf you add this folder to Jellyfin now, the library will be EMPTY.\n\nPlease place your media files inside this folder before scanning in Jellyfin.\n\nDo you want to copy the path anyway?")
                     .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath))
@@ -1388,7 +817,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     }
 
     private void showCustomPathDialog(String initialPath) {
-        androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this);
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Enter Media Path");
 
         LinearLayout layout = new LinearLayout(this);
@@ -1416,7 +845,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         layout.addView(input);
 
         TextView tip = new TextView(this);
-        tip.setText("Tip: To prevent empty libraries on external drives, you can use the guaranteed app folder:\n/storage/<UUID>/Android/data/com.fishbowl.app/files");
+        tip.setText("Tip: Example internal media path:\n/storage/emulated/0/FishbowlMedia/Movies");
         tip.setTextSize(11);
         tip.setTextColor(COLOR_TEXT_MUTED);
         tip.setPadding(0, dp(10), 0, 0);
@@ -1511,7 +940,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         }
     }
 
-    // UI Component Helpers
+    // UI Component Helpers synchronized with Fishbowl design language
     private GradientDrawable createCardDrawable(int bgColor, int radiusPx) {
         GradientDrawable gd = new GradientDrawable();
         gd.setColor(bgColor);
@@ -1527,19 +956,11 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         return gd;
     }
 
-    private GradientDrawable createBorderedRoundedDrawable(int bgColor, int borderColor, int borderWidthDp, int radiusDp) {
-        GradientDrawable gd = new GradientDrawable();
-        gd.setColor(bgColor);
-        gd.setCornerRadius(dp(radiusDp > 0 ? radiusDp : 8));
-        gd.setStroke(dp(borderWidthDp), borderColor);
-        return gd;
-    }
-
     private android.graphics.drawable.Drawable createButtonRippleDrawable(int bgColor, int radiusPx, int rippleColor) {
         GradientDrawable shape = createCardDrawable(bgColor, radiusPx);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             int rCol = Color.argb(60, Color.red(rippleColor), Color.green(rippleColor), Color.blue(rippleColor));
-            return new android.graphics.drawable.RippleDrawable(
+            return new RippleDrawable(
                     android.content.res.ColorStateList.valueOf(rCol),
                     shape,
                     null);

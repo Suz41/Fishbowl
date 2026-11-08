@@ -164,12 +164,15 @@ public final class FishbowlActivity extends AppCompatActivity
     private TextView healthUptimeText;
     private TextView healthRamText;
     private TextView healthStorageText;
+    private TextView defaultIpValueText;
     private TextView localIpValueText;
     private TextView lanIpValueText;
     private TextView tailscaleIpValueText;
+    private ImageView btnCopyDefaultIp;
     private ImageView btnCopyLocalIp;
     private ImageView btnCopyLanIp;
     private ImageView btnCopyTailscaleIp;
+    private View rowDefaultView;
     private View rowLanView;
     private View rowLocalView;
     private View rowTailscaleView;
@@ -2255,85 +2258,64 @@ public final class FishbowlActivity extends AppCompatActivity
         if (clientEndpointsContainer == null) return;
         clientEndpointsContainer.removeAllViews();
 
-        List<NetworkUtils.LanEndpoint> endpoints = NetworkUtils.getAllAvailableLanEndpoints();
-        boolean hasEndpoints = endpoints != null && !endpoints.isEmpty();
-
-        // 1. All Discovered LAN Endpoints (Wi-Fi, Hotspot, USB Tether, Ethernet, Tailscale)
-        if (hasEndpoints) {
-            for (int i = 0; i < endpoints.size(); i++) {
-                NetworkUtils.LanEndpoint ep = endpoints.get(i);
-                TextView epTv = new TextView(this);
-                epTv.setText(ep.ip + ":8096");
-                if (i == 0 || ep.label.equalsIgnoreCase("Wi-Fi")) {
-                    lanIpValueText = epTv;
-                }
-                ImageView copyBtn = new ImageView(this);
-                String tag = "ep_" + i;
-                View epRow = buildEndpointRow(tag, ep.label.toUpperCase(Locale.ROOT), epTv, copyBtn, () -> {
-                    copyUrlToClipboard(ep.label + " Endpoint", "http://" + ep.ip + ":8096");
-                });
-                View dot = epRow.findViewWithTag("dot_" + tag);
-                setEndpointCopyState(copyBtn, epRow, dot, true);
-                if (i == 0 || ep.label.equalsIgnoreCase("Wi-Fi")) {
-                    btnCopyLanIp = copyBtn;
-                    rowLanView = epRow;
-                }
-                clientEndpointsContainer.addView(epRow);
-                clientEndpointsContainer.addView(createHairlineDivider());
-            }
-        } else {
-            lanIpValueText = new TextView(this);
-            lanIpValueText.setText(rawLan != null ? rawLan + ":8096" : "Wi-Fi not connected");
-            ImageView copyLan = new ImageView(this);
-            btnCopyLanIp = copyLan;
-            rowLanView = buildEndpointRow("lan", "LAN", lanIpValueText, copyLan, () -> {
-                String val = lanIpValueText.getText().toString();
-                if (val != null && !val.contains("not connected")) {
-                    copyUrlToClipboard("LAN IP", val.startsWith("http") ? val : "http://" + val);
-                }
-            });
-            View dotLan = rowLanView.findViewWithTag("dot_lan");
-            setEndpointCopyState(copyLan, rowLanView, dotLan, rawLan != null);
-            clientEndpointsContainer.addView(rowLanView);
-            clientEndpointsContainer.addView(createHairlineDivider());
-        }
-
-        // 2. LOCAL Endpoint (127.0.0.1:8096)
-        localIpValueText = new TextView(this);
-        localIpValueText.setText("127.0.0.1:8096");
-        ImageView copyLocal = new ImageView(this);
-        btnCopyLocalIp = copyLocal;
-        rowLocalView = buildEndpointRow("local", "LOCAL", localIpValueText, copyLocal, () -> {
-            copyUrlToClipboard("Local Address", "http://127.0.0.1:8096");
+        // 1. DEFAULT Endpoint (192.0.0.2:8096) - Fixed / Carrier Default
+        final String defaultIp = NetworkUtils.getDefaultIp();
+        defaultIpValueText = new TextView(this);
+        defaultIpValueText.setText(defaultIp + ":8096");
+        ImageView copyDefault = new ImageView(this);
+        btnCopyDefaultIp = copyDefault;
+        rowDefaultView = buildEndpointRow("default", "DEFAULT", defaultIpValueText, copyDefault, () -> {
+            copyUrlToClipboard("Default Endpoint", "http://" + defaultIp + ":8096");
         });
-        View dotLocal = rowLocalView.findViewWithTag("dot_local");
-        setEndpointCopyState(copyLocal, rowLocalView, dotLocal, true);
-        clientEndpointsContainer.addView(rowLocalView);
+        View dotDefault = rowDefaultView.findViewWithTag("dot_default");
+        setEndpointCopyState(copyDefault, rowDefaultView, dotDefault, true);
+        clientEndpointsContainer.addView(rowDefaultView);
+        clientEndpointsContainer.addView(createHairlineDivider());
 
-        // 3. TAILSCALE Endpoint (if not already listed in physical endpoints)
-        boolean hasTailscaleInList = false;
-        if (endpoints != null) {
-            for (NetworkUtils.LanEndpoint ep : endpoints) {
-                if (ep.label.equalsIgnoreCase("Tailscale") || NetworkUtils.isTailscaleIp(ep.ip)) {
-                    hasTailscaleInList = true;
-                    break;
-                }
-            }
+        // 2. Active Mobile / Wi-Fi / LAN Endpoint (Current dynamic connection)
+        NetworkUtils.LanEndpoint activeLan = NetworkUtils.getActiveLanEndpoint();
+        lanIpValueText = new TextView(this);
+        ImageView copyLan = new ImageView(this);
+        btnCopyLanIp = copyLan;
+        final String lanLabel;
+        final String lanVal;
+        final boolean lanOperable;
+        if (activeLan != null) {
+            lanLabel = activeLan.label.toUpperCase(Locale.ROOT);
+            lanVal = activeLan.ip + ":8096";
+            lanOperable = true;
+        } else if (rawLan != null && !rawLan.isEmpty()) {
+            lanLabel = "LAN";
+            lanVal = rawLan + ":8096";
+            lanOperable = true;
+        } else {
+            lanLabel = "LAN";
+            lanVal = "Wi-Fi not connected";
+            lanOperable = false;
         }
-        if (!hasTailscaleInList) {
+        lanIpValueText.setText(lanVal);
+        rowLanView = buildEndpointRow("lan", lanLabel, lanIpValueText, copyLan, () -> {
+            String val = lanIpValueText.getText().toString();
+            if (val != null && !val.contains("not connected")) {
+                copyUrlToClipboard(lanLabel + " Endpoint", val.startsWith("http") ? val : "http://" + val);
+            }
+        });
+        View dotLan = rowLanView.findViewWithTag("dot_lan");
+        setEndpointCopyState(copyLan, rowLanView, dotLan, lanOperable);
+        clientEndpointsContainer.addView(rowLanView);
+
+        // 3. Conditional TAILSCALE (Only shown if actively connected to Tailscale)
+        if (rawTailscale != null && !rawTailscale.isEmpty()) {
             clientEndpointsContainer.addView(createHairlineDivider());
             tailscaleIpValueText = new TextView(this);
-            tailscaleIpValueText.setText(rawTailscale != null ? rawTailscale + ":8096" : "Tailscale not active");
+            tailscaleIpValueText.setText(rawTailscale + ":8096");
             ImageView copyTailscale = new ImageView(this);
             btnCopyTailscaleIp = copyTailscale;
             rowTailscaleView = buildEndpointRow("tailscale", "TAILSCALE", tailscaleIpValueText, copyTailscale, () -> {
-                String val = tailscaleIpValueText.getText().toString();
-                if (val != null && !val.contains("not active")) {
-                    copyUrlToClipboard("Tailscale Address", val.startsWith("http") ? val : "http://" + val);
-                }
+                copyUrlToClipboard("Tailscale Endpoint", "http://" + rawTailscale + ":8096");
             });
             View dotTailscale = rowTailscaleView.findViewWithTag("dot_tailscale");
-            setEndpointCopyState(copyTailscale, rowTailscaleView, dotTailscale, rawTailscale != null);
+            setEndpointCopyState(copyTailscale, rowTailscaleView, dotTailscale, true);
             clientEndpointsContainer.addView(rowTailscaleView);
         }
 
@@ -2355,8 +2337,9 @@ public final class FishbowlActivity extends AppCompatActivity
             }
         });
         View dotAccount = rowAccountView.findViewWithTag("dot_account");
-        setEndpointCopyState(copyAccount, rowAccountView, dotAccount, false);
+        setEndpointCopyState(copyAccount, rowAccountView, dotAccount, true);
         clientEndpointsContainer.addView(rowAccountView);
+
         updateHomeLinkedAccountStatus();
     }
 
@@ -2384,7 +2367,7 @@ public final class FishbowlActivity extends AppCompatActivity
         lbl.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         lbl.setLetterSpacing(0.06f);
         lbl.setTextColor(Color.parseColor("#A1A1AA"));
-        LinearLayout.LayoutParams lblParams = new LinearLayout.LayoutParams(dp(72), ViewGroup.LayoutParams.WRAP_CONTENT);
+        LinearLayout.LayoutParams lblParams = new LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.WRAP_CONTENT);
         row.addView(lbl, lblParams);
 
         valueView.setTextSize(12.5f);
@@ -9329,6 +9312,16 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private void showSetPasswordDialog(String username) {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+
+        TextView desc = new TextView(this);
+        desc.setText("Enter the new password for '" + username + "'. It will be securely hashed with PBKDF2-SHA512 directly into jellyfin.db.");
+        desc.setTextSize(11.5f);
+        desc.setTextColor(Color.parseColor("#A1A1AA"));
+        desc.setPadding(0, 0, 0, dp(12));
+        content.addView(desc);
+
         final EditText input = new EditText(this);
         input.setSingleLine(true);
         input.setHint("Enter new password");
@@ -9337,16 +9330,17 @@ public final class FishbowlActivity extends AppCompatActivity
         input.setBackground(createBorderedRoundedDrawable(
                 Color.parseColor("#18181B"), Color.parseColor("#3F3F46"), dp(1), dp(8)));
         input.setPadding(dp(14), dp(10), dp(14), dp(10));
+        input.setTextSize(13f);
+        input.setTypeface(Typeface.MONOSPACE);
+        content.addView(input);
 
-        FrameLayout wrapper = new FrameLayout(this);
-        wrapper.setPadding(dp(20), dp(12), dp(20), dp(8));
-        wrapper.addView(input);
-
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("Set Password for " + username)
-                .setMessage("Enter the new password. It will be securely hashed with PBKDF2-SHA512 directly into jellyfin.db, and Fishbowl will display your actual password in the Security Center.")
-                .setView(wrapper)
-                .setPositiveButton("SAVE PASSWORD", (d, w) -> {
+        showOledDialog(
+                "Set Password",
+                "User: " + username,
+                content,
+                "SAVE PASSWORD",
+                getAccentColor(),
+                () -> {
                     String newPass = input.getText() != null ? input.getText().toString().trim() : "";
                     if (newPass.isEmpty()) {
                         Toast.makeText(this, "Password cannot be empty. Use 'RESET TO BLANK' if you want no password.", Toast.LENGTH_LONG).show();
@@ -9360,16 +9354,30 @@ public final class FishbowlActivity extends AppCompatActivity
                     } else {
                         Toast.makeText(this, "Failed to save password. Is database locked?", Toast.LENGTH_LONG).show();
                     }
-                })
-                .setNegativeButton("CANCEL", null)
-                .show();
+                },
+                "CANCEL",
+                null
+        );
     }
 
     private void showResetPasswordConfirmation(String username) {
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("Reset Password to Blank?")
-                .setMessage("Are you sure you want to clear the password for '" + username + "'?\n\nThis writes directly into jellyfin.db. You will immediately be able to log in by leaving the password field blank.")
-                .setPositiveButton("RESET TO BLANK", (d, w) -> {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+
+        TextView desc = new TextView(this);
+        desc.setText("Are you sure you want to clear the password for '" + username + "'?\n\nThis writes directly into jellyfin.db. You will immediately be able to log in by leaving the password field blank.");
+        desc.setTextSize(11.5f);
+        desc.setTextColor(Color.parseColor("#A1A1AA"));
+        desc.setLineSpacing(dp(2), 1.15f);
+        content.addView(desc);
+
+        showOledDialog(
+                "Reset Password to Blank?",
+                "User: " + username,
+                content,
+                "RESET TO BLANK",
+                getDangerColor(),
+                () -> {
                     boolean ok = com.fishbowl.app.security.FishbowlSecurityManager.resetPasswordToBlank(this, username);
                     if (ok) {
                         Toast.makeText(this, "Password for '" + username + "' reset to blank.", Toast.LENGTH_LONG).show();
@@ -9378,9 +9386,10 @@ public final class FishbowlActivity extends AppCompatActivity
                     } else {
                         Toast.makeText(this, "Could not reset password. Is database locked?", Toast.LENGTH_LONG).show();
                     }
-                })
-                .setNegativeButton("CANCEL", null)
-                .show();
+                },
+                "CANCEL",
+                null
+        );
     }
 
     private View buildSecurityZombieQuarantineCard() {
@@ -10387,24 +10396,44 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private void showTmdbKeyConfigDialog() {
-        EditText input = new EditText(this);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+
+        TextView desc = new TextView(this);
+        desc.setText("Enter your personal TMDB API key to fetch movie posters and overviews during import.\n\nLeave blank to use filename heuristics.");
+        desc.setTextSize(11.5f);
+        desc.setTextColor(Color.parseColor("#A1A1AA"));
+        desc.setPadding(0, 0, 0, dp(12));
+        content.addView(desc);
+
+        final EditText input = new EditText(this);
         String currentKey = com.fishbowl.app.importer.TmdbMetadataProvider.getApiKey(this);
         if (currentKey != null) input.setText(currentKey);
+        input.setSingleLine(true);
         input.setHint("Enter TMDB v3 API Key (optional)");
-        input.setTextColor(getPrimaryTextColor());
-        input.setPadding(dp(16), dp(12), dp(16), dp(12));
+        input.setHintTextColor(Color.parseColor("#71717A"));
+        input.setTextColor(Color.WHITE);
+        input.setBackground(createBorderedRoundedDrawable(
+                Color.parseColor("#18181B"), Color.parseColor("#3F3F46"), dp(1), dp(8)));
+        input.setPadding(dp(14), dp(10), dp(14), dp(10));
+        input.setTextSize(13f);
+        input.setTypeface(Typeface.MONOSPACE);
+        content.addView(input);
 
-        new androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("TMDB API Configuration")
-                .setMessage("Enter your personal TMDB API key to fetch movie posters and overviews during import.\n\nLeave blank to use filename heuristics.")
-                .setView(input)
-                .setPositiveButton("SAVE", (d, w) -> {
+        showOledDialog(
+                "TMDB API Configuration",
+                "Movie Importer Metadata",
+                content,
+                "SAVE",
+                getAccentColor(),
+                () -> {
                     String key = input.getText().toString().trim();
                     com.fishbowl.app.importer.TmdbMetadataProvider.setApiKey(this, key);
                     Toast.makeText(this, key.isEmpty() ? "TMDB API key cleared" : "TMDB API key saved", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("CANCEL", null)
-                .show();
+                },
+                "CANCEL",
+                null
+        );
     }
 
     // -- Section 8: About Fishbowl (Drawer - Specs, Architecture & Licenses) ----
@@ -11919,7 +11948,7 @@ public final class FishbowlActivity extends AppCompatActivity
             String statusText;
             switch (state) {
                 case RUNNING:
-                    color = Color.WHITE;
+                    color = getSuccessColor();
                     statusText = "SERVER RUNNING";
                     break;
                 case STARTING:

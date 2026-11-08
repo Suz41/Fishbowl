@@ -301,6 +301,10 @@ public class JellyfinController {
     public synchronized State getState()           { return currentState; }
     public synchronized StartupStage getStartupStage() { return currentStage; }
     public synchronized boolean isRunning()        { return currentState == State.RUNNING; }
+    public synchronized boolean isProcessActive() {
+        return currentState == State.STARTING || currentState == State.RUNNING || currentState == State.STOPPING
+                || (jellyfinProcess != null && jellyfinProcess.isAlive());
+    }
     public synchronized Integer getLastExitCode()  { return lastExitCode; }
     public synchronized String  getLastError()     { return lastError; }
     public synchronized String  getBootstrapProgressMessage() { return bootstrapProgressMessage; }

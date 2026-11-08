@@ -58,7 +58,7 @@ object BugReportHelper {
                 Build.SUPPORTED_ABIS[0]
             }
             !Build.CPU_ABI.isNullOrBlank() -> Build.CPU_ABI
-            else -> "arm64-v8a"
+            else -> "unknown"
         }
 
         var versionName = "unknown"
@@ -219,9 +219,9 @@ object BugReportHelper {
     /**
      * Initiates the bug reporting flow:
      * 1. Detects runtime device specs.
-     * 2. Builds markdown report and copies to clipboard.
-     * 3. Displays OLED confirmation dialog with detected technical specifications.
-     * 4. Opens GitHub in browser upon user confirmation, with fallback error handling.
+     * 2. Displays OLED confirmation dialog with detected technical specifications.
+     * 3. Explains URL log truncation limits and provides explicit copy and launch actions.
+     * 4. Does NOT overwrite system clipboard until user explicitly copies or confirms launch.
      */
     @JvmStatic
     fun openBugReportFlow(
@@ -232,9 +232,6 @@ object BugReportHelper {
         val info = collectDeviceInfo(activity)
         val fullReport = buildBugReportMarkdown(activity, null, logExcerpt)
         val targetUrl = buildGitHubIssueUrl(activity, customTitle, logExcerpt)
-
-        // Copy complete report to clipboard in advance for seamless user pasting
-        copyReportToClipboard(activity, fullReport)
 
         val dialog = Dialog(activity)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -329,11 +326,17 @@ object BugReportHelper {
         specsCard.addView(specsText)
         contentBox.addView(specsCard)
 
+        val isLongLog = !logExcerpt.isNullOrBlank() && (fullReport.length > 800 || targetUrl.length > MAX_SAFE_URL_LENGTH)
         val footerTv = TextView(activity).apply {
-            text = "Your draft bug report has been copied to clipboard. You can review and edit all fields on GitHub before submitting."
+            text = if (isLongLog) {
+                "Note: Long diagnostic logs cannot fit inside the GitHub issue URL and must be pasted manually. Tap [COPY REPORT] or [OPEN GITHUB] to copy the complete report with logs to your clipboard."
+            } else {
+                "Review the detected parameters. Tap [COPY REPORT] to copy the diagnostic report, or tap [OPEN GITHUB] to pre-fill the issue in your browser."
+            }
             textSize = 10.5f
-            setTextColor(Color.parseColor("#71717A"))
+            setTextColor(if (isLongLog) Color.parseColor("#F59E0B") else Color.parseColor("#71717A"))
             setPadding(0, dp(2), 0, dp(4))
+            setLineSpacing(dp(1).toFloat(), 1.15f)
         }
         contentBox.addView(footerTv)
 
@@ -380,6 +383,8 @@ object BugReportHelper {
         val btnOpen = createPixelBtn("OPEN GITHUB", Color.parseColor("#0EA5E9"), Color.WHITE).apply {
             setOnClickListener {
                 dialog.dismiss()
+                // Copy full report to clipboard upon confirming report action so long logs can be pasted
+                copyReportToClipboard(activity, fullReport)
                 try {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

@@ -19,6 +19,7 @@ import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -126,14 +127,18 @@ public final class BackupRestoreManager {
         EXECUTOR.execute(() -> {
             postProgress(callback, "Checking available storage...");
             long usableCache = context.getCacheDir().getUsableSpace();
-            if (usableCache < 50 * 1024 * 1024L) {
-                postOnMainThread(() -> callback.onError("Insufficient storage: only " + (usableCache / (1024 * 1024)) + " MB available in cache. At least 50 MB required."));
+            File destDir = getBackupDirectory(context);
+            long usableDest = destDir.getUsableSpace();
+            if (usableCache < 50 * 1024 * 1024L || usableDest < 50 * 1024 * 1024L) {
+                long minMb = Math.min(usableCache, usableDest) / (1024 * 1024);
+                postOnMainThread(() -> callback.onError("Insufficient storage: only " + minMb + " MB available. At least 50 MB required."));
                 return;
             }
 
             postProgress(callback, "Preparing FishBowl backup staging...");
             File stagingDir = new File(context.getCacheDir(), "fishbowl_backup_staging_" + System.currentTimeMillis());
             if (!stagingDir.exists()) stagingDir.mkdirs();
+            File tempZipFile = null;
 
             try {
                 int totalCount = 0;
@@ -179,12 +184,24 @@ public final class BackupRestoreManager {
                     totalCount += stageConfigDir(jfDataDir, stagingJfData, "jellyfin_data", itemsArray);
                 }
 
-                // 3. Create Metadata Manifest
+                // 3. Create Metadata Manifest with dynamic application version info
+                String appVersion = com.termux.BuildConfig.VERSION_NAME;
+                long appVersionCode = com.termux.BuildConfig.VERSION_CODE;
+                if (context != null) {
+                    try {
+                        android.content.pm.PackageInfo pi = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+                        if (pi.versionName != null && !pi.versionName.isEmpty()) {
+                            appVersion = pi.versionName;
+                        }
+                        appVersionCode = androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(pi);
+                    } catch (Throwable ignored) {}
+                }
+
                 JSONObject meta = new JSONObject();
                 meta.put("formatVersion", 2);
                 meta.put("app", "FishBowl");
-                meta.put("version", "1.4.8");
-                meta.put("versionCode", 101414);
+                meta.put("version", appVersion);
+                meta.put("versionCode", appVersionCode);
                 meta.put("timestamp", System.currentTimeMillis());
                 meta.put("date", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()));
                 meta.put("itemsCount", totalCount);
@@ -195,22 +212,45 @@ public final class BackupRestoreManager {
                     fos.write(meta.toString(2).getBytes(StandardCharsets.UTF_8));
                 }
 
-                // 4. Compress Staging Directory to Final ZIP
+                // 4. Compress Staging Directory to a TEMPORARY ZIP archive first
                 postProgress(callback, "Compressing backup archive...");
-                File destDir = getBackupDirectory(context);
+                tempZipFile = new File(destDir, "FishBowl_Backup_staging_" + System.currentTimeMillis() + ".tmp.zip");
+                zipDirectory(stagingDir, tempZipFile);
 
-                // Automatically clear any existing older backups prior to writing the new one (auto-overwrite)
-                pruneOldBackups(destDir, 0);
+                // 5. Verify the generated ZIP archive and manifest BEFORE replacing existing backup
+                postProgress(callback, "Verifying backup archive integrity...");
+                verifyGeneratedBackupZip(tempZipFile);
 
-                File zipFile = new File(destDir, "FishBowl_Backup_Latest.zip");
-                if (zipFile.exists()) {
-                    try { zipFile.delete(); } catch (Throwable ignored) {}
-                    try { android.system.Os.remove(zipFile.getAbsolutePath()); } catch (Throwable ignored) {}
+                // 6. Atomically promote the verified temporary backup to final location
+                File finalZipFile = new File(destDir, "FishBowl_Backup_Latest.zip");
+                boolean replaced = false;
+                try {
+                    java.nio.file.Files.move(
+                            tempZipFile.toPath(),
+                            finalZipFile.toPath(),
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                    );
+                    replaced = true;
+                } catch (Throwable moveEx) {
+                    try {
+                        java.nio.file.Files.move(
+                                tempZipFile.toPath(),
+                                finalZipFile.toPath(),
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                        );
+                        replaced = true;
+                    } catch (Throwable moveEx2) {
+                        if (finalZipFile.exists()) finalZipFile.delete();
+                        replaced = tempZipFile.renameTo(finalZipFile);
+                    }
                 }
 
-                zipDirectory(stagingDir, zipFile);
+                if (!replaced && !finalZipFile.exists()) {
+                    throw new java.io.IOException("Failed to promote verified backup archive to target location.");
+                }
 
-                // Ensure single latest backup archive is maintained
+                // 7. Prune older Fishbowl backups safely only after replacement success
                 pruneOldBackups(destDir, 1);
 
                 // Flush file blocks to disk
@@ -220,17 +260,21 @@ public final class BackupRestoreManager {
                 SharedPreferences sp = context.getSharedPreferences("fishbowl_settings", Context.MODE_PRIVATE);
                 sp.edit()
                         .putLong(PREF_LAST_BACKUP_TIME, System.currentTimeMillis())
-                        .putString(PREF_LAST_BACKUP_PATH, zipFile.getAbsolutePath())
-                        .putLong(PREF_LAST_BACKUP_SIZE, zipFile.length())
+                        .putString(PREF_LAST_BACKUP_PATH, finalZipFile.getAbsolutePath())
+                        .putLong(PREF_LAST_BACKUP_SIZE, finalZipFile.length())
                         .apply();
 
                 final int finalCount = totalCount;
-                postOnMainThread(() -> callback.onSuccess(zipFile, zipFile.length(), finalCount));
+                final File resultFile = finalZipFile;
+                postOnMainThread(() -> callback.onSuccess(resultFile, resultFile.length(), finalCount));
 
             } catch (Throwable t) {
                 Log.e(TAG, "Export backup failed", t);
                 postOnMainThread(() -> callback.onError("Backup failed: " + t.getMessage()));
             } finally {
+                if (tempZipFile != null && tempZipFile.exists()) {
+                    try { tempZipFile.delete(); } catch (Throwable ignored) {}
+                }
                 deleteRecursively(stagingDir);
                 cleanStaleStagingDirs(context);
             }
@@ -238,9 +282,46 @@ public final class BackupRestoreManager {
     }
 
     /**
+     * Verifies that a generated backup ZIP archive is valid, uncorrupted,
+     * and contains a legitimate FishBowl metadata manifest.
+     */
+    public static void verifyGeneratedBackupZip(File zipFile) throws Exception {
+        if (zipFile == null || !zipFile.exists() || zipFile.length() < 100) {
+            throw new java.io.IOException("Backup zip file is missing or empty.");
+        }
+        boolean hasMeta = false;
+        try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)))) {
+            ZipEntry entry;
+            byte[] buf = new byte[8192];
+            while ((entry = zis.getNextEntry()) != null) {
+                if (META_FILENAME.equals(entry.getName())) {
+                    hasMeta = true;
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    int read;
+                    while ((read = zis.read(buf)) > 0) {
+                        baos.write(buf, 0, read);
+                    }
+                    String metaContent = baos.toString(StandardCharsets.UTF_8.name());
+                    if (!metaContent.toLowerCase(Locale.ROOT).contains("\"fishbowl\"")) {
+                        throw new java.io.IOException("Backup archive manifest does not identify FishBowl.");
+                    }
+                } else {
+                    // Drain entry bytes to verify zip entry CRC32 integrity
+                    while (zis.read(buf) > 0) {}
+                }
+                zis.closeEntry();
+            }
+        }
+        if (!hasMeta) {
+            throw new java.io.IOException("Backup archive is missing metadata manifest: " + META_FILENAME);
+        }
+    }
+
+    /**
      * Automatically prunes older backup archives in the specified backup directory,
-     * retaining only the most recent copies (keepLatest). Older archives are deleted
-     * to prevent unbounded storage consumption.
+     * retaining only the most recent copies (keepLatest).
+     * Strict check: only targets Fishbowl-owned backup archives (starting with "fishbowl_backup_"),
+     * NEVER deleting unrelated .zip archives.
      */
     public static void pruneOldBackups(File backupDir, int keepLatest) {
         if (backupDir == null || !backupDir.exists()) return;
@@ -248,7 +329,7 @@ public final class BackupRestoreManager {
             File[] files = backupDir.listFiles((dir, name) -> {
                 if (name == null) return false;
                 String lower = name.toLowerCase(Locale.ROOT);
-                return lower.endsWith(".zip");
+                return lower.startsWith("fishbowl_backup_") && lower.endsWith(".zip");
             });
             if (files == null || files.length <= keepLatest) return;
 
@@ -283,6 +364,17 @@ public final class BackupRestoreManager {
             if (staleDirs != null) {
                 for (File d : staleDirs) {
                     deleteRecursively(d);
+                }
+            }
+        } catch (Throwable ignored) {}
+        try {
+            File destDir = getBackupDirectory(context);
+            if (destDir != null && destDir.exists()) {
+                File[] staleTmps = destDir.listFiles((d, name) -> name != null && name.startsWith("FishBowl_Backup_staging_") && name.endsWith(".tmp.zip"));
+                if (staleTmps != null) {
+                    for (File f : staleTmps) {
+                        try { f.delete(); } catch (Throwable ignored) {}
+                    }
                 }
             }
         } catch (Throwable ignored) {}
@@ -788,11 +880,30 @@ public final class BackupRestoreManager {
     }
 
     /**
-     * Automatically verifies Jellyfin SQLite database health, isolates torn WAL logs,
-     * quarantines malformed files, and auto-recovers from healthy backups.
+     * Checks if the Jellyfin server process is actively running or transitioning states.
+     */
+    public static boolean isJellyfinProcessRunning() {
+        try {
+            JellyfinController jc = JellyfinController.getInstance();
+            if (jc != null && jc.isProcessActive()) {
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    /**
+     * Automatically verifies Jellyfin SQLite database health, preserves WAL transactions,
+     * quarantines malformed files before repair, and auto-recovers from verified healthy backups.
      */
     public static boolean verifyAndHealJellyfinDatabase(Context context) {
         try {
+            // NEVER manipulate an active Jellyfin database while its process is running
+            if (isJellyfinProcessRunning()) {
+                Log.w(TAG, "verifyAndHealJellyfinDatabase: Jellyfin process is active. Aborting database manipulation to prevent corruption.");
+                return false;
+            }
+
             File jfDataDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".local/share/jellyfin/data");
             File liveDb = new File(jfDataDir, "jellyfin.db");
             File liveWal = new File(jfDataDir, "jellyfin.db-wal");
@@ -809,32 +920,50 @@ public final class BackupRestoreManager {
             Log.w(TAG, "verifyAndHealJellyfinDatabase: Corrupted SQLite state detected on live database.");
             long ts = System.currentTimeMillis();
 
-            // Step 1: Check if corruption is confined to a torn WAL file (e.g. process killed mid-transaction)
-            if (liveWal.exists()) {
-                File corruptWal = new File(jfDataDir, "jellyfin.db-wal.corrupt." + ts);
-                if (liveWal.renameTo(corruptWal)) {
-                    Log.i(TAG, "Isolated suspected torn WAL journal to: " + corruptWal.getName());
-                    if (liveShm.exists()) liveShm.delete();
+            // Step 1: Preserve the original database, WAL, and SHM before attempting repair
+            File corruptDb = new File(jfDataDir, "jellyfin.db.corrupt." + ts);
+            File corruptWal = new File(jfDataDir, "jellyfin.db-wal.corrupt." + ts);
+            File corruptShm = new File(jfDataDir, "jellyfin.db-shm.corrupt." + ts);
+            try {
+                copyFile(liveDb, corruptDb);
+                if (liveWal.exists()) copyFile(liveWal, corruptWal);
+                if (liveShm.exists()) copyFile(liveShm, corruptShm);
+                Log.i(TAG, "Preserved original database files to .corrupt." + ts);
+            } catch (Throwable t) {
+                Log.w(TAG, "Could not create preservation copy before repair: " + t.getMessage());
+            }
+
+            // Step 2: Attempt SQLite-aware WAL checkpoint to preserve potentially committed transactions
+            if (liveWal.exists() && android.os.Build.VERSION.SDK_INT > 0) {
+                try {
+                    SQLiteDatabase db = SQLiteDatabase.openDatabase(
+                            liveDb.getAbsolutePath(),
+                            null,
+                            SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                    );
+                    Cursor c = db.rawQuery("PRAGMA wal_checkpoint(PASSIVE);", null);
+                    if (c != null) {
+                        c.moveToFirst();
+                        c.close();
+                    }
+                    db.close();
 
                     if (isDatabaseHealthy(liveDb)) {
-                        Log.i(TAG, "verifyAndHealJellyfinDatabase: Healed database by isolating torn WAL journal! 0 data loss.");
+                        Log.i(TAG, "verifyAndHealJellyfinDatabase: Recovered database via SQLite WAL checkpoint without dropping transactions.");
                         flushDisk();
                         return true;
                     }
+                } catch (Throwable t) {
+                    Log.w(TAG, "SQLite WAL checkpoint recovery attempt failed: " + t.getMessage());
                 }
             }
 
-            // Step 2: Main database file itself is corrupt; quarantine it
-            File corruptDb = new File(jfDataDir, "jellyfin.db.corrupt." + ts);
-            if (liveDb.renameTo(corruptDb)) {
-                Log.w(TAG, "Quarantined corrupt database to: " + corruptDb.getName());
-            } else {
-                deleteRecursively(liveDb);
-            }
+            // Step 3: Main database file itself cannot be verified or repaired; quarantine files
+            liveDb.delete();
             if (liveWal.exists()) liveWal.delete();
             if (liveShm.exists()) liveShm.delete();
 
-            // Step 3: Attempt recovery from cleanest verified backup candidate
+            // Step 4: Attempt recovery from cleanest verified backup candidate
             boolean restored = restoreFromBestBackup(context, jfDataDir, liveDb);
             flushDisk();
             return restored;
@@ -906,8 +1035,8 @@ public final class BackupRestoreManager {
             }
         }
 
-        Log.w(TAG, "No valid backup candidates found; liveDb left clean for Jellyfin fresh initialization.");
-        return true;
+        Log.w(TAG, "No valid backup candidates found; database recovery failed.");
+        return false;
     }
 
     private static boolean restoreJellyfinFromZip(File zipFile, File jfDataDir, File liveDb) {

@@ -27,17 +27,30 @@ jobs:
             const author = pr.user.login;
 
             // Idempotency check: prevent duplicate comments on reruns
-            const comments = await github.rest.issues.listComments({
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner,
               repo,
-              issue_number: prNumber
+              issue_number: prNumber,
+              per_page: 100
             });
 
-            const firstTimeWelcome = `**Welcome, and thanks for contributing to Fishbowl!**\n\nBefore review, please ensure:\n- Changes follow the existing project architecture.\n- UI follows Fishbowl's Pure Dark Mode design.\n- No unnecessary emojis or unrelated changes.\n- Changes remain focused and avoid unrelated modifications.\n- The project builds successfully.\n- Relevant tests pass.\n\nMaintainers will review your changes and provide feedback. Please respond to review comments and update your pull request when necessary.`;
+            const firstTimeWelcome = [
+              "**Welcome, and thanks for contributing to Fishbowl!**",
+              "",
+              "Before review, please ensure:",
+              "- Changes follow the existing project architecture.",
+              "- UI follows Fishbowl's Pure Dark Mode design.",
+              "- No unnecessary emojis or unrelated changes.",
+              "- Changes remain focused and avoid unrelated modifications.",
+              "- The project builds successfully.",
+              "- Relevant tests pass.",
+              "",
+              "Maintainers will review your changes and provide feedback. Please respond to review comments and update your pull request when necessary."
+            ].join("\n");
 
-            const returningAck = `Thanks for opening this pull request! Your changes are ready for maintainer review. Please keep the PR description updated and respond to review feedback.`;
+            const returningAck = "Thanks for opening this pull request! Your changes are ready for maintainer review. Please keep the PR description updated and respond to review feedback.";
 
-            const alreadyCommented = comments.data.some(c =>
+            const alreadyCommented = comments.some(c =>
               c.body && (
                 c.body.includes("Welcome, and thanks for contributing to Fishbowl!") ||
                 c.body.includes("Thanks for opening this pull request!")

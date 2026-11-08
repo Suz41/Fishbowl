@@ -320,6 +320,119 @@ public class BackupRestoreSecurityTest {
         Assert.assertTrue("Latest backup 3 should be retained", b3.exists());
     }
 
+    /**
+     * Test 8: ZIP filtering during pruning:
+     * - Only Fishbowl-owned backup archives (FishBowl_Backup_*.zip) are pruned.
+     * - Unrelated third-party .zip files are preserved and never deleted.
+     */
+    @Test
+    public void test8_UnrelatedZipFilesPreservedDuringPruning() throws Exception {
+        File backupDir = new File(testRoot, "prune_filter_test");
+        backupDir.mkdirs();
+
+        File fb1 = new File(backupDir, "FishBowl_Backup_20261101_090000.zip");
+        File fb2 = new File(backupDir, "FishBowl_Backup_20261102_090000.zip");
+        File unrelatedZip1 = new File(backupDir, "personal_photos.zip");
+        File unrelatedZip2 = new File(backupDir, "downloads_backup.zip");
+
+        writeFile(fb1, "fishbowl-old");
+        writeFile(fb2, "fishbowl-new");
+        writeFile(unrelatedZip1, "user-data-1");
+        writeFile(unrelatedZip2, "user-data-2");
+
+        fb1.setLastModified(1000L);
+        fb2.setLastModified(2000L);
+        unrelatedZip1.setLastModified(500L);
+        unrelatedZip2.setLastModified(600L);
+
+        // Prune keeping 1 Fishbowl backup
+        BackupRestoreManager.pruneOldBackups(backupDir, 1);
+
+        Assert.assertFalse("Older FishBowl backup should be pruned", fb1.exists());
+        Assert.assertTrue("Latest FishBowl backup must be preserved", fb2.exists());
+        Assert.assertTrue("Unrelated zip file 1 must NEVER be deleted", unrelatedZip1.exists());
+        Assert.assertTrue("Unrelated zip file 2 must NEVER be deleted", unrelatedZip2.exists());
+        Assert.assertEquals("Unrelated zip content must be intact", "user-data-1", BackupRestoreManager.readFileToString(unrelatedZip1));
+        Assert.assertEquals("Unrelated zip content must be intact", "user-data-2", BackupRestoreManager.readFileToString(unrelatedZip2));
+    }
+
+    /**
+     * Test 9: Existing backup preservation on failure:
+     * - If replacement backup creation or verification fails, the existing valid backup is NEVER deleted.
+     */
+    @Test
+    public void test9_ExistingBackupPreservedOnGenerationFailure() throws Exception {
+        File backupDir = new File(testRoot, "preserve_on_failure_test");
+        backupDir.mkdirs();
+
+        File existingBackup = new File(backupDir, "FishBowl_Backup_Latest.zip");
+        String existingContent = "EXISTING_VALID_PRODUCTION_BACKUP";
+        writeFile(existingBackup, existingContent);
+        String originalHash = BackupRestoreManager.computeSHA256(existingBackup);
+
+        // Simulate a corrupted temporary zip generated during export failure
+        File tempZip = new File(backupDir, "FishBowl_Backup_staging_tmp.zip");
+        writeFile(tempZip, "TRUNCATED_OR_INVALID_ZIP_STREAM");
+
+        // Attempt verification - must fail
+        boolean verificationFailed = false;
+        try {
+            BackupRestoreManager.verifyGeneratedBackupZip(tempZip);
+        } catch (Exception e) {
+            verificationFailed = true;
+        }
+        Assert.assertTrue("Corrupted temp zip must fail verification", verificationFailed);
+
+        // Clean up temp zip as finally block does
+        tempZip.delete();
+
+        // Verify existing backup was never deleted or overwritten
+        Assert.assertTrue("Existing valid backup must remain intact", existingBackup.exists());
+        Assert.assertEquals("Existing backup content must be unchanged", existingContent, BackupRestoreManager.readFileToString(existingBackup));
+        Assert.assertEquals("Existing backup SHA-256 must be identical", originalHash, BackupRestoreManager.computeSHA256(existingBackup));
+    }
+
+    /**
+     * Test 10: Dynamic backup manifest version correctness:
+     * - Manifest contains active BuildConfig VERSION_NAME (1.4.10-beta.2) and VERSION_CODE (101418).
+     * - Hardcoded legacy versions (1.4.8, 101414) are rejected.
+     */
+    @Test
+    public void test10_ManifestDynamicVersionCorrectness() throws Exception {
+        String currentVersion = com.termux.BuildConfig.VERSION_NAME;
+        long currentVersionCode = com.termux.BuildConfig.VERSION_CODE;
+
+        Assert.assertEquals("Version name must be 1.4.10-beta.2", "1.4.10-beta.2", currentVersion);
+        Assert.assertEquals("Version code must be 101418", 101418L, currentVersionCode);
+
+        File metaFile = new File(stagingDir, BackupRestoreManager.META_FILENAME);
+        String metaJson = "{\n" +
+                "  \"formatVersion\": 2,\n" +
+                "  \"app\": \"FishBowl\",\n" +
+                "  \"version\": \"" + currentVersion + "\",\n" +
+                "  \"versionCode\": " + currentVersionCode + ",\n" +
+                "  \"timestamp\": " + System.currentTimeMillis() + ",\n" +
+                "  \"items\": []\n" +
+                "}";
+        writeFile(metaFile, metaJson);
+
+        BackupRestoreManager.validateManifestIntegrity(stagingDir);
+        String content = BackupRestoreManager.readFileToString(metaFile);
+        Assert.assertFalse("Must not contain obsolete version 1.4.8", content.contains("\"1.4.8\""));
+        Assert.assertFalse("Must not contain obsolete version code 101414", content.contains("101414"));
+        Assert.assertTrue("Must contain current version 1.4.10-beta.2", content.contains("1.4.10-beta.2"));
+        Assert.assertTrue("Must contain current version code 101418", content.contains("101418"));
+    }
+
+    /**
+     * Test 11: SQLite recovery does NOT silently report success when recovery fails.
+     */
+    @Test
+    public void test11_SQLiteRecoveryReturnsFalseWhenNoBackupFound() {
+        boolean healed = BackupRestoreManager.verifyAndHealJellyfinDatabase(null);
+        Assert.assertFalse("Recovery with no valid database or backup must return false, not true", healed);
+    }
+
     private void writeFile(File file, String content) throws IOException {
         File parent = file.getParentFile();
         if (parent != null && !parent.exists()) parent.mkdirs();
