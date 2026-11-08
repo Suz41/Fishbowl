@@ -5628,17 +5628,8 @@ public final class FishbowlActivity extends AppCompatActivity
         btnReport.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         btnReport.setOnClickListener(v -> {
             String fullReport = generateDiagnosticReport(svc);
-            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            if (cm != null) {
-                cm.setPrimaryClip(ClipData.newPlainText("fishbowl_issue_report", fullReport));
-            }
-            Toast.makeText(this, "Diagnostic report copied to clipboard!", Toast.LENGTH_LONG).show();
-            try {
-                String svcName = svc != null ? svc.getDisplayName() : "Service";
-                String url = "https://github.com/Suz41/Fishbowl/issues/new?title="
-                        + Uri.encode("[" + svcName + "] Issue Report - " + Build.MODEL);
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-            } catch (Throwable ignored) {}
+            String svcName = svc != null ? svc.getDisplayName() : "Service";
+            com.fishbowl.app.diagnostics.BugReportHelper.openBugReportFlow(this, "[" + svcName + "] Issue Report", fullReport);
         });
         actionsRow.addView(btnReport, new LinearLayout.LayoutParams(0, dp(34), 1.4f));
 
@@ -8192,15 +8183,9 @@ public final class FishbowlActivity extends AppCompatActivity
         View comSp = new View(this);
         communityRow.addView(comSp, new LinearLayout.LayoutParams(dp(10), 1));
 
-        Button btnReport = createPixelButton("REPORT ISSUE", getSurfaceElevatedColor(), getAccentColor());
+        Button btnReport = createPixelButton("REPORT A BUG", getSurfaceElevatedColor(), getAccentColor());
         btnReport.setTextSize(10f);
-        btnReport.setOnClickListener(v -> {
-            try {
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Suz41/Fishbowl/issues")));
-            } catch (Throwable t) {
-                Toast.makeText(this, "Could not open browser: https://github.com/Suz41/Fishbowl/issues", Toast.LENGTH_LONG).show();
-            }
-        });
+        btnReport.setOnClickListener(v -> com.fishbowl.app.diagnostics.BugReportHelper.openBugReportFlow(this, null, null));
         communityRow.addView(btnReport, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
 
         layout.addView(communityRow);

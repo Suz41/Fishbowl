@@ -1,0 +1,67 @@
+name: Issue Acknowledgement
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  acknowledge:
+    name: Acknowledge Issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Acknowledge New Issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = context.payload.issue;
+            if (!issue) return;
+
+            const issueNumber = issue.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Check existing comments for idempotency
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number: issueNumber
+            });
+
+            const bugAck = "Thanks for reporting this bug! Your report has been received by the Fishbowl maintainers. We'll review the details and may request additional logs or information if needed.";
+            const featureAck = "Thanks for suggesting an improvement! Your idea has been received. We'll review its usefulness, feasibility, and compatibility with Fishbowl.";
+
+            const alreadyAcknowledged = comments.data.some(c =>
+              c.body && (c.body.includes(bugAck) || c.body.includes(featureAck))
+            );
+
+            if (alreadyAcknowledged) {
+              console.log(`Issue #${issueNumber} already acknowledged. Skipping.`);
+              return;
+            }
+
+            const labels = (issue.labels || []).map(l => typeof l === 'string' ? l : l.name);
+
+            let ackMessage = null;
+            if (labels.includes('bug')) {
+              ackMessage = bugAck;
+            } else if (labels.includes('enhancement')) {
+              ackMessage = featureAck;
+            }
+
+            if (!ackMessage) {
+              console.log(`Issue #${issueNumber} has neither 'bug' nor 'enhancement' label. No acknowledgement posted.`);
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              body: ackMessage
+            });
+            console.log(`Successfully posted acknowledgement for issue #${issueNumber}`);

@@ -5,26 +5,72 @@ on:
     types: [opened]
 
 permissions:
-  contents: read
+  pull-requests: write
 
 jobs:
   welcome:
-    name: First Interaction Welcome
+    name: Pull Request Welcome & Acknowledgement
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      pull-requests: write
-
     steps:
-      - name: Welcome Contributor
-        uses: actions/first-interaction@v1
+      - name: Respond to Pull Request
+        uses: actions/github-script@v7
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          pr-message: |
-            Thank you for opening your first pull request on Fishbowl.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) return;
 
-            Please ensure that your code adheres to the project standards:
-            - Pure Dark Mode styling only
-            - Zero emojis across code, UI, and logs
-            - Targeted surgical diffs without extraneous whitespace
-            - Verification via `./gradlew compileDebugJavaWithJavac` and `./gradlew testDebugUnitTest`
+            const prNumber = pr.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const author = pr.user.login;
+
+            // Idempotency check: prevent duplicate comments on reruns
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number: prNumber
+            });
+
+            const firstTimeWelcome = `**Welcome, and thanks for contributing to Fishbowl!**\n\nBefore review, please ensure:\n- Changes follow the existing project architecture.\n- UI follows Fishbowl's Pure Dark Mode design.\n- No unnecessary emojis or unrelated changes.\n- Changes remain focused and avoid unrelated modifications.\n- The project builds successfully.\n- Relevant tests pass.\n\nMaintainers will review your changes and provide feedback. Please respond to review comments and update your pull request when necessary.`;
+
+            const returningAck = `Thanks for opening this pull request! Your changes are ready for maintainer review. Please keep the PR description updated and respond to review feedback.`;
+
+            const alreadyCommented = comments.data.some(c =>
+              c.body && (
+                c.body.includes("Welcome, and thanks for contributing to Fishbowl!") ||
+                c.body.includes("Thanks for opening this pull request!")
+              )
+            );
+
+            if (alreadyCommented) {
+              console.log(`PR #${prNumber} already received a welcome/acknowledgement comment. Skipping.`);
+              return;
+            }
+
+            // Determine if contributor is a first-time author
+            const association = pr.author_association;
+            let isFirstTime = (association === 'FIRST_TIME_CONTRIBUTOR' || association === 'FIRST_TIMER');
+
+            if (!isFirstTime && association === 'NONE') {
+              const allAuthorPulls = await github.rest.pulls.list({
+                owner,
+                repo,
+                creator: author,
+                state: 'all',
+                per_page: 5
+              });
+              isFirstTime = allAuthorPulls.data.length <= 1;
+            }
+
+            const message = isFirstTime ? firstTimeWelcome : returningAck;
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body: message
+            });
+
+            console.log(`Successfully posted ${isFirstTime ? 'first-time welcome' : 'standard acknowledgement'} on PR #${prNumber}`);
