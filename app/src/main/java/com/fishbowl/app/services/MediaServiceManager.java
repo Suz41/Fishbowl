@@ -793,6 +793,11 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
      */
     public void reconcileRunningServices() {
         serviceExecutor.execute(() -> {
+            // Automatically clean up any zombie background processes holding service ports
+            try {
+                reclaimAllZombiePorts();
+            } catch (Throwable ignored) {}
+
             for (ManagedService ms : services.values()) {
                 if (ms.getManifest().isCore()) continue; // Handled by JellyfinController
 
@@ -2094,7 +2099,10 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         // 1. Target by known process name / patterns
         if (serviceId != null) {
             killProcessByPattern(serviceId);
-            if ("radarr".equalsIgnoreCase(serviceId)) {
+            if ("jellyfin".equalsIgnoreCase(serviceId)) {
+                killProcessByPattern("jellyfin.dll");
+                killProcessByPattern("jellyfin");
+            } else if ("radarr".equalsIgnoreCase(serviceId)) {
                 killProcessByPattern("Radarr.dll");
                 killProcessByPattern("radarr");
             } else if ("sonarr".equalsIgnoreCase(serviceId)) {
@@ -2145,6 +2153,30 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         }
 
         return !isPortOccupied(port);
+    }
+
+    public int reclaimAllZombiePorts() {
+        int reclaimedCount = 0;
+        int[] ports = {8096, 7878, 8989, 9696, 9117, 9091, 5055, 6767, 8686};
+        String[] ids = {"jellyfin", "radarr", "sonarr", "prowlarr", "jackett", "transmission", "seerr", "bazarr", "lidarr"};
+        for (int i = 0; i < ports.length; i++) {
+            int port = ports[i];
+            String id = ids[i];
+            boolean isManagedRunning = false;
+            if ("jellyfin".equalsIgnoreCase(id)) {
+                JellyfinController jc = JellyfinController.getInstance();
+                isManagedRunning = (jc != null && jc.isRunning());
+            } else {
+                ManagedService ms = getService(id);
+                isManagedRunning = (ms != null && ms.isRunning());
+            }
+            if (!isManagedRunning && isPortOccupied(port)) {
+                if (reclaimPort(port, id)) {
+                    reclaimedCount++;
+                }
+            }
+        }
+        return reclaimedCount;
     }
 
     private void stopTransmissionGracefully(Process p, ManagedService ms) {

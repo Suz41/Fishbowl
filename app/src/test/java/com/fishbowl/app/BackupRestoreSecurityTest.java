@@ -261,6 +261,65 @@ public class BackupRestoreSecurityTest {
         Assert.assertTrue("Storage >= 50 MB is allowed", allowedUnderSufficientStorage);
     }
 
+    /**
+     * Test 6: SQLite database integrity verification:
+     * - Null / non-existent / empty files are rejected as unhealthy.
+     * - Corrupt files without "SQLite format 3" header are rejected.
+     * - Files with valid SQLite format 3 magic header pass preliminary verification.
+     */
+    @Test
+    public void test6_SQLiteIntegrityVerification() throws Exception {
+        Assert.assertFalse("Null file must not be healthy", BackupRestoreManager.isDatabaseHealthy(null));
+        Assert.assertFalse("Non-existent file must not be healthy", BackupRestoreManager.isDatabaseHealthy(new File(testRoot, "does_not_exist.db")));
+
+        File emptyDb = new File(testRoot, "empty.db");
+        writeFile(emptyDb, "");
+        Assert.assertFalse("Empty DB file must not be healthy", BackupRestoreManager.isDatabaseHealthy(emptyDb));
+
+        File garbageDb = new File(testRoot, "garbage.db");
+        writeFile(garbageDb, "This is not a SQLite database file at all, just random garbage content that exceeds 100 bytes of length for testing purposes.");
+        Assert.assertFalse("Garbage file without SQLite header must not be healthy", BackupRestoreManager.isDatabaseHealthy(garbageDb));
+
+        File validHeaderDb = new File(testRoot, "valid_header.db");
+        byte[] sqliteHeader = new byte[1024];
+        byte[] magic = "SQLite format 3\0".getBytes(StandardCharsets.US_ASCII);
+        System.arraycopy(magic, 0, sqliteHeader, 0, magic.length);
+        try (FileOutputStream fos = new FileOutputStream(validHeaderDb)) {
+            fos.write(sqliteHeader);
+        }
+        Assert.assertTrue("File with valid SQLite header passes preliminary check", BackupRestoreManager.isDatabaseHealthy(validHeaderDb));
+    }
+
+    /**
+     * Test 7: Automatic backup pruning:
+     * - Retains only the most recent N backups.
+     * - Deletes older archives cleanly.
+     */
+    @Test
+    public void test7_OldBackupPruning() throws Exception {
+        File backupDir = new File(testRoot, "backups");
+        backupDir.mkdirs();
+
+        File b1 = new File(backupDir, "FishBowl_Backup_20261101_100000.zip");
+        File b2 = new File(backupDir, "FishBowl_Backup_20261102_100000.zip");
+        File b3 = new File(backupDir, "FishBowl_Backup_20261103_100000.zip");
+
+        writeFile(b1, "zip1");
+        writeFile(b2, "zip2");
+        writeFile(b3, "zip3");
+
+        b1.setLastModified(1000L);
+        b2.setLastModified(2000L);
+        b3.setLastModified(3000L);
+
+        // Prune keeping only the latest 1
+        BackupRestoreManager.pruneOldBackups(backupDir, 1);
+
+        Assert.assertFalse("Oldest backup 1 should be pruned", b1.exists());
+        Assert.assertFalse("Older backup 2 should be pruned", b2.exists());
+        Assert.assertTrue("Latest backup 3 should be retained", b3.exists());
+    }
+
     private void writeFile(File file, String content) throws IOException {
         File parent = file.getParentFile();
         if (parent != null && !parent.exists()) parent.mkdirs();

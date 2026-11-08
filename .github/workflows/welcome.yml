@@ -1,8 +1,6 @@
 name: Welcome Bot
 
 on:
-  issues:
-    types: [opened]
   pull_request_target:
     types: [opened]
 
@@ -15,7 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      issues: write
       pull-requests: write
 
     steps:
@@ -23,13 +20,6 @@ jobs:
         uses: actions/first-interaction@v1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          issue-message: |
-            Thank you for opening an issue on Fishbowl.
-
-            - Please verify that you are running the latest version from [Releases](https://github.com/Suz41/Fishbowl/releases).
-            - For device-specific setup or playback issues, please attach your console logs (Logs tab -> COPY) and specify your exact device model and Android version.
-            - Consult the [Troubleshooting section](https://github.com/Suz41/Fishbowl#troubleshooting) in the README for common resolutions.
-            - Maintainers will review your report shortly.
           pr-message: |
             Thank you for opening your first pull request on Fishbowl.
 
