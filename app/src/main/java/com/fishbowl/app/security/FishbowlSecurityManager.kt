@@ -206,8 +206,19 @@ object FishbowlSecurityManager {
                 canBind = false
             }
 
-            val isOccupied = !canBind
-            val isZombieConflict = isOccupied && !isManagedOnline
+            var isOccupied = !canBind
+            var isZombieConflict = isOccupied && !isManagedOnline
+
+            if (isZombieConflict) {
+                // Auto-kill orphan zombie processes locking service ports
+                try {
+                    val killed = sm?.reclaimPort(profile.defaultPort, profile.serviceId) ?: false
+                    if (killed) {
+                        isOccupied = false
+                        isZombieConflict = false
+                    }
+                } catch (_: Throwable) {}
+            }
 
             ZombiePortStatus(
                 port = profile.defaultPort,

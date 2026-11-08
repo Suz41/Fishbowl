@@ -1048,6 +1048,11 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                         targetDllOrBin = altCap;
                     } else if (altLow.exists()) {
                         targetDllOrBin = altLow;
+                    } else {
+                        File recursive = findExecutableOrDll(installDir, id);
+                        if (recursive != null) {
+                            targetDllOrBin = recursive;
+                        }
                     }
                 }
                 ProcessBuilder pb;
@@ -5606,6 +5611,25 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 }
             }
         } catch (Throwable ignored) {}
+    }
+
+    private static File findExecutableOrDll(File dir, String id) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) return null;
+        String cap = id.substring(0, 1).toUpperCase(Locale.ROOT) + id.substring(1);
+        File[] files = dir.listFiles();
+        if (files == null) return null;
+        for (File f : files) {
+            if (f.isFile()) {
+                String name = f.getName();
+                if (name.equalsIgnoreCase(cap + ".dll") || name.equalsIgnoreCase(id + ".dll") || name.equalsIgnoreCase(id)) {
+                    return f;
+                }
+            } else if (f.isDirectory() && !f.getName().startsWith(".")) {
+                File found = findExecutableOrDll(f, id);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 }
 

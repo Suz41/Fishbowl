@@ -39,6 +39,10 @@ public class ManagedService {
         if ("jellyfin".equalsIgnoreCase(manifest.getId()) || "flaresolverr".equalsIgnoreCase(manifest.getId())) {
             return true;
         }
+        if ("transmission".equalsIgnoreCase(manifest.getId())) {
+            File f = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/transmission-daemon");
+            return f.exists();
+        }
         if ("seerr".equalsIgnoreCase(manifest.getId())) {
             File f = new File(manifest.getExecutableOrDllPath());
             File nodeBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/node");
@@ -74,10 +78,30 @@ public class ManagedService {
                 if (new File(dir, cap + ".dll").exists() || new File(dir, id + ".dll").exists() || new File(dir, id).exists()) {
                     return true;
                 }
+                if (hasExecutableOrDll(dir, id)) {
+                    return true;
+                }
             }
         }
-        File dir = new File(manifest.getInstallDir());
-        return dir != null && dir.exists() && dir.isDirectory() && dir.list() != null && dir.list().length > 0;
+        return false;
+    }
+
+    private static boolean hasExecutableOrDll(File dir, String id) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) return false;
+        String cap = id.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + id.substring(1);
+        File[] files = dir.listFiles();
+        if (files == null) return false;
+        for (File f : files) {
+            if (f.isFile()) {
+                String name = f.getName();
+                if (name.equalsIgnoreCase(cap + ".dll") || name.equalsIgnoreCase(id + ".dll") || name.equalsIgnoreCase(id)) {
+                    return true;
+                }
+            } else if (f.isDirectory() && !f.getName().startsWith(".")) {
+                if (hasExecutableOrDll(f, id)) return true;
+            }
+        }
+        return false;
     }
 
     public synchronized void reconcileInstalledState() {

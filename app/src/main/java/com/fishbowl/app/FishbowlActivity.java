@@ -1377,6 +1377,7 @@ public final class FishbowlActivity extends AppCompatActivity
         btnLp.topMargin = dp(10);
         card.addView(setupBtnGrantAll, btnLp);
 
+        refreshPermissionsUI();
         return card;
     }
 
@@ -1453,6 +1454,7 @@ public final class FishbowlActivity extends AppCompatActivity
         }
         setupOverlayView.setVisibility(View.VISIBLE);
         setupOverlayView.bringToFront();
+        refreshPermissionsUI();
         renderSetupOverlayState();
     }
 
@@ -4099,9 +4101,12 @@ public final class FishbowlActivity extends AppCompatActivity
                 portColor = Color.parseColor("#34D399"); // Green
                 portDetail = "Port " + audit.getPort() + " (Active daemon)";
             } else if (audit.isZombieConflict()) {
-                portStatus = "ZOMBIE CONFLICT";
-                portColor = Color.parseColor("#EF4444"); // Red warning
-                portDetail = "Port " + audit.getPort() + " locked by orphan/zombie process";
+                try {
+                    MediaServiceManager.getInstance(this).reclaimPort(audit.getPort(), audit.getServiceName());
+                } catch (Throwable ignored) {}
+                portStatus = "AUTO-KILLED & RECLAIMED";
+                portColor = Color.parseColor("#34D399"); // Green
+                portDetail = "Port " + audit.getPort() + " orphan/zombie process was automatically terminated";
             } else {
                 portStatus = "AVAILABLE";
                 portColor = Color.parseColor("#71717A"); // Muted
@@ -9310,101 +9315,25 @@ public final class FishbowlActivity extends AppCompatActivity
 
                     uRow.addView(topRow);
 
-                    // Minimal Password Row
-                    LinearLayout passRow = new LinearLayout(this);
-                    passRow.setOrientation(LinearLayout.HORIZONTAL);
-                    passRow.setGravity(Gravity.CENTER_VERTICAL);
-                    passRow.setPadding(0, dp(4), 0, dp(6));
-
-                    final String knownPlain = u.getKnownPlaintextPassword();
-                    final String storedHash = u.getStoredHash();
-                    final boolean isPlainKnown = knownPlain != null && !knownPlain.isEmpty();
-
-                    final TextView passValue = new TextView(this);
-                    passValue.setTextSize(11f);
-                    passValue.setSingleLine(true);
-                    passValue.setEllipsize(TextUtils.TruncateAt.END);
-
-                    if (!hasPass) {
-                        passValue.setText("No password configured");
-                        passValue.setTextColor(Color.parseColor("#F59E0B"));
-                    } else if (isPlainKnown) {
-                        passValue.setText("••••••••");
-                        passValue.setTextColor(Color.parseColor("#34D399"));
-                    } else {
-                        passValue.setText("Set via Web Client");
-                        passValue.setTextColor(Color.parseColor("#71717A"));
-                    }
-                    passRow.addView(passValue, new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-                    if (hasPass) {
-                        final boolean[] isRevealed = new boolean[]{false};
-                        TextView btnToggle = new TextView(this);
-                        btnToggle.setText("SHOW");
-                        btnToggle.setTextSize(9f);
-                        btnToggle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-                        btnToggle.setTextColor(getAccentColor());
-                        btnToggle.setPadding(dp(6), dp(2), dp(6), dp(2));
-                        btnToggle.setOnClickListener(v -> {
-                            isRevealed[0] = !isRevealed[0];
-                            if (isRevealed[0]) {
-                                btnToggle.setText("HIDE");
-                                if (isPlainKnown) {
-                                    passValue.setText(knownPlain);
-                                    passValue.setTextColor(Color.parseColor("#E4E4E7"));
-                                } else {
-                                    passValue.setText(storedHash != null ? storedHash : "(Hash unavailable)");
-                                    passValue.setTextColor(Color.parseColor("#A1A1AA"));
-                                }
-                            } else {
-                                btnToggle.setText("SHOW");
-                                if (isPlainKnown) {
-                                    passValue.setText("••••••••");
-                                    passValue.setTextColor(Color.parseColor("#34D399"));
-                                } else {
-                                    passValue.setText("Set via Web Client");
-                                    passValue.setTextColor(Color.parseColor("#71717A"));
-                                }
-                            }
-                        });
-                        passRow.addView(btnToggle);
-
-                        TextView btnCopy = new TextView(this);
-                        btnCopy.setText("COPY");
-                        btnCopy.setTextSize(9f);
-                        btnCopy.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-                        btnCopy.setTextColor(getAccentColor());
-                        btnCopy.setPadding(dp(6), dp(2), dp(6), dp(2));
-                        btnCopy.setOnClickListener(v -> {
-                            if (isPlainKnown) {
-                                copyUrlToClipboard("Password for " + u.getUsername(), knownPlain);
-                            } else if (storedHash != null) {
-                                copyUrlToClipboard("Password Hash for " + u.getUsername(), storedHash);
-                            } else {
-                                copyUrlToClipboard("Password", "");
-                            }
-                        });
-                        passRow.addView(btnCopy);
-                    }
-
-                    uRow.addView(passRow);
-
-                    // Clean Minimal Action Buttons
+                    // Minimal Actions: Clean compact button bar
                     LinearLayout btnRow = new LinearLayout(this);
                     btnRow.setOrientation(LinearLayout.HORIZONTAL);
+                    LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(-1, dp(30));
+                    btnLp.topMargin = dp(8);
+                    btnRow.setLayoutParams(btnLp);
 
-                    Button btnSetPass = createPixelButton("SET PASSWORD", Color.parseColor("#27272A"), Color.WHITE);
-                    btnSetPass.setTextSize(9.5f);
+                    Button btnSetPass = createPixelButton("SET PASSWORD", Color.parseColor("#1C1E24"), Color.WHITE);
+                    btnSetPass.setTextSize(9f);
                     btnSetPass.setOnClickListener(v -> showSetPasswordDialog(u.getUsername()));
-                    btnRow.addView(btnSetPass, new LinearLayout.LayoutParams(0, dp(32), 1.0f));
+                    btnRow.addView(btnSetPass, new LinearLayout.LayoutParams(0, -1, 1.0f));
 
                     View gap = new View(this);
                     btnRow.addView(gap, new LinearLayout.LayoutParams(dp(8), 1));
 
                     Button btnReset = createPixelButton("RESET TO BLANK", Color.parseColor("#18181B"), Color.parseColor("#EF4444"));
-                    btnReset.setTextSize(9.5f);
+                    btnReset.setTextSize(9f);
                     btnReset.setOnClickListener(v -> showResetPasswordConfirmation(u.getUsername()));
-                    btnRow.addView(btnReset, new LinearLayout.LayoutParams(0, dp(32), 1.0f));
+                    btnRow.addView(btnReset, new LinearLayout.LayoutParams(0, -1, 1.0f));
 
                     uRow.addView(btnRow);
 
@@ -10894,6 +10823,8 @@ public final class FishbowlActivity extends AppCompatActivity
                     refreshPermissionsUI();
                 } else if ("Security & Identity".equals(titleText)) {
                     refreshSecurityUsersUI();
+                } else if ("Backup & Restore".equals(titleText)) {
+                    updateBackupStatusUI();
                 }
             }
         });
@@ -10975,20 +10906,26 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout rowStorage = buildPermissionItem(
                 "All Files & Media Storage",
                 "Grants Jellyfin read access to movies, music, and shows on internal and external drives.",
-                v -> MediaStorageManager.getInstance(this).requestStoragePermission(this)
+                v -> {
+                    if (com.fishbowl.app.permissions.AppPermissionManager.isStorageGranted(this)) {
+                        Toast.makeText(this, "Storage access is already granted.", Toast.LENGTH_SHORT).show();
+                    } else {
+                        com.fishbowl.app.permissions.AppPermissionManager.requestStorage(this);
+                    }
+                }
         );
         permStorageBadge = rowStorage.findViewWithTag("badge");
         permStorageAction = rowStorage.findViewWithTag("action_text");
+        card.addView(rowStorage);
 
-        // Media SAF & Storage Drives Config inside Storage section
+        // Media SAF & Storage Drives Config inside Storage section (card child, NOT inside horizontal row)
         Button btnSaf = createOutlinePixelButton("CONFIGURE MEDIA DRIVES & STORAGE", getAccentColor(), getAccentColor());
         btnSaf.setTextSize(9.5f);
         btnSaf.setOnClickListener(v -> startActivity(new Intent(this, JellyfinStorageActivity.class)));
-        LinearLayout.LayoutParams safLp = new LinearLayout.LayoutParams(-1, dp(30));
+        LinearLayout.LayoutParams safLp = new LinearLayout.LayoutParams(-1, dp(32));
         safLp.topMargin = dp(6);
-        rowStorage.addView(btnSaf, safLp);
-
-        card.addView(rowStorage);
+        safLp.bottomMargin = dp(4);
+        card.addView(btnSaf, safLp);
 
         // Subtle Hairline Divider
         View d1 = new View(this);
@@ -11002,7 +10939,13 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout rowBattery = buildPermissionItem(
                 "Battery Optimization Exemption",
                 "Prevents Android OS from pausing or terminating background playback services.",
-                v -> requestIgnoreBatteryOptimizationsIfNeeded()
+                v -> {
+                    if (com.fishbowl.app.permissions.AppPermissionManager.isBatteryOptimizationExempted(this)) {
+                        Toast.makeText(this, "Battery optimization exemption is already active.", Toast.LENGTH_SHORT).show();
+                    } else {
+                        requestIgnoreBatteryOptimizationsIfNeeded();
+                    }
+                }
         );
         permBatteryBadge = rowBattery.findViewWithTag("badge");
         permBatteryAction = rowBattery.findViewWithTag("action_text");
@@ -11021,18 +10964,10 @@ public final class FishbowlActivity extends AppCompatActivity
                 "Foreground Service Notifications",
                 "Maintains persistent media server notification to protect background execution.",
                 v -> {
-                    Intent intent = new Intent();
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        intent.setAction(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
-                        intent.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+                    if (com.fishbowl.app.permissions.AppPermissionManager.isNotificationGranted(this)) {
+                        Toast.makeText(this, "Notification permission is already granted.", Toast.LENGTH_SHORT).show();
                     } else {
-                        intent.setAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                        intent.setData(Uri.parse("package:" + getPackageName()));
-                    }
-                    try {
-                        startActivity(intent);
-                    } catch (Throwable t) {
-                        startActivity(new Intent(Settings.ACTION_SETTINGS));
+                        com.fishbowl.app.permissions.AppPermissionManager.requestNotification(this);
                     }
                 }
         );
@@ -11124,7 +11059,8 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(4), 0, dp(4));
+        row.setPadding(0, dp(6), 0, dp(6));
+        row.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
@@ -11148,15 +11084,19 @@ public final class FishbowlActivity extends AppCompatActivity
         tvAction.setTag("action_text");
         col.addView(tvAction);
 
-        row.addView(col, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        LinearLayout.LayoutParams colLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        colLp.rightMargin = dp(12);
+        row.addView(col, colLp);
 
         TextView badge = new TextView(this);
         badge.setTextSize(11);
         badge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         badge.setTag("badge");
         badge.setPadding(dp(10), dp(4), dp(10), dp(4));
-        row.addView(badge);
+        row.addView(badge, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        row.setClickable(true);
+        row.setFocusable(true);
         row.setOnClickListener(onClick);
         return row;
     }
@@ -11247,13 +11187,19 @@ public final class FishbowlActivity extends AppCompatActivity
         com.fishbowl.app.permissions.AppPermissionManager.PermissionStatus permStatus = com.fishbowl.app.permissions.AppPermissionManager.getStatus(this);
         boolean allEssentialGranted = permStatus.getAllEssentialGranted();
 
+        String nextMissingLabel = !storageGranted ? "GRANT STORAGE ACCESS" : (!notifEnabled ? "GRANT FOREGROUND NOTIFICATIONS" : "DISABLE BATTERY RESTRICTIONS");
+
         if (btnGrantAllPermissions != null) {
             if (allEssentialGranted) {
-                btnGrantAllPermissions.setVisibility(View.GONE);
+                btnGrantAllPermissions.setVisibility(View.VISIBLE);
+                btnGrantAllPermissions.setEnabled(false);
+                btnGrantAllPermissions.setText("ALL PERMISSIONS GRANTED ✓");
+                btnGrantAllPermissions.setBackground(createBorderedRoundedDrawable(Color.parseColor("#142A1E"), Color.parseColor("#10B981"), dp(1), dp(10)));
+                btnGrantAllPermissions.setTextColor(Color.parseColor("#10B981"));
             } else {
                 btnGrantAllPermissions.setVisibility(View.VISIBLE);
-                btnGrantAllPermissions.setText("GRANT ALL PERMISSIONS");
                 btnGrantAllPermissions.setEnabled(true);
+                btnGrantAllPermissions.setText(nextMissingLabel);
                 btnGrantAllPermissions.setBackground(createBorderedRoundedDrawable(getAccentColor(), colorWithAlpha(Color.WHITE, 45), dp(1), dp(10)));
                 btnGrantAllPermissions.setTextColor(Color.WHITE);
             }
@@ -11261,11 +11207,15 @@ public final class FishbowlActivity extends AppCompatActivity
 
         if (setupBtnGrantAll != null) {
             if (allEssentialGranted) {
-                setupBtnGrantAll.setVisibility(View.GONE);
+                setupBtnGrantAll.setVisibility(View.VISIBLE);
+                setupBtnGrantAll.setEnabled(false);
+                setupBtnGrantAll.setText("ALL PERMISSIONS GRANTED ✓");
+                setupBtnGrantAll.setBackground(createBorderedRoundedDrawable(Color.parseColor("#142A1E"), Color.parseColor("#10B981"), dp(1), dp(10)));
+                setupBtnGrantAll.setTextColor(Color.parseColor("#10B981"));
             } else {
                 setupBtnGrantAll.setVisibility(View.VISIBLE);
-                setupBtnGrantAll.setText("GRANT ALL PERMISSIONS");
                 setupBtnGrantAll.setEnabled(true);
+                setupBtnGrantAll.setText(nextMissingLabel);
                 setupBtnGrantAll.setBackground(createBorderedRoundedDrawable(getAccentColor(), colorWithAlpha(Color.WHITE, 45), dp(1), dp(10)));
                 setupBtnGrantAll.setTextColor(Color.WHITE);
             }

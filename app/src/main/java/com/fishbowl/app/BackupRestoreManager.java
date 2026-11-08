@@ -199,11 +199,14 @@ public final class BackupRestoreManager {
                 postProgress(callback, "Compressing backup archive...");
                 File destDir = getBackupDirectory(context);
 
-                // Automatically clear any existing older backups prior to writing the new one
+                // Automatically clear any existing older backups prior to writing the new one (auto-overwrite)
                 pruneOldBackups(destDir, 0);
 
-                String timestampStr = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-                File zipFile = new File(destDir, "FishBowl_Backup_" + timestampStr + ".zip");
+                File zipFile = new File(destDir, "FishBowl_Backup_Latest.zip");
+                if (zipFile.exists()) {
+                    try { zipFile.delete(); } catch (Throwable ignored) {}
+                    try { android.system.Os.remove(zipFile.getAbsolutePath()); } catch (Throwable ignored) {}
+                }
 
                 zipDirectory(stagingDir, zipFile);
 
@@ -243,19 +246,29 @@ public final class BackupRestoreManager {
         if (backupDir == null || !backupDir.exists()) return;
         try {
             File[] files = backupDir.listFiles((dir, name) -> {
+                if (name == null) return false;
                 String lower = name.toLowerCase(Locale.ROOT);
-                return (lower.startsWith("fishbowl_backup_") || lower.startsWith("fishbowl_")) && lower.endsWith(".zip");
+                return lower.endsWith(".zip");
             });
             if (files == null || files.length <= keepLatest) return;
 
             Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
             for (int i = keepLatest; i < files.length; i++) {
+                File oldFile = files[i];
+                boolean deleted = false;
                 try {
-                    if (files[i].delete()) {
-                        Log.i(TAG, "Pruned older backup: " + files[i].getName());
-                    }
-                } catch (Throwable t) {
-                    Log.w(TAG, "Could not delete old backup: " + files[i].getName(), t);
+                    deleted = oldFile.delete();
+                } catch (Throwable ignored) {}
+                if (!deleted && oldFile.exists()) {
+                    try {
+                        android.system.Os.remove(oldFile.getAbsolutePath());
+                        deleted = true;
+                    } catch (Throwable ignored) {}
+                }
+                if (deleted) {
+                    Log.i(TAG, "Pruned older backup: " + oldFile.getName());
+                } else {
+                    Log.w(TAG, "Could not delete old backup: " + oldFile.getName());
                 }
             }
         } catch (Throwable t) {
