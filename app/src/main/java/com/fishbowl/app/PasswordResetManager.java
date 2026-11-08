@@ -48,6 +48,73 @@ public final class PasswordResetManager {
     public static final String CHANNEL_ID = "fishbowl_password_reset_channel";
     public static final int NOTIFICATION_ID = 2048;
     public static final long EXPIRATION_DURATION_MS = 5 * 60 * 1000L; // 5 minutes
+    public static final String ACTION_PASSWORD_RESET_UPDATED = "com.fishbowl.app.ACTION_PASSWORD_RESET_UPDATED";
+
+    public static class ActiveResetInfo {
+        public final String pin;
+        public final String userName;
+        public final String expirationIso;
+        public final long timestampMs;
+        public final long expiresMs;
+
+        public ActiveResetInfo(String pin, String userName, String expirationIso, long timestampMs, long expiresMs) {
+            this.pin = pin;
+            this.userName = userName;
+            this.expirationIso = expirationIso;
+            this.timestampMs = timestampMs;
+            this.expiresMs = expiresMs;
+        }
+
+        public boolean isExpired() {
+            return System.currentTimeMillis() >= expiresMs;
+        }
+
+        public long getRemainingSeconds() {
+            long rem = (expiresMs - System.currentTimeMillis()) / 1000L;
+            return Math.max(0, rem);
+        }
+    }
+
+    public interface ResetStateListener {
+        void onResetStateChanged(ActiveResetInfo info);
+    }
+
+    private static volatile ActiveResetInfo sActiveResetInfo = null;
+    private static final Set<ResetStateListener> sListeners = new java.util.concurrent.CopyOnWriteArraySet<>();
+
+    public static ActiveResetInfo getActiveResetInfo() {
+        if (sActiveResetInfo != null && sActiveResetInfo.isExpired()) {
+            sActiveResetInfo = null;
+            notifyResetListeners(null);
+        }
+        return sActiveResetInfo;
+    }
+
+    public static void clearActiveResetInfo() {
+        sActiveResetInfo = null;
+        notifyResetListeners(null);
+    }
+
+    public static void registerListener(ResetStateListener listener) {
+        if (listener != null) {
+            sListeners.add(listener);
+            listener.onResetStateChanged(getActiveResetInfo());
+        }
+    }
+
+    public static void unregisterListener(ResetStateListener listener) {
+        if (listener != null) {
+            sListeners.remove(listener);
+        }
+    }
+
+    private static void notifyResetListeners(ActiveResetInfo info) {
+        for (ResetStateListener l : sListeners) {
+            try {
+                l.onResetStateChanged(info);
+            } catch (Throwable ignored) {}
+        }
+    }
 
     private static volatile PasswordResetManager instance;
 
@@ -109,11 +176,21 @@ public final class PasswordResetManager {
         try {
             File jfShareDir = getJellyfinShareDir();
             if (jfShareDir.exists()) {
-                fileObserver = new FileObserver(jfShareDir.getAbsolutePath(), FileObserver.CREATE | FileObserver.MOVED_TO | FileObserver.CLOSE_WRITE) {
+                fileObserver = new FileObserver(jfShareDir.getAbsolutePath(),
+                        FileObserver.CREATE | FileObserver.MOVED_TO | FileObserver.CLOSE_WRITE | FileObserver.DELETE | FileObserver.MOVED_FROM) {
                     @Override
                     public void onEvent(int event, String path) {
                         if (path != null && path.startsWith("passwordreset") && path.endsWith(".json")) {
-                            scheduler.execute(PasswordResetManager.this::checkAndProcessTokens);
+                            if ((event & (FileObserver.DELETE | FileObserver.MOVED_FROM)) != 0) {
+                                ActiveResetInfo current = sActiveResetInfo;
+                                if (current != null && current.userName != null) {
+                                    JellyfinAccountManager.removeKnownPassword(appContext, current.userName);
+                                }
+                                clearActiveResetInfo();
+                                notifyResetListeners(null);
+                            } else {
+                                scheduler.execute(PasswordResetManager.this::checkAndProcessTokens);
+                            }
                         }
                     }
                 };
@@ -229,7 +306,32 @@ public final class PasswordResetManager {
             scheduleFileDeletion(pinTextFile, EXPIRATION_DURATION_MS);
             scheduleFileDeletion(userPinTextFile, EXPIRATION_DURATION_MS);
 
-            // 3. Post Dedicated System Notification with 'COPY PIN' Action
+            // 3. Update active in-app reset state
+            long nowMs = System.currentTimeMillis();
+            ActiveResetInfo resetInfo = new ActiveResetInfo(pin, userName, expiration, nowMs, nowMs + EXPIRATION_DURATION_MS);
+            sActiveResetInfo = resetInfo;
+            notifyResetListeners(resetInfo);
+
+            try {
+                Intent updateIntent = new Intent(ACTION_PASSWORD_RESET_UPDATED);
+                updateIntent.setPackage(appContext.getPackageName());
+                appContext.sendBroadcast(updateIntent);
+            } catch (Throwable ignored) {}
+
+            // 4. Schedule automatic clearing of active in-app reset after 5 minutes
+            scheduler.schedule(() -> {
+                if (sActiveResetInfo != null && sActiveResetInfo.pin.equals(pin)) {
+                    sActiveResetInfo = null;
+                    notifyResetListeners(null);
+                    try {
+                        Intent updateIntent = new Intent(ACTION_PASSWORD_RESET_UPDATED);
+                        updateIntent.setPackage(appContext.getPackageName());
+                        appContext.sendBroadcast(updateIntent);
+                    } catch (Throwable ignored) {}
+                }
+            }, EXPIRATION_DURATION_MS, TimeUnit.MILLISECONDS);
+
+            // 5. Post Dedicated System Notification with 'COPY PIN' Action
             postSystemNotification(pin, userName);
 
         } catch (Throwable t) {
@@ -287,6 +389,11 @@ public final class PasswordResetManager {
                         }
                     }
                 }
+            }
+
+            if (sActiveResetInfo != null && sActiveResetInfo.isExpired()) {
+                sActiveResetInfo = null;
+                notifyResetListeners(null);
             }
         } catch (Throwable ignored) {}
     }

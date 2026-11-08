@@ -40,3 +40,9 @@ Thumbs.db
 
 # Obsidian
 .obsidian/
+
+# Kotlin incremental build cache
+.kotlin/
+
+# Showcase website
+website/

@@ -111,6 +111,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         // Configure WebSettings for playback & UI performance
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
+        web.addJavascriptInterface(new FishbowlWebBridge(), "FishbowlBridge");
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
@@ -254,6 +255,29 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                     "    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes';" +
                     "    document.getElementsByTagName('head')[0].appendChild(meta);" +
                     "  }" +
+                    "  function attachPasswordWatchers() {" +
+                    "    document.querySelectorAll('form').forEach(function(f) {" +
+                    "      if (f._fbWatched) return;" +
+                    "      f._fbWatched = true;" +
+                    "      f.addEventListener('submit', function() {" +
+                    "        var pInputs = f.querySelectorAll('input[type=\"password\"]');" +
+                    "        var pw = '';" +
+                    "        for (var i = 0; i < pInputs.length; i++) {" +
+                    "          if (pInputs[i].value) { pw = pInputs[i].value; break; }" +
+                    "        }" +
+                    "        var uInputs = f.querySelectorAll('input[id*=\"Name\"], input[id*=\"User\"], input[name*=\"user\"], input[name*=\"Name\"]');" +
+                    "        var u = '';" +
+                    "        for (var j = 0; j < uInputs.length; j++) {" +
+                    "          if (uInputs[j].value) { u = uInputs[j].value; break; }" +
+                    "        }" +
+                    "        if (pw && window.FishbowlBridge) {" +
+                    "          window.FishbowlBridge.notifyPasswordChanged(u, pw);" +
+                    "        }" +
+                    "      });" +
+                    "    });" +
+                    "  }" +
+                    "  attachPasswordWatchers();" +
+                    "  setInterval(attachPasswordWatchers, 1500);" +
                     "})();", null);
             }
 
@@ -619,6 +643,26 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
             com.fishbowl.app.services.MediaServiceManager.getInstance(this).scheduleAutoWireDebounced(1500);
         } catch (Throwable ignored) {}
         super.onDestroy();
+    }
+
+    public class FishbowlWebBridge {
+        @android.webkit.JavascriptInterface
+        public void notifyPasswordChanged(String username, String password) {
+            if (password != null && !password.trim().isEmpty()) {
+                String u = (username != null && !username.trim().isEmpty()) ? username.trim() : "";
+                if (u.isEmpty()) {
+                    java.util.List<com.fishbowl.app.JellyfinAccountManager.JellyfinUser> users =
+                            com.fishbowl.app.JellyfinAccountManager.getRegisteredUsers(JellyfinWebActivity.this);
+                    if (!users.isEmpty()) {
+                        u = users.get(0).username;
+                    }
+                }
+                if (!u.isEmpty()) {
+                    com.fishbowl.app.JellyfinAccountManager.storeKnownPassword(JellyfinWebActivity.this, u, password.trim());
+                    Log.i(TAG, "Captured password change in web client for user: " + u);
+                }
+            }
+        }
     }
 
     private int dp(int value) {

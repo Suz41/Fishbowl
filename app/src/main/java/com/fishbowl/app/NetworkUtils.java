@@ -47,11 +47,12 @@ public class NetworkUtils {
 
                 // Exclude cellular, carrier CGNAT, and internal Qualcomm dummy interfaces
                 if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("pdp")
-                        || name.startsWith("radio") || name.startsWith("dummy") || name.startsWith("tun")
-                        || name.startsWith("sit") || name.startsWith("gre") || name.startsWith("ifb")
-                        || name.startsWith("ip_vti")) {
+                        || name.startsWith("radio") || name.startsWith("dummy") || name.startsWith("sit")
+                        || name.startsWith("gre") || name.startsWith("ifb") || name.startsWith("ip_vti")) {
                     continue;
                 }
+
+                boolean isTun = name.startsWith("tun");
 
                 String label;
                 if (name.startsWith("wlan")) {
@@ -77,7 +78,7 @@ public class NetworkUtils {
                         if (ip.startsWith("192.0.0.") || ip.startsWith("100.64.")) continue; // cellular / CLAT
                         if (isTailscaleIp(ip)) {
                             list.add(new LanEndpoint(name, ip, "Tailscale"));
-                        } else {
+                        } else if (!isTun) {
                             list.add(new LanEndpoint(name, ip, label));
                         }
                     }
