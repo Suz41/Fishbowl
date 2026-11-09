@@ -75,10 +75,11 @@ public class NetworkUtils {
                     if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
                         String ip = addr.getHostAddress();
                         if (ip == null) continue;
-                        if (ip.startsWith("192.0.0.") || ip.startsWith("100.64.")) continue; // cellular / CLAT
+                        if (ip.startsWith("192.0.0.")) continue; // cellular / CLAT
                         if (isTailscaleIp(ip)) {
                             list.add(new LanEndpoint(name, ip, "Tailscale"));
                         } else if (!isTun) {
+                            if (ip.startsWith("100.64.")) continue; // non-Tailscale carrier CGNAT
                             list.add(new LanEndpoint(name, ip, label));
                         }
                     }

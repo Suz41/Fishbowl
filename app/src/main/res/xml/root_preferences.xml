@@ -39,10 +39,4 @@
         app:title="@string/about_preference_title"
         app:persistent="false"/>
 
-    <Preference
-        app:key="donate"
-        app:title="@string/donate_preference_title"
-        app:persistent="false"
-        app:isPreferenceVisible="false"/>
-
 </PreferenceScreen>

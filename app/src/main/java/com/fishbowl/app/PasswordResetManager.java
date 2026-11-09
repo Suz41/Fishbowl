@@ -279,7 +279,7 @@ public final class PasswordResetManager {
                 processedPins.add(pin);
             }
 
-            Log.i(TAG, "Active Jellyfin Password Reset PIN detected: " + pin + " for user: " + userName);
+            Log.i(TAG, "Active Jellyfin Password Reset PIN detected for user: " + userName);
 
             // 1. Write PIN to /sdcard/FishbowlMedia/password/jellyfin_password_reset_pin.txt
             File passwordDir = getPasswordDirectory();
