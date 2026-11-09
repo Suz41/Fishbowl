@@ -57,11 +57,7 @@
             android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:theme="@style/Theme.TermuxActivity.DayNight.NoActionBar"
-            tools:targetApi="n">
-            <meta-data
-                android:name="android.app.shortcuts"
-                android:resource="@xml/shortcuts" />
-        </activity>
+            tools:targetApi="n" />
 
         <activity
             android:name="com.fishbowl.app.FishbowlActivity"
@@ -108,28 +104,6 @@
             android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar"
             android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode|fontScale|fontWeightAdjustment|locale|layoutDirection" />
 
-        <activity-alias
-            android:name=".HomeActivity"
-            android:exported="true"
-            android:targetActivity=".app.TermuxActivity">
-
-            <!-- Launch activity automatically on boot on Android Things devices -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-
-                <category android:name="android.intent.category.IOT_LAUNCHER" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity
-            android:name=".app.activities.HelpActivity"
-            android:exported="false"
-            android:label="@string/application_name"
-            android:parentActivityName=".app.TermuxActivity"
-            android:resizeableActivity="true"
-            tools:targetApi="n" />
-
         <activity
             android:name=".app.activities.SettingsActivity"
             android:exported="true"
@@ -141,55 +115,6 @@
             android:theme="@style/Theme.MarkdownViewActivity.DayNight"
             android:documentLaunchMode="intoExisting" />
 
-        <activity
-            android:name=".app.api.file.FileReceiverActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:noHistory="true"
-            android:resizeableActivity="true"
-            android:taskAffinity="${TERMUX_PACKAGE_NAME}.filereceiver"
-            tools:targetApi="n">
-        </activity>
-
-        <activity-alias
-            android:name=".app.api.file.FileShareReceiverActivity"
-            android:exported="true"
-            android:targetActivity=".app.api.file.FileReceiverActivity">
-
-            <!-- Accept multiple file types when sending. -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-
-                <data android:mimeType="application/*" />
-                <data android:mimeType="audio/*" />
-                <data android:mimeType="image/*" />
-                <data android:mimeType="message/*" />
-                <data android:mimeType="multipart/*" />
-                <data android:mimeType="text/*" />
-                <data android:mimeType="video/*" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".app.api.file.FileViewReceiverActivity"
-            android:exported="true"
-            android:targetActivity=".app.api.file.FileReceiverActivity">
-
-            <!-- Accept multiple file types to let Termux be usable as generic file viewer. -->
-            <intent-filter tools:ignore="AppLinkUrlError">
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-
-                <data android:mimeType="application/*" />
-                <data android:mimeType="audio/*" />
-                <data android:mimeType="image/*" />
-                <data android:mimeType="text/*" />
-                <data android:mimeType="video/*" />
-            </intent-filter>
-        </activity-alias>
 
         <provider
             android:name=".filepicker.TermuxDocumentsProvider"
