@@ -82,6 +82,9 @@ public final class MediaStorageManager {
     public static final String SUB_MUSIC = "Music";
     public static final String SUB_BOOKS = "Books";
     public static final String SUB_OTHER = "Other";
+    public static final String SUB_DATA = "data";
+    public static final String SUB_PASSWORD = "password";
+    public static final String SUB_BACKUPS = "Backups";
 
     public static final String[] REQUIRED_SUBDIRECTORIES = new String[]{
             SUB_DOWNLOADS,
@@ -92,7 +95,10 @@ public final class MediaStorageManager {
             SUB_DOWNLOADS + "/torrents/sonarr",
             SUB_MOVIES,
             SUB_TV,
-            SUB_MUSIC
+            SUB_MUSIC,
+            SUB_DATA,
+            SUB_PASSWORD,
+            SUB_BACKUPS
     };
 
     private static MediaStorageManager sInstance;
@@ -152,6 +158,18 @@ public final class MediaStorageManager {
 
     public File getBooksDir() {
         return new File(getMediaRoot(), SUB_BOOKS);
+    }
+
+    public File getDataDir() {
+        return new File(getMediaRoot(), SUB_DATA);
+    }
+
+    public File getPasswordDir() {
+        return new File(getMediaRoot(), SUB_PASSWORD);
+    }
+
+    public File getBackupsDir() {
+        return new File(getMediaRoot(), SUB_BACKUPS);
     }
 
     public File getOtherDir() {
@@ -266,6 +284,9 @@ public final class MediaStorageManager {
         // Persist media root
         prefs.edit().putString(PREF_MEDIA_ROOT, root.getAbsolutePath()).apply();
 
+        // Consolidate legacy separate folders (/sdcard/Fishbowl & /sdcard/Download/FishBowl_Backups) into FishbowlMedia
+        consolidateLegacyExternalFolders();
+
         // Check and migrate legacy internal media if present
         if (hasLegacyMedia()) {
             Log.i(TAG, "Legacy media detected in private app storage. Triggering automatic migration...");
@@ -273,6 +294,122 @@ public final class MediaStorageManager {
         }
 
         return runDiagnostics();
+    }
+
+    /**
+     * Consolidates disparate legacy root folders (/sdcard/Fishbowl and /sdcard/Download/FishBowl_Backups)
+     * into the unified core root /sdcard/FishbowlMedia/.
+     */
+    public void consolidateLegacyExternalFolders() {
+        try {
+            File mediaRoot = getMediaRoot();
+            if (!mediaRoot.exists()) {
+                mediaRoot.mkdirs();
+            }
+
+            // 1. Migrate /sdcard/Fishbowl -> /sdcard/FishbowlMedia
+            File legacyFishbowl = new File(Environment.getExternalStorageDirectory(), "Fishbowl");
+            if (legacyFishbowl.exists() && legacyFishbowl.isDirectory()) {
+                Log.i(TAG, "Legacy /sdcard/Fishbowl detected. Consolidating into " + mediaRoot.getAbsolutePath() + "...");
+
+                // Migrate legacyFishbowl/data
+                File legacyData = new File(legacyFishbowl, "data");
+                if (legacyData.exists() && legacyData.isDirectory()) {
+                    File targetData = new File(mediaRoot, SUB_DATA);
+                    if (!targetData.exists()) targetData.mkdirs();
+                    File[] files = legacyData.listFiles();
+                    if (files != null) {
+                        for (File f : files) {
+                            File targetFile = new File(targetData, f.getName());
+                            if (!targetFile.exists() || f.lastModified() > targetFile.lastModified()) {
+                                copyOrMoveFile(f, targetFile);
+                            } else {
+                                f.delete();
+                            }
+                        }
+                    }
+                    legacyData.delete();
+                }
+
+                // Migrate legacyFishbowl/password
+                File legacyPass = new File(legacyFishbowl, "password");
+                if (legacyPass.exists() && legacyPass.isDirectory()) {
+                    File targetPass = new File(mediaRoot, SUB_PASSWORD);
+                    if (!targetPass.exists()) targetPass.mkdirs();
+                    File[] files = legacyPass.listFiles();
+                    if (files != null) {
+                        for (File f : files) {
+                            File targetFile = new File(targetPass, f.getName());
+                            if (!targetFile.exists() || f.lastModified() > targetFile.lastModified()) {
+                                copyOrMoveFile(f, targetFile);
+                            } else {
+                                f.delete();
+                            }
+                        }
+                    }
+                    legacyPass.delete();
+                }
+
+                // Delete any remaining files or empty legacy directory
+                deleteDirectoryRecursively(legacyFishbowl);
+                Log.i(TAG, "Legacy /sdcard/Fishbowl consolidation complete.");
+            }
+
+            // 2. Migrate /sdcard/Download/FishBowl_Backups -> /sdcard/FishbowlMedia/Backups
+            File legacyBackups = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "FishBowl_Backups");
+            if (legacyBackups.exists() && legacyBackups.isDirectory()) {
+                Log.i(TAG, "Legacy FishBowl_Backups in Downloads detected. Consolidating into " + mediaRoot.getAbsolutePath() + "/Backups...");
+                File targetBackups = new File(mediaRoot, SUB_BACKUPS);
+                if (!targetBackups.exists()) targetBackups.mkdirs();
+                File[] files = legacyBackups.listFiles();
+                if (files != null) {
+                    for (File f : files) {
+                        File targetFile = new File(targetBackups, f.getName());
+                        if (!targetFile.exists() || f.lastModified() > targetFile.lastModified()) {
+                            copyOrMoveFile(f, targetFile);
+                        } else {
+                            f.delete();
+                        }
+                    }
+                }
+                legacyBackups.delete();
+                Log.i(TAG, "Legacy Download/FishBowl_Backups consolidation complete.");
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Error consolidating legacy external folders: " + t.getMessage(), t);
+        }
+    }
+
+    private static void copyOrMoveFile(File src, File dst) {
+        if (src == null || dst == null || !src.exists()) return;
+        boolean moved = src.renameTo(dst);
+        if (!moved) {
+            try {
+                try (FileInputStream in = new FileInputStream(src);
+                     FileOutputStream out = new FileOutputStream(dst)) {
+                    byte[] buf = new byte[8192];
+                    int len;
+                    while ((len = in.read(buf)) > 0) {
+                        out.write(buf, 0, len);
+                    }
+                    out.flush();
+                }
+                src.delete();
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    private static void deleteDirectoryRecursively(File dir) {
+        if (dir == null || !dir.exists()) return;
+        if (dir.isDirectory()) {
+            File[] children = dir.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteDirectoryRecursively(child);
+                }
+            }
+        }
+        dir.delete();
     }
 
     /**

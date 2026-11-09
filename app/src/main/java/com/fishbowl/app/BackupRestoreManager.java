@@ -48,7 +48,8 @@ import java.util.zip.ZipOutputStream;
  */
 public final class BackupRestoreManager {
     private static final String TAG = "BackupRestoreManager";
-    public static final String BACKUP_DIR_NAME = "FishBowl_Backups";
+    public static final String BACKUP_DIR_NAME = "Backups";
+    public static final String LEGACY_BACKUP_DIR_NAME = "FishBowl_Backups";
     public static final String META_FILENAME = "fishbowl_backup_meta.json";
 
     public static final String PREF_LAST_BACKUP_TIME = "last_backup_timestamp";
@@ -94,8 +95,12 @@ public final class BackupRestoreManager {
      * Resolves the primary directory where backups are stored.
      */
     public static File getBackupDirectory(Context context) {
+        File coreDir = new File(MediaStorageManager.DEFAULT_MEDIA_ROOT, BACKUP_DIR_NAME);
+        if (coreDir.exists() || coreDir.mkdirs()) {
+            return coreDir;
+        }
         File downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-        File dir = new File(downloads, BACKUP_DIR_NAME);
+        File dir = new File(downloads, LEGACY_BACKUP_DIR_NAME);
         if (!dir.exists()) {
             dir.mkdirs();
         }
@@ -110,12 +115,33 @@ public final class BackupRestoreManager {
      * Lists existing backup zip files sorted descending by modification time.
      */
     public static List<File> listExistingBackups(Context context) {
+        Set<String> seenNames = new HashSet<>();
+        List<File> list = new ArrayList<>();
+
         File dir = getBackupDirectory(context);
-        File[] files = dir.listFiles((d, name) -> name != null && name.toLowerCase(Locale.ROOT).endsWith(".zip"));
-        if (files == null || files.length == 0) {
-            return Collections.emptyList();
+        if (dir != null && dir.exists()) {
+            File[] files = dir.listFiles((d, name) -> name != null && name.toLowerCase(Locale.ROOT).endsWith(".zip"));
+            if (files != null) {
+                for (File f : files) {
+                    if (seenNames.add(f.getName())) {
+                        list.add(f);
+                    }
+                }
+            }
         }
-        List<File> list = new ArrayList<>(Arrays.asList(files));
+
+        File legacy = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), LEGACY_BACKUP_DIR_NAME);
+        if (legacy.exists() && legacy.isDirectory()) {
+            File[] files = legacy.listFiles((d, name) -> name != null && name.toLowerCase(Locale.ROOT).endsWith(".zip"));
+            if (files != null) {
+                for (File f : files) {
+                    if (seenNames.add(f.getName())) {
+                        list.add(f);
+                    }
+                }
+            }
+        }
+
         Collections.sort(list, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
         return list;
     }
@@ -974,51 +1000,63 @@ public final class BackupRestoreManager {
     }
 
     private static boolean restoreFromBestBackup(Context context, File jfDataDir, File liveDb) {
-        // Priority 1: Full ZIP backups in getBackupDirectory(context)
-        File backupsDir = context != null ? getBackupDirectory(context) : null;
-        if (backupsDir != null && backupsDir.exists()) {
-            File[] zips = backupsDir.listFiles((dir, name) -> name.startsWith("FishBowl_Backup_") && name.endsWith(".zip"));
-            if (zips != null && zips.length > 0) {
-                Arrays.sort(zips, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
-                for (File zip : zips) {
-                    if (restoreJellyfinFromZip(zip, jfDataDir, liveDb)) {
-                        Log.i(TAG, "Successfully restored healthy jellyfin.db from zip: " + zip.getName());
-                        return true;
+        // Priority 1: Full ZIP backups in getBackupDirectory(context) and legacy FishBowl_Backups
+        List<File> backupDirs = new ArrayList<>();
+        File primaryBackupsDir = context != null ? getBackupDirectory(context) : null;
+        if (primaryBackupsDir != null) backupDirs.add(primaryBackupsDir);
+        File legacyBackupsDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), LEGACY_BACKUP_DIR_NAME);
+        if (!backupDirs.contains(legacyBackupsDir)) backupDirs.add(legacyBackupsDir);
+
+        for (File backupsDir : backupDirs) {
+            if (backupsDir != null && backupsDir.exists()) {
+                File[] zips = backupsDir.listFiles((dir, name) -> name != null && name.toLowerCase(Locale.ROOT).startsWith("fishbowl_backup_") && name.toLowerCase(Locale.ROOT).endsWith(".zip"));
+                if (zips != null && zips.length > 0) {
+                    Arrays.sort(zips, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+                    for (File zip : zips) {
+                        if (restoreJellyfinFromZip(zip, jfDataDir, liveDb)) {
+                            Log.i(TAG, "Successfully restored healthy jellyfin.db from zip: " + zip.getName());
+                            return true;
+                        }
                     }
                 }
             }
         }
 
-        // Priority 2: Persistent mirrored db /sdcard/Fishbowl/data/jellyfin.db
-        File mirroredDb = new File(Environment.getExternalStorageDirectory(), "Fishbowl/data/jellyfin.db");
-        if (mirroredDb.exists() && isDatabaseHealthy(mirroredDb)) {
-            try {
-                if (!jfDataDir.exists()) jfDataDir.mkdirs();
-                copyFile(mirroredDb, liveDb);
-                File mirroredWal = new File(mirroredDb.getParentFile(), "jellyfin.db-wal");
-                if (mirroredWal.exists()) {
-                    copyFile(mirroredWal, new File(jfDataDir, "jellyfin.db-wal"));
-                }
-                if (isDatabaseHealthy(liveDb)) {
-                    Log.i(TAG, "Successfully restored healthy jellyfin.db from /sdcard/Fishbowl/data/");
-                    return true;
-                } else {
-                    // If combined with mirrored WAL it was corrupt, isolate the copied WAL
-                    new File(jfDataDir, "jellyfin.db-wal").delete();
-                    new File(jfDataDir, "jellyfin.db-shm").delete();
-                    if (isDatabaseHealthy(liveDb)) {
-                        Log.i(TAG, "Restored base jellyfin.db from /sdcard/Fishbowl/data/ (isolated WAL).");
-                        return true;
+        // Priority 2: Persistent mirrored db /sdcard/FishbowlMedia/data/jellyfin.db (and legacy /sdcard/Fishbowl/data/jellyfin.db)
+        List<File> mirroredCandidates = new ArrayList<>();
+        mirroredCandidates.add(new File(MediaStorageManager.DEFAULT_MEDIA_ROOT, "data/jellyfin.db"));
+        mirroredCandidates.add(new File(Environment.getExternalStorageDirectory(), "Fishbowl/data/jellyfin.db"));
+        for (File mirroredDb : mirroredCandidates) {
+            if (mirroredDb.exists() && isDatabaseHealthy(mirroredDb)) {
+                try {
+                    if (!jfDataDir.exists()) jfDataDir.mkdirs();
+                    copyFile(mirroredDb, liveDb);
+                    File mirroredWal = new File(mirroredDb.getParentFile(), "jellyfin.db-wal");
+                    if (mirroredWal.exists()) {
+                        copyFile(mirroredWal, new File(jfDataDir, "jellyfin.db-wal"));
                     }
+                    if (isDatabaseHealthy(liveDb)) {
+                        Log.i(TAG, "Successfully restored healthy jellyfin.db from " + mirroredDb.getAbsolutePath());
+                        return true;
+                    } else {
+                        // If combined with mirrored WAL it was corrupt, isolate the copied WAL
+                        new File(jfDataDir, "jellyfin.db-wal").delete();
+                        new File(jfDataDir, "jellyfin.db-shm").delete();
+                        if (isDatabaseHealthy(liveDb)) {
+                            Log.i(TAG, "Restored base jellyfin.db from " + mirroredDb.getAbsolutePath() + " (isolated WAL).");
+                            return true;
+                        }
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "Failed copying mirrored db: " + t.getMessage());
                 }
-            } catch (Throwable t) {
-                Log.w(TAG, "Failed copying mirrored db: " + t.getMessage());
             }
         }
 
         // Priority 3: auto_jellyfin_backup.db
         List<File> candidates = new ArrayList<>();
-        if (backupsDir != null) candidates.add(new File(backupsDir, "auto_jellyfin_backup.db"));
+        if (primaryBackupsDir != null) candidates.add(new File(primaryBackupsDir, "auto_jellyfin_backup.db"));
+        candidates.add(new File(MediaStorageManager.DEFAULT_MEDIA_ROOT, "Backups/auto_jellyfin_backup.db"));
         candidates.add(new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "FishBowl_Backups/auto_jellyfin_backup.db"));
         for (File candidate : candidates) {
             if (candidate.exists() && isDatabaseHealthy(candidate)) {
@@ -1120,8 +1158,8 @@ public final class BackupRestoreManager {
                     return;
                 }
 
-                // 1. Primary destination: /sdcard/Fishbowl/data/jellyfin.db
-                File fishbowlDataDir = new File(Environment.getExternalStorageDirectory(), "Fishbowl/data");
+                // 1. Primary destination: /sdcard/FishbowlMedia/data/jellyfin.db
+                File fishbowlDataDir = new File(MediaStorageManager.DEFAULT_MEDIA_ROOT, "data");
                 if (!fishbowlDataDir.exists()) fishbowlDataDir.mkdirs();
 
                 File target1 = new File(fishbowlDataDir, "jellyfin.db");

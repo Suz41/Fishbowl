@@ -448,7 +448,37 @@ public final class StorageDriveHelper {
         List<String> list = new ArrayList<>();
         File root = new File(rootPath);
 
-        // 1. Direct POSIX listing (works on Internal Storage)
+        // 1. For Internal Storage (Primary): consolidate completely into core FishbowlMedia
+        if (isPrimary) {
+            list.add("FishbowlMedia");
+            String[] coreSubs = {"Movies", "TV", "Music", "Downloads"};
+            for (String sub : coreSubs) {
+                list.add("FishbowlMedia/" + sub);
+            }
+            File coreMedia = new File(root, "FishbowlMedia");
+            if (coreMedia.exists() && coreMedia.canRead()) {
+                File[] subs = coreMedia.listFiles();
+                if (subs != null) {
+                    for (File s : subs) {
+                        if (s.isDirectory() && !s.isHidden()) {
+                            String sName = s.getName();
+                            if (!"data".equalsIgnoreCase(sName) &&
+                                !"password".equalsIgnoreCase(sName) &&
+                                !"backups".equalsIgnoreCase(sName) &&
+                                !"movies".equalsIgnoreCase(sName) &&
+                                !"tv".equalsIgnoreCase(sName) &&
+                                !"music".equalsIgnoreCase(sName) &&
+                                !"downloads".equalsIgnoreCase(sName)) {
+                                list.add("FishbowlMedia/" + sName);
+                            }
+                        }
+                    }
+                }
+            }
+            return list;
+        }
+
+        // 2. Direct POSIX listing (works on secondary drives where readable)
         if (root.exists() && root.canRead()) {
             File[] files = root.listFiles();
             if (files != null) {
@@ -463,17 +493,8 @@ public final class StorageDriveHelper {
             }
         }
 
-        // 2. If list is empty and this is primary storage, seed standard folders if they exist
-        if (list.isEmpty() && isPrimary) {
-            String[] common = {"Movies", "Music", "TV Shows", "Download", "DCIM", "Pictures", "Documents"};
-            for (String c : common) {
-                File sub = new File(root, c);
-                if (sub.exists()) {
-                    list.add(c);
-                }
-            }
-        } else if (!isPrimary) {
-            // 3. For external drives: check persisted SAF URI permissions to discover real folders
+        // 3. For external drives: check persisted SAF URI permissions to discover real folders
+        if (!isPrimary) {
             if (context != null) {
                 try {
                     List<UriPermission> perms = context.getContentResolver().getPersistedUriPermissions();

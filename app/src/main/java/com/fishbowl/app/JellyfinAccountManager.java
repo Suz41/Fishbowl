@@ -86,9 +86,17 @@ public final class JellyfinAccountManager {
         if (internal.exists() && internal.canRead()) {
             return internal;
         }
-        File mirrored = new File(Environment.getExternalStorageDirectory(), "Fishbowl/data/jellyfin.db");
+        File mirrored = new File(MediaStorageManager.DEFAULT_MEDIA_ROOT, "data/jellyfin.db");
         if (mirrored.exists() && mirrored.canRead()) {
             return mirrored;
+        }
+        File legacyMirrored = new File(Environment.getExternalStorageDirectory(), "Fishbowl/data/jellyfin.db");
+        if (legacyMirrored.exists() && legacyMirrored.canRead()) {
+            return legacyMirrored;
+        }
+        File backupCore = new File(MediaStorageManager.DEFAULT_MEDIA_ROOT, "Backups/auto_jellyfin_backup.db");
+        if (backupCore.exists() && backupCore.canRead()) {
+            return backupCore;
         }
         File backupDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "FishBowl_Backups/auto_jellyfin_backup.db");
         if (backupDir.exists() && backupDir.canRead()) {

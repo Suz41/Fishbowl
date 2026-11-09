@@ -232,16 +232,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Phase 9: Auto-start on reboot (Permanently disabled per user requirement) -->
-        <receiver
-            android:name="com.fishbowl.app.JellyfinBootReceiver"
-            android:exported="false"
-            android:enabled="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </receiver>
 
         <!-- Fishbowl Jellyfin Password Reset PIN Notification Copy Action -->
         <receiver

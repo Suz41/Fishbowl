@@ -230,8 +230,7 @@ public final class PasswordResetManager {
     }
 
     public static File getPasswordDirectory() {
-        File fishbowlRoot = new File(Environment.getExternalStorageDirectory(), "Fishbowl");
-        File passDir = new File(fishbowlRoot, "password");
+        File passDir = new File(MediaStorageManager.DEFAULT_MEDIA_ROOT, "password");
         if (!passDir.exists()) {
             passDir.mkdirs();
         }
@@ -282,7 +281,7 @@ public final class PasswordResetManager {
 
             Log.i(TAG, "Active Jellyfin Password Reset PIN detected: " + pin + " for user: " + userName);
 
-            // 1. Write PIN to /sdcard/Fishbowl/password/jellyfin_password_reset_pin.txt
+            // 1. Write PIN to /sdcard/FishbowlMedia/password/jellyfin_password_reset_pin.txt
             File passwordDir = getPasswordDirectory();
             File pinTextFile = new File(passwordDir, "jellyfin_password_reset_pin.txt");
             File userPinTextFile = new File(passwordDir, "jellyfin_password_reset_" + userName + ".txt");
@@ -442,7 +441,7 @@ public final class PasswordResetManager {
             String shortText = "User: " + userName + " | PIN: " + pin + " (Expires in 5 min)";
             String detailedText = "Username: " + userName + "\n"
                     + "Reset PIN: " + pin + "\n"
-                    + "Saved in: /sdcard/Fishbowl/password/\n"
+                    + "Saved in: /sdcard/FishbowlMedia/password/\n"
                     + "Expires in 5 minutes. Tap 'COPY PIN' below.";
 
             NotificationCompat.Builder builder = new NotificationCompat.Builder(appContext, CHANNEL_ID)

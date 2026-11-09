@@ -580,7 +580,16 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
                 for (String folder : drive.mediaFolders) {
                     String fullFolder = drive.rootPath + "/" + folder;
-                    String displayLabel = folder.contains("com.fishbowl.app/files") ? "App Data" : folder;
+                    String displayLabel;
+                    if ("FishbowlMedia".equalsIgnoreCase(folder)) {
+                        displayLabel = "All Media";
+                    } else if (folder.startsWith("FishbowlMedia/")) {
+                        displayLabel = folder.substring("FishbowlMedia/".length());
+                    } else if (folder.contains("com.fishbowl.app/files")) {
+                        displayLabel = "App Data";
+                    } else {
+                        displayLabel = folder;
+                    }
                     TextView chip = createInteractiveChip(displayLabel, fullFolder.equalsIgnoreCase(activeSelectedPath));
                     chip.setOnClickListener(v -> setActivePath(fullFolder, true));
                     chipRow.addView(chip);
