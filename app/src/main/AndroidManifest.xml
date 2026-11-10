@@ -42,15 +42,6 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="m">
 
-        <activity
-            android:name=".app.TermuxActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation"
-            android:label="@string/application_name"
-            android:launchMode="singleTask"
-            android:resizeableActivity="true"
-            android:theme="@style/Theme.TermuxActivity.DayNight.NoActionBar"
-            tools:targetApi="n" />
 
         <activity
             android:name="com.fishbowl.app.FishbowlActivity"
@@ -97,11 +88,6 @@
             android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar"
             android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode|fontScale|fontWeightAdjustment|locale|layoutDirection" />
 
-        <activity
-            android:name=".app.activities.SettingsActivity"
-            android:exported="false"
-            android:label="@string/title_activity_termux_settings"
-            android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
 
         <activity
             android:name=".shared.activities.ReportActivity"
@@ -120,13 +106,6 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <receiver
-            android:name=".app.event.SystemEventReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
 
 
         <!-- Fishbowl Jellyfin Password Reset PIN Notification Copy Action -->
@@ -166,9 +145,6 @@
                 android:resource="@xml/fishbowl_services_widget_info" />
         </receiver>
 
-        <service
-            android:name=".app.TermuxService"
-            android:exported="false" />
 
         <!-- Phase 9: Foreground service for background reliability and notification -->
         <service

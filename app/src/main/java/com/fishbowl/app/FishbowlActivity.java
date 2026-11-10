@@ -92,7 +92,6 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.termux.R;
-import com.termux.app.TermuxService;
 import com.termux.shared.termux.TermuxConstants;
 
 import com.fishbowl.app.model.ManagedService;
@@ -466,8 +465,6 @@ public final class FishbowlActivity extends AppCompatActivity
             android.system.Os.chmod(getApplicationInfo().dataDir, 0700);
         } catch (Throwable ignored) {}
 
-        // JellyfinServerService handles single foreground notification lifecycle.
-        stopService(new Intent(this, TermuxService.class));
 
         // Request Android 13+ Notification Permission if needed (non-blocking)
         requestNotificationPermissionIfNeeded();
@@ -6644,11 +6641,29 @@ public final class FishbowlActivity extends AppCompatActivity
                             if (te.isSymbolicLink()) {
                                 try {
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                        File parent = outFile.getParentFile();
+                                        if (parent != null && !parent.exists()) parent.mkdirs();
                                         try { android.system.Os.remove(outFile.getAbsolutePath()); } catch (Throwable ignored) {}
                                         try { outFile.delete(); } catch (Throwable ignored) {}
-                                        android.system.Os.symlink(te.getLinkName(), outFile.getAbsolutePath());
+                                        String linkTarget = te.getLinkName();
+                                        if (linkTarget != null) {
+                                            if (linkTarget.startsWith("/data/data/com.termux/files/usr/")) {
+                                                linkTarget = new File(prefixDir, linkTarget.substring("/data/data/com.termux/files/usr/".length())).getAbsolutePath();
+                                            } else if (linkTarget.startsWith("data/data/com.termux/files/usr/")) {
+                                                linkTarget = new File(prefixDir, linkTarget.substring("data/data/com.termux/files/usr/".length())).getAbsolutePath();
+                                            } else if (linkTarget.startsWith("/data/data/com.fishbowl.app/files/usr/")) {
+                                                linkTarget = new File(prefixDir, linkTarget.substring("/data/data/com.fishbowl.app/files/usr/".length())).getAbsolutePath();
+                                            } else if (linkTarget.startsWith("data/data/com.fishbowl.app/files/usr/")) {
+                                                linkTarget = new File(prefixDir, linkTarget.substring("data/data/com.fishbowl.app/files/usr/".length())).getAbsolutePath();
+                                            } else if (linkTarget.startsWith("/usr/")) {
+                                                linkTarget = new File(prefixDir, linkTarget.substring("/usr/".length())).getAbsolutePath();
+                                            }
+                                        }
+                                        android.system.Os.symlink(linkTarget, outFile.getAbsolutePath());
                                     }
-                                } catch (Throwable ignored) {}
+                                } catch (Throwable t) {
+                                    Log.w(TAG, "Failed symlink for entry " + cleanPath + ": " + t.getMessage());
+                                }
                                 continue;
                             }
 
@@ -6675,6 +6690,12 @@ public final class FishbowlActivity extends AppCompatActivity
         }
     }
 
+    private static final String[] TERMUX_MIRRORS = new String[] {
+        "https://packages-cf.termux.dev/apt/termux-main/",
+        "https://packages.termux.dev/apt/termux-main/",
+        "https://grimler.se/termux/termux-main/"
+    };
+
     private static final Map<String, String> TERMUX_POOL_MAP = new HashMap<>();
     static {
         TERMUX_POOL_MAP.put("transmission", "pool/main/t/transmission/transmission_4.1.4_aarch64.deb");
@@ -6684,10 +6705,10 @@ public final class FishbowlActivity extends AppCompatActivity
         TERMUX_POOL_MAP.put("natpmpc", "pool/main/n/natpmpc/natpmpc_20230423-2_aarch64.deb");
         TERMUX_POOL_MAP.put("libc++", "pool/main/libc/libc++/libc++_30_aarch64.deb");
         TERMUX_POOL_MAP.put("7zip", "pool/main/7/7zip/7zip_26.06_aarch64.deb");
-        TERMUX_POOL_MAP.put("nodejs-lts", "pool/main/n/nodejs-lts/nodejs-lts_24.22.2_aarch64.deb");
+        TERMUX_POOL_MAP.put("nodejs-lts", "pool/main/n/nodejs-lts/nodejs-lts_24.22.2-1_aarch64.deb");
         TERMUX_POOL_MAP.put("zlib", "pool/main/z/zlib/zlib_1.4_aarch64.deb");
         TERMUX_POOL_MAP.put("openssl", "pool/main/o/openssl/openssl_1:3.6.5_aarch64.deb");
-        TERMUX_POOL_MAP.put("libicu", "pool/main/libi/libicu/libicu_78.3_aarch64.deb");
+        TERMUX_POOL_MAP.put("libicu", "pool/main/libi/libicu/libicu_79.1_aarch64.deb");
         TERMUX_POOL_MAP.put("libcrypt", "pool/main/libc/libcrypt/libcrypt_0.2-6_aarch64.deb");
         TERMUX_POOL_MAP.put("libandroid-posix-semaphore", "pool/main/liba/libandroid-posix-semaphore/libandroid-posix-semaphore_0.1-4_aarch64.deb");
         TERMUX_POOL_MAP.put("ncurses-ui-libs", "pool/main/n/ncurses-ui-libs/ncurses-ui-libs_6.6.20260307+really6.5.20250830_aarch64.deb");
@@ -6705,60 +6726,57 @@ public final class FishbowlActivity extends AppCompatActivity
         TERMUX_POOL_MAP.put("readline", "pool/main/r/readline/readline_8.3.6_aarch64.deb");
     }
 
-    private static final Map<String, String> sDynamicDebUrlCache = new HashMap<>();
+    private static final Map<String, String> sDynamicDebRelPathCache = new HashMap<>();
 
     private static String resolveTermuxDebUrl(Context context, String pkgName) {
-        synchronized (sDynamicDebUrlCache) {
-            if (sDynamicDebUrlCache.containsKey(pkgName)) {
-                return sDynamicDebUrlCache.get(pkgName);
-            }
+        if (pkgName == null || pkgName.trim().isEmpty()) return null;
+        String lowerPkg = pkgName.trim().toLowerCase(Locale.ROOT);
+        String relPath;
+        synchronized (sDynamicDebRelPathCache) {
+            relPath = sDynamicDebRelPathCache.get(lowerPkg);
         }
-        String relPath = TERMUX_POOL_MAP.get(pkgName);
+        if (relPath == null) {
+            relPath = TERMUX_POOL_MAP.get(lowerPkg);
+        }
+        if (relPath == null) {
+            relPath = fetchDynamicTermuxDebRelPath(lowerPkg);
+        }
         if (relPath != null) {
-            String resolved = "https://packages-cf.termux.dev/apt/termux-main/" + relPath;
-            synchronized (sDynamicDebUrlCache) {
-                sDynamicDebUrlCache.put(pkgName, resolved);
-            }
-            return resolved;
+            return TERMUX_MIRRORS[0] + relPath;
         }
-        return fetchDynamicTermuxDebUrl(pkgName);
+        return null;
     }
 
     private static String fetchDynamicTermuxDebUrl(String pkgName) {
+        String rel = fetchDynamicTermuxDebRelPath(pkgName);
+        if (rel != null) {
+            return TERMUX_MIRRORS[0] + rel;
+        }
+        return null;
+    }
+
+    private static String fetchDynamicTermuxDebRelPath(String pkgName) {
         if (pkgName == null || pkgName.trim().isEmpty()) return null;
-        try {
-            File localPkgList = new File(TermuxConstants.TERMUX_PREFIX_DIR, "var/lib/apt/lists/packages-cf.termux.dev_apt_termux-main_dists_stable_main_binary-aarch64_Packages");
-            if (localPkgList.exists()) {
-                try (InputStream in = new FileInputStream(localPkgList)) {
-                    String match = parseDebFilenameFromPackages(in, pkgName);
-                    if (match != null) {
-                        String fullUrl = "https://packages-cf.termux.dev/apt/termux-main/" + match;
-                        synchronized (sDynamicDebUrlCache) {
-                            sDynamicDebUrlCache.put(pkgName, fullUrl);
+        String targetPkg = pkgName.trim().toLowerCase(Locale.ROOT);
+        for (String mirror : TERMUX_MIRRORS) {
+            String pkgsUrl = mirror + "dists/stable/main/binary-aarch64/Packages.gz";
+            try {
+                URL url = new URL(pkgsUrl);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(30000);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
+                if (conn.getResponseCode() == 200) {
+                    try (java.util.zip.GZIPInputStream gzis = new java.util.zip.GZIPInputStream(new BufferedInputStream(conn.getInputStream(), 65536))) {
+                        String match = parseDebFilenameFromPackages(gzis, targetPkg);
+                        if (match != null) {
+                            return match;
                         }
-                        return fullUrl;
                     }
                 }
+            } catch (Throwable t) {
+                Log.w(TAG, "Dynamic deb lookup from " + pkgsUrl + " failed for " + pkgName + ": " + t.getMessage());
             }
-            URL url = new URL("https://packages-cf.termux.dev/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(15000);
-            conn.setReadTimeout(30000);
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
-            if (conn.getResponseCode() == 200) {
-                try (java.util.zip.GZIPInputStream gzis = new java.util.zip.GZIPInputStream(new BufferedInputStream(conn.getInputStream(), 65536))) {
-                    String match = parseDebFilenameFromPackages(gzis, pkgName);
-                    if (match != null) {
-                        String fullUrl = "https://packages-cf.termux.dev/apt/termux-main/" + match;
-                        synchronized (sDynamicDebUrlCache) {
-                            sDynamicDebUrlCache.put(pkgName.toLowerCase(Locale.ROOT), fullUrl);
-                        }
-                        return fullUrl;
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "Dynamic deb lookup failed for " + pkgName + ": " + t.getMessage());
         }
         return null;
     }
@@ -6774,12 +6792,11 @@ public final class FishbowlActivity extends AppCompatActivity
                     curPkg = line.substring(9).trim().toLowerCase(Locale.ROOT);
                 } else if (line.startsWith("Filename: ") && curPkg != null) {
                     String fn = line.substring(10).trim();
-                    synchronized (sDynamicDebUrlCache) {
-                        sDynamicDebUrlCache.put(curPkg, "https://packages-cf.termux.dev/apt/termux-main/" + fn);
+                    synchronized (sDynamicDebRelPathCache) {
+                        sDynamicDebRelPathCache.put(curPkg, fn);
                     }
-                    if (pkgName.equalsIgnoreCase(curPkg)) {
+                    if (pkgName != null && pkgName.equalsIgnoreCase(curPkg)) {
                         found = fn;
-                        break;
                     }
                     curPkg = null;
                 } else if (line.isEmpty()) {
@@ -6787,6 +6804,143 @@ public final class FishbowlActivity extends AppCompatActivity
                 }
             }
             return found;
+        }
+    }
+
+    private static void ensureIcuSymlinks(File prefixDir) {
+        if (prefixDir == null || !prefixDir.exists()) return;
+        File libDir = new File(prefixDir, "lib");
+        if (!libDir.exists()) return;
+        String[] icuBases = new String[]{"libicuuc.so", "libicudata.so", "libicui18n.so", "libicuio.so"};
+        File[] allFiles = libDir.listFiles();
+        if (allFiles == null) return;
+        for (String base : icuBases) {
+            File bestMatch = null;
+            for (File f : allFiles) {
+                String name = f.getName();
+                if (name.startsWith(base + ".") && !name.endsWith(".tmp")) {
+                    if (bestMatch == null || name.compareTo(bestMatch.getName()) > 0) {
+                        bestMatch = f;
+                    }
+                }
+            }
+            if (bestMatch != null) {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        String matchName = bestMatch.getName();
+                        int dotIdx = matchName.indexOf('.', base.length() + 1);
+                        if (dotIdx > 0) {
+                            String majorLinkName = matchName.substring(0, dotIdx);
+                            File majorLink = new File(libDir, majorLinkName);
+                            if (!majorLink.exists()) {
+                                try { android.system.Os.remove(majorLink.getAbsolutePath()); } catch (Throwable ignored) {}
+                                android.system.Os.symlink(matchName, majorLink.getAbsolutePath());
+                            }
+                        }
+                        File baseLink = new File(libDir, base);
+                        boolean needsRelink = true;
+                        try {
+                            String currentTarget = android.system.Os.readlink(baseLink.getAbsolutePath());
+                            if (currentTarget != null && currentTarget.equals(bestMatch.getName())) {
+                                needsRelink = false;
+                            }
+                        } catch (Throwable ignored) {
+                            needsRelink = !baseLink.exists();
+                        }
+                        if (needsRelink) {
+                            try { android.system.Os.remove(baseLink.getAbsolutePath()); } catch (Throwable ignored) {}
+                            android.system.Os.symlink(bestMatch.getName(), baseLink.getAbsolutePath());
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
+        }
+    }
+
+    private static void ensureLibrarySymlinks(File prefixDir) {
+        if (prefixDir == null || !prefixDir.exists()) return;
+        File libDir = new File(prefixDir, "lib");
+        if (!libDir.exists()) return;
+        String[][] libMappings = new String[][] {
+            {"libexpat.so", "libexpat.so.1", "libexpat.so.1.13.1"},
+            {"libbz2.so", "libbz2.so.1", "libbz2.so.1.0.8"},
+            {"libffi.so", "libffi.so.8", "libffi.so.8.1.4"},
+            {"liblzma.so", "liblzma.so.5", "liblzma.so.5.8.4"},
+            {"libsqlite3.so", "libsqlite3.so.0", "libsqlite3.so.3.54.1"}
+        };
+        for (String[] map : libMappings) {
+            File unversioned = new File(libDir, map[0]);
+            File soname = new File(libDir, map[1]);
+            File realLib = map.length > 2 ? new File(libDir, map[2]) : null;
+            File target = (realLib != null && realLib.exists()) ? realLib : (soname.exists() ? soname : (unversioned.exists() ? unversioned : null));
+            if (target != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                if (!unversioned.exists() || (realLib != null && realLib.exists() && !unversioned.getAbsolutePath().equals(target.getAbsolutePath()))) {
+                    try {
+                        String cur = null;
+                        try { cur = android.system.Os.readlink(unversioned.getAbsolutePath()); } catch (Throwable ignored) {}
+                        if (cur == null || !cur.equals(target.getName())) {
+                            try { android.system.Os.remove(unversioned.getAbsolutePath()); } catch (Throwable ignored) {}
+                            android.system.Os.symlink(target.getName(), unversioned.getAbsolutePath());
+                        }
+                    } catch (Throwable ignored) {}
+                }
+                if (!soname.exists() || (realLib != null && realLib.exists() && !soname.getAbsolutePath().equals(target.getAbsolutePath()))) {
+                    try {
+                        String cur = null;
+                        try { cur = android.system.Os.readlink(soname.getAbsolutePath()); } catch (Throwable ignored) {}
+                        if (cur == null || !cur.equals(target.getName())) {
+                            try { android.system.Os.remove(soname.getAbsolutePath()); } catch (Throwable ignored) {}
+                            android.system.Os.symlink(target.getName(), soname.getAbsolutePath());
+                        }
+                    } catch (Throwable ignored) {}
+                }
+            }
+        }
+        File sevenZLibExec = new File(prefixDir, "libexec/7zip/7z.so");
+        File sevenZLib = new File(libDir, "7z.so");
+        if (sevenZLibExec.exists() && !sevenZLib.exists()) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    try { android.system.Os.remove(sevenZLib.getAbsolutePath()); } catch (Throwable ignored) {}
+                    android.system.Os.symlink(sevenZLibExec.getAbsolutePath(), sevenZLib.getAbsolutePath());
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    private static void ensurePythonSymlinks(File prefixDir) {
+        if (prefixDir == null || !prefixDir.exists()) return;
+        File binDir = new File(prefixDir, "bin");
+        if (!binDir.exists()) return;
+        File py3 = new File(binDir, "python3");
+        if (!py3.exists()) {
+            File[] allFiles = binDir.listFiles();
+            if (allFiles != null) {
+                File match = null;
+                for (File f : allFiles) {
+                    if (f.getName().startsWith("python3.") && !f.getName().contains("config")) {
+                        match = f;
+                        break;
+                    }
+                }
+                if (match != null) {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            try { android.system.Os.remove(py3.getAbsolutePath()); } catch (Throwable ignored) {}
+                            android.system.Os.symlink(match.getName(), py3.getAbsolutePath());
+                        }
+                    } catch (Throwable ignored) {}
+                }
+            }
+        }
+        File py = new File(binDir, "python");
+        if (!py.exists() && py3.exists()) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    try { android.system.Os.remove(py.getAbsolutePath()); } catch (Throwable ignored) {}
+                    android.system.Os.symlink("python3", py.getAbsolutePath());
+                }
+            } catch (Throwable ignored) {}
         }
     }
 
@@ -6815,14 +6969,32 @@ public final class FishbowlActivity extends AppCompatActivity
                 return new File(lib, "libssl.so.3").exists() || new File(lib, "libcrypto.so.3").exists();
             case "c-ares":
                 return new File(lib, "libcares.so").exists();
-            case "libicu":
-                return new File(lib, "libicuuc.so").exists() || new File(lib, "libicudata.so").exists();
+            case "libicu": {
+                File icu79 = new File(lib, "libicui18n.so.79");
+                File icu79Full = new File(lib, "libicui18n.so.79.1");
+                boolean uc = new File(lib, "libicuuc.so").exists();
+                boolean data = new File(lib, "libicudata.so").exists();
+                if ((!icu79.exists() && !icu79Full.exists()) || !uc || !data) {
+                    ensureIcuSymlinks(prefixDir);
+                    icu79 = new File(lib, "libicui18n.so.79");
+                    icu79Full = new File(lib, "libicui18n.so.79.1");
+                    uc = new File(lib, "libicuuc.so").exists();
+                    data = new File(lib, "libicudata.so").exists();
+                }
+                return (icu79.exists() || icu79Full.exists()) && uc && data;
+            }
             case "libsqlite":
                 return new File(lib, "libsqlite3.so").exists();
             case "nodejs-lts":
                 return new File(bin, "node").exists();
-            case "python":
-                return new File(bin, "python3").exists() || new File(bin, "python").exists();
+            case "python": {
+                boolean py = new File(bin, "python3").exists() || new File(bin, "python").exists();
+                if (!py) {
+                    ensurePythonSymlinks(prefixDir);
+                    py = new File(bin, "python3").exists() || new File(bin, "python").exists();
+                }
+                return py;
+            }
             case "7zip":
                 return new File(bin, "7z").exists();
             case "transmission":
@@ -6839,6 +7011,32 @@ public final class FishbowlActivity extends AppCompatActivity
                 return new File(lib, "libidn2.so").exists();
             case "libbz2":
                 return new File(lib, "libbz2.so").exists();
+            case "libcrypt":
+                return new File(lib, "libcrypt.so").exists();
+            case "libexpat": {
+                File expatNew = new File(lib, "libexpat.so.1.13.1");
+                if (expatNew.exists()) return true;
+                File expat = new File(lib, "libexpat.so");
+                if (!expat.exists()) expat = new File(lib, "libexpat.so.1");
+                if (!expat.exists()) return false;
+                try (FileInputStream fis = new FileInputStream(expat)) {
+                    byte[] data = new byte[(int) Math.min(expat.length(), 262144L)];
+                    int r = fis.read(data);
+                    if (r > 0) {
+                        String s = new String(data, 0, r, java.nio.charset.StandardCharsets.ISO_8859_1);
+                        return s.contains("XML_GetCurrentLineNumber64");
+                    }
+                } catch (Throwable ignored) {}
+                return false;
+            }
+            case "libandroid-support":
+                return new File(lib, "libandroid-support.so").exists();
+            case "libandroid-posix-semaphore":
+                return new File(lib, "libandroid-posix-semaphore.so").exists();
+            case "ncurses":
+                return new File(lib, "libncursesw.so").exists() || new File(lib, "libncurses.so").exists();
+            case "ncurses-ui-libs":
+                return new File(lib, "libformw.so").exists() || new File(lib, "libmenuw.so").exists() || new File(lib, "libpanelw.so").exists() || new File(lib, "libncursesw.so").exists();
             case "libffi":
                 return new File(lib, "libffi.so").exists();
             case "liblzma":
@@ -6860,11 +7058,18 @@ public final class FishbowlActivity extends AppCompatActivity
         if (progress != null && progress.isCancelled()) {
             throw new InterruptedException("Installation cancelled");
         }
-        String debUrl = resolveTermuxDebUrl(this, pkgName);
-        if (debUrl == null) {
-            debUrl = fetchDynamicTermuxDebUrl(pkgName);
+        String lowerPkg = pkgName.toLowerCase(Locale.ROOT);
+        String relPath;
+        synchronized (sDynamicDebRelPathCache) {
+            relPath = sDynamicDebRelPathCache.get(lowerPkg);
         }
-        if (debUrl == null) {
+        if (relPath == null) {
+            relPath = TERMUX_POOL_MAP.get(lowerPkg);
+        }
+        if (relPath == null) {
+            relPath = fetchDynamicTermuxDebRelPath(lowerPkg);
+        }
+        if (relPath == null) {
             throw new IOException("Unable to resolve debian package URL for: " + pkgName);
         }
         if (progress != null) {
@@ -6884,28 +7089,66 @@ public final class FishbowlActivity extends AppCompatActivity
                 return progress != null && progress.isCancelled();
             }
         };
-        try {
-            downloadWithRedirects(debUrl, cacheDeb, debCb);
-        } catch (InterruptedException ie) {
-            if (cacheDeb.exists()) cacheDeb.delete();
-            throw ie;
-        } catch (Exception dlErr) {
+
+        boolean downloaded = false;
+        Exception lastErr = null;
+        for (String mirror : TERMUX_MIRRORS) {
             if (progress != null && progress.isCancelled()) {
                 if (cacheDeb.exists()) cacheDeb.delete();
                 throw new InterruptedException("Installation cancelled");
             }
-            Log.w(TAG, "Download failed for " + debUrl + ": " + dlErr.getMessage() + ". Retrying with dynamic package discovery...");
-            synchronized (sDynamicDebUrlCache) {
-                sDynamicDebUrlCache.remove(pkgName);
-            }
-            String dynamicUrl = fetchDynamicTermuxDebUrl(pkgName);
-            if (dynamicUrl != null && !dynamicUrl.equals(debUrl)) {
-                debUrl = dynamicUrl;
+            String debUrl = mirror + relPath;
+            try {
                 downloadWithRedirects(debUrl, cacheDeb, debCb);
-            } else {
-                throw dlErr;
+                if (cacheDeb.exists() && cacheDeb.length() > 0) {
+                    downloaded = true;
+                    break;
+                }
+            } catch (InterruptedException ie) {
+                if (cacheDeb.exists()) cacheDeb.delete();
+                throw ie;
+            } catch (Exception dlErr) {
+                lastErr = dlErr;
+                Log.w(TAG, "Download failed from mirror " + debUrl + ": " + dlErr.getMessage());
             }
         }
+
+        if (!downloaded) {
+            Log.w(TAG, "All mirrors failed for " + pkgName + " (" + relPath + "). Invalidating cache and re-fetching dynamically...");
+            synchronized (sDynamicDebRelPathCache) {
+                sDynamicDebRelPathCache.remove(lowerPkg);
+            }
+            String dynamicRel = fetchDynamicTermuxDebRelPath(lowerPkg);
+            if (dynamicRel != null && !dynamicRel.equals(relPath)) {
+                relPath = dynamicRel;
+                for (String mirror : TERMUX_MIRRORS) {
+                    if (progress != null && progress.isCancelled()) {
+                        if (cacheDeb.exists()) cacheDeb.delete();
+                        throw new InterruptedException("Installation cancelled");
+                    }
+                    String debUrl = mirror + relPath;
+                    try {
+                        downloadWithRedirects(debUrl, cacheDeb, debCb);
+                        if (cacheDeb.exists() && cacheDeb.length() > 0) {
+                            downloaded = true;
+                            break;
+                        }
+                    } catch (InterruptedException ie) {
+                        if (cacheDeb.exists()) cacheDeb.delete();
+                        throw ie;
+                    } catch (Exception dlErr) {
+                        lastErr = dlErr;
+                        Log.w(TAG, "Dynamic download failed from " + debUrl + ": " + dlErr.getMessage());
+                    }
+                }
+            }
+        }
+
+        if (!downloaded) {
+            if (cacheDeb.exists()) cacheDeb.delete();
+            throw (lastErr != null ? lastErr : new IOException("Failed to download package " + pkgName + " from all mirrors"));
+        }
+
         if (progress != null && progress.isCancelled()) {
             if (cacheDeb.exists()) cacheDeb.delete();
             throw new InterruptedException("Installation cancelled");
@@ -6932,8 +7175,11 @@ public final class FishbowlActivity extends AppCompatActivity
         if ("seerr".equalsIgnoreCase(id)) {
             File nodeBin = new File(prefix, "bin/node");
             File libssl = new File(prefix, "lib/libssl.so.3");
-            File libicu = new File(prefix, "lib/libicuuc.so");
-            if (!nodeBin.exists() || !libssl.exists() || !libicu.exists()) {
+            ensureIcuSymlinks(prefix);
+            ensureLibrarySymlinks(prefix);
+            File libicu79 = new File(prefix, "lib/libicui18n.so.79");
+            File libicu79Full = new File(prefix, "lib/libicui18n.so.79.1");
+            if (!nodeBin.exists() || !libssl.exists() || (!libicu79.exists() && !libicu79Full.exists())) {
                 String[] nodeDeps = {"libc++", "zlib", "openssl", "c-ares", "libicu", "libsqlite", "nodejs-lts"};
                 for (String dep : nodeDeps) {
                     if (progress != null && progress.isCancelled()) {
@@ -6941,6 +7187,8 @@ public final class FishbowlActivity extends AppCompatActivity
                     }
                     downloadAndInstallDebPackage(dep, prefix, progress, "Installing Node.js runtime (" + dep + ")...");
                 }
+                ensureIcuSymlinks(prefix);
+                ensureLibrarySymlinks(prefix);
                 if (nodeBin.exists()) {
                     nodeBin.setExecutable(true, false);
                     try { android.system.Os.chmod(nodeBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
@@ -6961,10 +7209,15 @@ public final class FishbowlActivity extends AppCompatActivity
         }
 
         if ("bazarr".equalsIgnoreCase(id)) {
+            ensurePythonSymlinks(prefix);
+            ensureLibrarySymlinks(prefix);
             File pythonBin = new File(prefix, "bin/python3");
+            if (!pythonBin.exists()) pythonBin = new File(prefix, "bin/python");
             File bzLibSsl = new File(prefix, "lib/libssl.so.3");
             File bzLibSqlite = new File(prefix, "lib/libsqlite3.so");
-            if (!pythonBin.exists() || !bzLibSsl.exists() || !bzLibSqlite.exists()) {
+            File bzExpat = new File(prefix, "lib/libexpat.so.1.13.1");
+            if (!pythonBin.exists() || !bzLibSsl.exists() || !bzLibSqlite.exists() || !bzExpat.exists()
+                    || !isDebPackageAlreadyInstalled("libexpat", prefix)) {
                 String[] pyDeps = {
                     "libc++", "zlib", "openssl", "libbz2", "libcrypt", "libexpat", "libffi",
                     "liblzma", "libsqlite", "libandroid-support", "libandroid-posix-semaphore",
@@ -6976,6 +7229,8 @@ public final class FishbowlActivity extends AppCompatActivity
                     }
                     downloadAndInstallDebPackage(dep, prefix, progress, "Setting up Python 3 runtime (" + dep + ")...");
                 }
+                ensurePythonSymlinks(prefix);
+                ensureLibrarySymlinks(prefix);
                 if (pythonBin.exists()) {
                     pythonBin.setExecutable(true, false);
                     try { android.system.Os.chmod(pythonBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
@@ -6985,6 +7240,7 @@ public final class FishbowlActivity extends AppCompatActivity
             File sevenZipBin = new File(prefix, "bin/7z");
             if (!sevenZipBin.exists()) {
                 downloadAndInstallDebPackage("7zip", prefix, progress, "Setting up 7-Zip archiver utility...");
+                ensureLibrarySymlinks(prefix);
             }
 
             if (progress != null && progress.isCancelled()) {
