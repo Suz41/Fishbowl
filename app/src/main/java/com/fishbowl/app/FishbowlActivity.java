@@ -10864,7 +10864,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 + "Licensed under the MIT License.\n\n"
                 + "11. FlareSolverr Proxy (MIT)\n"
                 + "Copyright (c) FlareSolverr Contributors\n"
-                + "Licensed under the MIT License.\n";
+                + "Licensed under the MIT License.\n\n"
+                + "12. Legal & Anti-Piracy Policy\n"
+                + "Fishbowl is a personal homelab management utility and does not host, index, or distribute copyrighted media. End users are solely responsible for ensuring compliance with all applicable copyright and intellectual property laws.\n\n"
+                + "13. AI-Assisted Development Disclosure\n"
+                + "Fishbowl is developed and maintained with the assistance of artificial intelligence systems (Google DeepMind Antigravity and Gemini CLI) and empirically verified on physical hardware.\n";
         tv.setText(licText);
 
         ScrollView sc = new ScrollView(this);

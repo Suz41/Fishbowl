@@ -144,11 +144,12 @@ cd Fishbowl
 
 ---
 
-## Compliance & Disclaimer
+## Compliance & Disclaimers
 
-- **Unofficial Community Project:** Fishbowl is an independent open-source project and is not affiliated with, endorsed by, or maintained by the official Jellyfin project.
-- **Homelab & Lawful Media Scope:** Fishbowl is strictly a self-hosted media server management utility. It does not provide, host, index, or distribute any copyrighted content. Users are solely responsible for ensuring compliance with all applicable copyright and intellectual property laws.
-- **License:** Licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE). See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for third-party component licenses.
+- **Lawful Media & Anti-Piracy Policy:** Fishbowl is strictly a personal homelab media server management utility. Fishbowl does **not** host, stream, provide, index, or distribute any copyrighted media files, torrents, or unlawful content. Integrated companion daemons (including Transmission, Radarr, Sonarr, Prowlarr, Jackett, and Bazarr) are modular, open-source automation tools designed solely for managing personal, legally acquired, Creative Commons, or public-domain media. The maintainers do not endorse, facilitate, or condone digital piracy or copyright infringement. End users assume full and exclusive legal responsibility for complying with all applicable copyright and intellectual property laws.
+- **AI-Assisted Development Disclosure:** Architecture, code implementation, bug fixes, refactoring, and documentation across this project are developed with the assistance of artificial intelligence systems (including Google DeepMind Antigravity and Gemini CLI). All code, build configurations, and algorithmic routines undergo manual human review, automated unit test verification, and empirical hardware validation on physical Android ARM64 devices prior to release.
+- **Unofficial Community Project:** Fishbowl is an independent open-source project and is not affiliated with, endorsed by, sponsored by, or maintained by the official Jellyfin project, Microsoft Corporation, Termux, or Google LLC.
+- **License & Warranty:** Licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE). Provided "AS IS" without warranty of any kind. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for complete upstream license notices, source disclosures, and legal disclaimers.
 
 ---
 
