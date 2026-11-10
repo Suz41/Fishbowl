@@ -183,16 +183,12 @@ public class FishbowlServicesWidgetProvider extends AppWidgetProvider {
         if (intent == null) return;
 
         String action = intent.getAction();
-        Log.i(TAG, "onReceive action=" + action);
+        Log.d(TAG, "onReceive action=" + action);
 
-        if (ACTION_TOGGLE_SERVICE.equals(action)) {
-            String serviceId = intent.getStringExtra(EXTRA_SERVICE_ID);
-            Log.i(TAG, "Toggling service: " + serviceId);
-
-            if (serviceId != null) {
-                toggleService(context, serviceId);
-            }
-        } else if (ACTION_PIN_WIDGET.equals(action)) {
+        // Security: Individual service toggles are dispatched strictly via explicit PendingIntents
+        // to JellyfinServerService (exported="false"). The broadcast receiver handles only
+        // layout refresh and launcher lifecycle events.
+        if (ACTION_PIN_WIDGET.equals(action)) {
             Log.i(TAG, "Requesting launcher to pin Fishbowl Services widget");
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
@@ -206,62 +202,10 @@ public class FishbowlServicesWidgetProvider extends AppWidgetProvider {
                 }
             }
         } else if (ACTION_SERVICES_WIDGET_UPDATE.equals(action)
-                || AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(action)) {
+                || AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(action)
+                || AppWidgetManager.ACTION_APPWIDGET_OPTIONS_CHANGED.equals(action)) {
             updateAllWidgets(context);
         }
-    }
-
-    private void toggleService(Context context, String serviceId) {
-        Intent serviceIntent = new Intent(context, JellyfinServerService.class);
-        serviceIntent.setAction(JellyfinServerService.ACTION_TOGGLE_SERVICE);
-        serviceIntent.putExtra(JellyfinServerService.EXTRA_SERVICE_ID, serviceId);
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent);
-            } else {
-                context.startService(serviceIntent);
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "Failed startForegroundService from widget receiver fallback: " + t.getMessage());
-            JellyfinController jfCtrl = JellyfinController.getInstance();
-            MediaServiceManager sm = MediaServiceManager.getInstance(context);
-            if ("jellyfin".equalsIgnoreCase(serviceId)) {
-                if (jfCtrl != null && jfCtrl.getState() == JellyfinController.State.RUNNING) {
-                    Log.i(TAG, "Stopping Jellyfin via widget");
-                    jfCtrl.stop();
-                } else if (jfCtrl != null) {
-                    Log.i(TAG, "Starting Jellyfin via widget");
-                    jfCtrl.start(context);
-                }
-            } else if (sm != null) {
-                ManagedService ms = sm.getService(serviceId);
-                if (ms != null) {
-                    if (ms.isRunning()) {
-                        Log.i(TAG, "Stopping companion service via widget: " + serviceId);
-                        sm.stopService(serviceId);
-                    } else {
-                        Log.i(TAG, "Starting companion service via widget: " + serviceId);
-                        sm.startService(serviceId, context);
-                    }
-                }
-            }
-        }
-
-        // 1. Synchronously update widget states immediately
-        updateAllWidgets(context);
-        FishbowlWidgetProvider.updateAllWidgets(context);
-
-        // 2. Delayed reconciliation to capture daemon process startup and port binding
-        Handler handler = new Handler(Looper.getMainLooper());
-        handler.postDelayed(() -> {
-            updateAllWidgets(context);
-            FishbowlWidgetProvider.updateAllWidgets(context);
-        }, 1500);
-
-        handler.postDelayed(() -> {
-            updateAllWidgets(context);
-            FishbowlWidgetProvider.updateAllWidgets(context);
-        }, 3000);
     }
 
     /**

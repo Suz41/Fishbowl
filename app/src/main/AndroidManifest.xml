@@ -81,7 +81,7 @@
             android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
         <activity
             android:name="com.fishbowl.app.importer.MovieImportActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="Movie Importer"
             android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode|fontScale|fontWeightAdjustment|locale|layoutDirection"
             android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar">
@@ -99,12 +99,13 @@
 
         <activity
             android:name=".app.activities.SettingsActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="@string/title_activity_termux_settings"
             android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
 
         <activity
             android:name=".shared.activities.ReportActivity"
+            android:exported="false"
             android:theme="@style/Theme.MarkdownViewActivity.DayNight"
             android:documentLaunchMode="intoExisting" />
 
@@ -147,12 +148,6 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.fishbowl.app.widget.ACTION_WIDGET_UPDATE" />
-                <action android:name="com.fishbowl.app.widget.ACTION_TOGGLE_SERVER" />
-                <action android:name="com.fishbowl.app.widget.ACTION_START_ALL" />
-                <action android:name="com.fishbowl.app.widget.ACTION_RESTART_ALL" />
-                <action android:name="com.fishbowl.app.widget.ACTION_STOP_ALL" />
-                <action android:name="com.fishbowl.app.widget.ACTION_PIN_WIDGET" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -165,8 +160,6 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.fishbowl.app.widget.ACTION_SERVICES_WIDGET_UPDATE" />
-                <action android:name="com.fishbowl.app.widget.ACTION_TOGGLE_SERVICE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

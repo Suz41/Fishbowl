@@ -416,6 +416,33 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         actionRow.addView(btnOpenJellyfin, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
 
         card.addView(actionRow);
+
+        // Row for Library Orphan Cleaner
+        LinearLayout cleanRow = new LinearLayout(this);
+        cleanRow.setOrientation(LinearLayout.HORIZONTAL);
+        cleanRow.setPadding(0, dp(8), 0, 0);
+
+        Button btnCleanOrphans = new Button(this);
+        btnCleanOrphans.setText("PURGE ORPHAN MOVIE FOLDERS");
+        btnCleanOrphans.setTextSize(11);
+        btnCleanOrphans.setAllCaps(false);
+        btnCleanOrphans.setTextColor(COLOR_TEXT_PRIMARY);
+        btnCleanOrphans.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        btnCleanOrphans.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(8), COLOR_ACCENT));
+        btnCleanOrphans.setOnClickListener(v -> {
+            Toast.makeText(this, "Scanning and purging orphan folders...", Toast.LENGTH_SHORT).show();
+            new Thread(() -> {
+                MediaStorageManager.OrphanFolderReport rep = MediaStorageManager.getInstance(this).cleanupOrphanMediaFolders();
+                runOnUiThread(() -> {
+                    String msg = "Purged " + rep.foldersDeleted + " empty folder(s) (" + rep.filesDeleted + " orphan metadata files removed)";
+                    Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+                    refreshUI();
+                });
+            }).start();
+        });
+        cleanRow.addView(btnCleanOrphans, new LinearLayout.LayoutParams(-1, dp(34)));
+        card.addView(cleanRow);
+
         return card;
     }
 

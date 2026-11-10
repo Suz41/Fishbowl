@@ -33,6 +33,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -42,6 +45,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -284,6 +288,9 @@ public final class MediaStorageManager {
         // Persist media root
         prefs.edit().putString(PREF_MEDIA_ROOT, root.getAbsolutePath()).apply();
 
+        // Automatic startup recovery for any atomic files interrupted during prior OS kill
+        recoverOrphanedAtomicBackups(root);
+
         // Consolidate legacy separate folders (/sdcard/Fishbowl & /sdcard/Download/FishBowl_Backups) into FishbowlMedia
         consolidateLegacyExternalFolders();
 
@@ -293,7 +300,38 @@ public final class MediaStorageManager {
             performLegacyMigration();
         }
 
+        // Automatic startup cleanup for orphan media folders (e.g. folders where media was deleted in Jellyfin leaving only .nfo)
+        cleanupOrphanMediaFolders(root);
+
         return runDiagnostics();
+    }
+
+    private void recoverOrphanedAtomicBackups(File mediaRoot) {
+        if (mediaRoot == null || !mediaRoot.exists()) return;
+        try {
+            File[] dirs = new File[] {
+                    new File(mediaRoot, "data"),
+                    new File(mediaRoot, "password"),
+                    new File(mediaRoot, "Backups")
+            };
+            for (File d : dirs) {
+                if (d.exists() && d.isDirectory()) {
+                    File[] baks = d.listFiles((dir, name) -> name.endsWith(".bak"));
+                    if (baks != null) {
+                        for (File bak : baks) {
+                            String baseName = bak.getName().substring(0, bak.getName().length() - 4);
+                            if (baseName.startsWith(".")) {
+                                baseName = baseName.substring(1);
+                            }
+                            File baseFile = new File(d, baseName);
+                            recoverAtomicFile(baseFile);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "recoverOrphanedAtomicBackups notice: " + t.getMessage());
+        }
     }
 
     /**
@@ -410,6 +448,170 @@ public final class MediaStorageManager {
             }
         }
         dir.delete();
+    }
+
+    public static final Set<String> MEDIA_VIDEO_EXTENSIONS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            ".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".m4v", ".webm",
+            ".ts", ".m2ts", ".vob", ".ogv", ".iso", ".3gp", ".rmvb", ".divx"
+    )));
+
+    public static final Set<String> MEDIA_AUDIO_EXTENSIONS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            ".mp3", ".flac", ".aac", ".m4a", ".wav", ".ogg", ".opus", ".wma", ".alac", ".aiff"
+    )));
+
+    public static class OrphanFolderReport {
+        public int foldersDeleted = 0;
+        public int filesDeleted = 0;
+        public long bytesReclaimed = 0;
+
+        @Override
+        public String toString() {
+            return "OrphanFolderReport{" +
+                    "foldersDeleted=" + foldersDeleted +
+                    ", filesDeleted=" + filesDeleted +
+                    ", bytesReclaimed=" + bytesReclaimed +
+                    '}';
+        }
+    }
+
+    /**
+     * Determines whether a directory contains any valid media/video files.
+     * Recursively traverses subdirectories. Returns false if directory contains
+     * only non-media metadata (.nfo, .srt, .jpg, .png, .txt, etc.) or is empty.
+     */
+    public static boolean containsMediaFile(File dir, boolean allowAudio) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) return false;
+        File[] children = dir.listFiles();
+        if (children == null) return false;
+        for (File child : children) {
+            if (child.isDirectory()) {
+                if (containsMediaFile(child, allowAudio)) {
+                    return true;
+                }
+            } else {
+                String name = child.getName().toLowerCase(Locale.ROOT);
+                for (String ext : MEDIA_VIDEO_EXTENSIONS) {
+                    if (name.endsWith(ext)) {
+                        return true;
+                    }
+                }
+                if (allowAudio) {
+                    for (String ext : MEDIA_AUDIO_EXTENSIONS) {
+                        if (name.endsWith(ext)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Clean subfolders in a media directory if they contain no media files.
+     * Deletes all orphan metadata files (.nfo, .jpg, subtitles, etc.) and deletes the folder.
+     */
+    public static OrphanFolderReport cleanMediaSubfolders(File parentDir, boolean allowAudio) {
+        OrphanFolderReport report = new OrphanFolderReport();
+        cleanMediaSubfoldersInternal(parentDir, allowAudio, report);
+        return report;
+    }
+
+    private static void cleanMediaSubfoldersInternal(File parentDir, boolean allowAudio, OrphanFolderReport report) {
+        if (parentDir == null || !parentDir.exists() || !parentDir.isDirectory()) return;
+        File[] children = parentDir.listFiles();
+        if (children == null) return;
+
+        for (File child : children) {
+            if (!child.isDirectory()) continue;
+
+            // Bottom-up recursion for nested structures (e.g. TV/Show/Season)
+            File[] grandChildren = child.listFiles(File::isDirectory);
+            if (grandChildren != null && grandChildren.length > 0) {
+                for (File grandChild : grandChildren) {
+                    if (!containsMediaFile(grandChild, allowAudio)) {
+                        accumulateFilesAndBytes(grandChild, report);
+                        deleteDirectoryRecursively(grandChild);
+                        report.foldersDeleted++;
+                        Log.i(TAG, "Deleted orphan nested media folder: " + grandChild.getAbsolutePath());
+                    }
+                }
+            }
+
+            // Now check child directory itself (e.g. Movies/MovieName or TV/Show after seasons cleaned)
+            if (!containsMediaFile(child, allowAudio)) {
+                accumulateFilesAndBytes(child, report);
+                deleteDirectoryRecursively(child);
+                report.foldersDeleted++;
+                Log.i(TAG, "Deleted orphan media folder (no media files found): " + child.getAbsolutePath());
+            }
+        }
+    }
+
+    private static void accumulateFilesAndBytes(File dir, OrphanFolderReport report) {
+        if (dir == null || !dir.exists()) return;
+        if (dir.isDirectory()) {
+            File[] files = dir.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    accumulateFilesAndBytes(f, report);
+                }
+            }
+        } else {
+            report.filesDeleted++;
+            report.bytesReclaimed += dir.length();
+        }
+    }
+
+    /**
+     * Scans all standard media library directories (Movies, TV, Downloads/radarr, Downloads/sonarr)
+     * and automatically removes any empty movie folders or folders containing only .nfo/artwork/subtitles.
+     */
+    public static OrphanFolderReport cleanupOrphanMediaFolders(File mediaRoot) {
+        OrphanFolderReport report = new OrphanFolderReport();
+        if (mediaRoot == null || !mediaRoot.exists() || !mediaRoot.isDirectory()) return report;
+        try {
+            // 1. Movies: /sdcard/FishbowlMedia/Movies/<MovieTitle>
+            File moviesDir = new File(mediaRoot, SUB_MOVIES);
+            cleanMediaSubfoldersInternal(moviesDir, false, report);
+
+            // 2. TV Shows: /sdcard/FishbowlMedia/TV/<ShowTitle>/<Season>
+            File tvDir = new File(mediaRoot, SUB_TV);
+            cleanMediaSubfoldersInternal(tvDir, false, report);
+
+            // 3. Staging downloads: /sdcard/FishbowlMedia/Downloads/radarr & sonarr
+            File radarrDir = new File(mediaRoot, SUB_DOWNLOADS_RADARR);
+            cleanMediaSubfoldersInternal(radarrDir, false, report);
+            File sonarrDir = new File(mediaRoot, SUB_DOWNLOADS_SONARR);
+            cleanMediaSubfoldersInternal(sonarrDir, false, report);
+
+            // 4. Music: /sdcard/FishbowlMedia/Music/<Artist>/<Album>
+            File musicDir = new File(mediaRoot, SUB_MUSIC);
+            cleanMediaSubfoldersInternal(musicDir, true, report);
+        } catch (Throwable t) {
+            Log.w(TAG, "cleanupOrphanMediaFolders notice: " + t.getMessage());
+        }
+        return report;
+    }
+
+    public OrphanFolderReport cleanupOrphanMediaFolders() {
+        OrphanFolderReport report = cleanupOrphanMediaFolders(getMediaRoot());
+        // Also clean external USB drives if mounted
+        try {
+            List<StorageDriveHelper.DriveInfo> drives = StorageDriveHelper.getMountedDrives(appContext);
+            if (drives != null) {
+                for (StorageDriveHelper.DriveInfo drive : drives) {
+                    if (drive != null && drive.isRemovable && drive.rootPath != null) {
+                        File extRoot = new File(drive.rootPath);
+                        File extMovies = new File(extRoot, SUB_MOVIES);
+                        cleanMediaSubfoldersInternal(extMovies, false, report);
+                        File extTv = new File(extRoot, SUB_TV);
+                        cleanMediaSubfoldersInternal(extTv, false, report);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return report;
     }
 
     /**
@@ -2154,59 +2356,221 @@ public final class MediaStorageManager {
         }
     }
 
+    private static final Object sStorageLock = new Object();
+
+    /**
+     * Idempotently recovers an atomic file if a previous write operation was interrupted by an
+     * OS process termination or system power loss.
+     *
+     * <p>Recovery Rules:
+     * 1. If both destination and backup exist: The crash occurred after the temporary file was successfully
+     *    promoted to destination, but before the backup was deleted. The destination contains the complete
+     *    new content, so the obsolete backup is deleted.
+     * 2. If destination is missing and backup exists: The crash occurred while the original destination
+     *    was backed up prior to temporary promotion. The backup contains the last valid content, so it
+     *    is immediately restored to destination.
+     * 3. Any abandoned unpromoted temporary file (.tmp) is safely removed.
+     *
+     * @param destFile Target file to check and recover.
+     * @return true if destination file exists and is in a verified consistent state.
+     */
+    public static boolean recoverAtomicFile(File destFile) {
+        if (destFile == null) return false;
+        synchronized (sStorageLock) {
+            File parent = destFile.getParentFile();
+            if (parent == null) {
+                parent = destFile.getAbsoluteFile().getParentFile();
+            }
+            File backupFile = new File(destFile.getPath() + ".bak");
+            File hiddenBackupFile = new File(parent, "." + destFile.getName() + ".bak");
+            File activeBackup = backupFile.exists() ? backupFile : (hiddenBackupFile.exists() ? hiddenBackupFile : null);
+
+            if (activeBackup != null && activeBackup.exists()) {
+                if (destFile.exists()) {
+                    // Scenario B: Temporary file was already promoted to destFile; destFile is valid.
+                    // The backup is obsolete and safe to delete.
+                    Log.i(TAG, "recoverAtomicFile: Destination exists; clearing obsolete backup: " + activeBackup.getName());
+                    deleteSilently(activeBackup);
+                } else {
+                    // Scenario A: Crash occurred after original was renamed to backup.
+                    // Restore backup to destination immediately!
+                    Log.w(TAG, "recoverAtomicFile: Destination missing; restoring last valid state from backup: " + activeBackup.getName());
+                    boolean restored = activeBackup.renameTo(destFile);
+                    if (!restored) {
+                        Log.e(TAG, "recoverAtomicFile CRITICAL: Failed to rename backup to destination: " + destFile.getAbsolutePath());
+                        return false;
+                    }
+                }
+            }
+
+            // Remove any abandoned unpromoted temporary files for this destination
+            File tmpFile = new File(destFile.getPath() + ".tmp");
+            if (tmpFile.exists()) {
+                deleteSilently(tmpFile);
+            }
+            File hiddenTmp = new File(parent, "." + destFile.getName() + ".tmp");
+            if (hiddenTmp.exists()) {
+                deleteSilently(hiddenTmp);
+            }
+
+            return destFile.exists();
+        }
+    }
+
     /**
      * Writes binary data atomically to disk with explicit sync to prevent file or directory corruption.
-     * Writes into a temporary file in the same directory, syncs the file descriptor, and performs an
-     * atomic filesystem rename. If an interruption occurs, the destination file remains uncorrupted.
+     *
+     * <p>Strategy:
+     * 1. Validates destination and creates parent directory if absent.
+     * 2. Synchronizes on {@code sStorageLock} and reconciles any previous crash state via {@link #recoverAtomicFile(File)}.
+     * 3. Writes data into a temporary file in the destination directory and commits via {@code FileDescriptor.sync()}.
+     * 4. Attempts atomic POSIX replacement via {@link java.nio.file.Files#move(java.nio.file.Path, java.nio.file.Path, java.nio.file.CopyOption...)}
+     *    with {@link java.nio.file.StandardCopyOption#ATOMIC_MOVE} and {@link java.nio.file.StandardCopyOption#REPLACE_EXISTING}.
+     * 5. If atomic move is unsupported (e.g. cross-volume or FAT external storage), executes a deterministic crash-safe
+     *    backup protocol:
+     *    - Renames destination to deterministic backup (destFile + ".bak").
+     *    - Promotes temporary file to destination.
+     *    - If promotion succeeds, deletes the backup file.
+     *    - If promotion fails, immediately restores the backup file back to destination.
+     * 6. Cleans up temporary files without touching valid backups.
+     *
+     * @param destFile Target destination file.
+     * @param data     Bytes to write.
+     * @return true if write and atomic/safe replacement succeeded; false otherwise.
      */
     public static boolean safeAtomicWrite(File destFile, byte[] data) {
         if (destFile == null || data == null) return false;
-        File parent = destFile.getParentFile();
-        if (parent != null && !parent.exists()) {
-            parent.mkdirs();
-        }
-        File tmpFile = new File(destFile.getAbsolutePath() + ".fb_tmp_" + System.currentTimeMillis());
-        FileOutputStream fos = null;
-        try {
-            fos = new FileOutputStream(tmpFile);
-            fos.write(data);
-            fos.flush();
-            try {
-                fos.getFD().sync();
-            } catch (Throwable ignored) {}
-            fos.close();
-            fos = null;
 
-            // Atomic rename to target
-            if (destFile.exists()) {
-                destFile.delete();
-            }
-            boolean success = tmpFile.renameTo(destFile);
-            if (!success) {
-                // Fallback copy if cross-filesystem rename fails
-                try (InputStream in = new FileInputStream(tmpFile);
-                     OutputStream out = new FileOutputStream(destFile)) {
-                    byte[] buf = new byte[8192];
-                    int len;
-                    while ((len = in.read(buf)) > 0) {
-                        out.write(buf, 0, len);
-                    }
-                    out.flush();
-                }
-                tmpFile.delete();
-                return true;
-            }
-            return success;
-        } catch (Throwable t) {
-            Log.e(TAG, "safeAtomicWrite error for " + destFile.getAbsolutePath() + ": " + t.getMessage(), t);
-            if (tmpFile.exists()) {
-                tmpFile.delete();
-            }
-            return false;
-        } finally {
-            if (fos != null) {
-                try { fos.close(); } catch (Throwable ignored) {}
+        File parent = destFile.getParentFile();
+        if (parent == null) {
+            parent = destFile.getAbsoluteFile().getParentFile();
+        }
+        if (parent != null && !parent.exists()) {
+            if (!parent.mkdirs() && !parent.exists()) {
+                Log.e(TAG, "safeAtomicWrite: Failed to create parent directories: " + parent.getAbsolutePath());
+                return false;
             }
         }
+        if (parent != null && (!parent.isDirectory() || !parent.canWrite())) {
+            Log.e(TAG, "safeAtomicWrite: Parent directory not writable: " + parent.getAbsolutePath());
+            return false;
+        }
+
+        synchronized (sStorageLock) {
+            // Step 1: Reconcile any prior crashed state for this destination first
+            recoverAtomicFile(destFile);
+
+            // Clean up old abandoned scratch .tmp files (NEVER delete .bak files here!)
+            cleanupStaleTempFiles(parent, destFile.getName());
+
+            File backupFile = new File(destFile.getPath() + ".bak");
+            File tmpFile = new File(destFile.getPath() + ".tmp");
+
+            // Ensure no leftover tmp file from immediate prior failed write
+            deleteSilently(tmpFile);
+
+            // Step 2: Write all bytes to temporary file
+            FileOutputStream fos = null;
+            boolean writeComplete = false;
+            try {
+                fos = new FileOutputStream(tmpFile);
+                fos.write(data);
+                fos.flush();
+                try {
+                    fos.getFD().sync();
+                } catch (Throwable syncErr) {
+                    Log.d(TAG, "safeAtomicWrite: sync() non-fatal notice: " + syncErr.getMessage());
+                }
+                fos.close();
+                fos = null;
+                writeComplete = true;
+            } catch (Throwable t) {
+                Log.e(TAG, "safeAtomicWrite error for " + destFile.getAbsolutePath() + ": " + t.getMessage(), t);
+                if (fos != null) {
+                    try { fos.close(); } catch (Throwable ignored) {}
+                }
+                deleteSilently(tmpFile);
+                return false;
+            }
+
+            // Step 3: Promote temporary file to destination
+            // Strategy A: Modern Android NIO Atomic Move with atomic replace
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    Files.move(tmpFile.toPath(), destFile.toPath(),
+                            StandardCopyOption.ATOMIC_MOVE,
+                            StandardCopyOption.REPLACE_EXISTING);
+                    deleteSilently(backupFile);
+                    return true;
+                } catch (AtomicMoveNotSupportedException e) {
+                    Log.d(TAG, "safeAtomicWrite: Filesystem does not support ATOMIC_MOVE, using crash-safe backup swap: " + e.getMessage());
+                } catch (Throwable nioErr) {
+                    Log.d(TAG, "safeAtomicWrite: NIO move attempt threw (" + nioErr.getMessage() + "), falling back to safe swap");
+                }
+            }
+
+            // Strategy B: If destination does not exist yet, direct rename is atomic on POSIX
+            if (!destFile.exists()) {
+                if (tmpFile.renameTo(destFile)) {
+                    return true;
+                }
+            }
+
+            // Strategy C: Deterministic Crash-Safe Backup Protocol
+            // 1. Move existing destination to deterministic backup
+            if (destFile.exists()) {
+                if (!destFile.renameTo(backupFile)) {
+                    Log.w(TAG, "safeAtomicWrite: Could not rename existing destination to backup file. Aborting replace to preserve data.");
+                    deleteSilently(tmpFile);
+                    return false;
+                }
+            }
+
+            // 2. Rename temporary file to destination
+            boolean replaced = tmpFile.renameTo(destFile);
+            if (replaced) {
+                // Success: delete backup file
+                deleteSilently(backupFile);
+                return true;
+            } else {
+                // Failure: restore original destination from backup immediately
+                Log.e(TAG, "safeAtomicWrite: Failed to rename tmp to destination. Restoring original file.");
+                if (backupFile.exists()) {
+                    if (!backupFile.renameTo(destFile)) {
+                        Log.e(TAG, "safeAtomicWrite CRITICAL: Failed to restore destination from backup: " + backupFile.getAbsolutePath());
+                    }
+                }
+                deleteSilently(tmpFile);
+                return false;
+            }
+        }
+    }
+
+    private static void deleteSilently(File f) {
+        if (f != null && f.exists()) {
+            try { f.delete(); } catch (Throwable ignored) {}
+        }
+    }
+
+    private static void cleanupStaleTempFiles(File parentDir, String baseName) {
+        if (parentDir == null || !parentDir.exists() || !parentDir.isDirectory()) return;
+        try {
+            File[] files = parentDir.listFiles((dir, name) ->
+                    (name.startsWith("." + baseName + ".fb_tmp_") ||
+                     name.startsWith(baseName + ".fb_tmp_") ||
+                     name.equals(baseName + ".tmp") ||
+                     name.equals("." + baseName + ".tmp")) &&
+                    !name.endsWith(".bak") // CRITICAL: NEVER delete .bak files in temp cleanup!
+            );
+            if (files != null) {
+                long now = System.currentTimeMillis();
+                for (File f : files) {
+                    // Stale if older than 1 hour (3600000 ms)
+                    if (now - f.lastModified() > 3600000) {
+                        deleteSilently(f);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 }

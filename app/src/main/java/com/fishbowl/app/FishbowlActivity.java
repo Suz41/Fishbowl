@@ -614,6 +614,13 @@ public final class FishbowlActivity extends AppCompatActivity
         refreshPermissionsUI();
         updatePasswordResetBanner(PasswordResetManager.getActiveResetInfo());
         refreshHomeAccountsUI();
+
+        // Background automatic cleanup for orphan media folders (e.g. movies deleted in Jellyfin leaving only .nfo or empty folders)
+        bgExecutor.execute(() -> {
+            try {
+                MediaStorageManager.getInstance(FishbowlActivity.this).cleanupOrphanMediaFolders();
+            } catch (Throwable ignored) {}
+        });
         if (!JellyfinBootstrapper.isInitialized(this)) {
             showSetupOverlay(false);
             ensureBootstrapStartedIfNeeded();

@@ -339,11 +339,10 @@ public final class PasswordResetManager {
     }
 
     private void writeTextFile(File file, String content) {
-        try (FileOutputStream fos = new FileOutputStream(file)) {
-            fos.write(content.getBytes(StandardCharsets.UTF_8));
-            fos.flush();
-        } catch (Throwable t) {
-            Log.e(TAG, "Failed writing reset PIN file: " + file.getAbsolutePath(), t);
+        if (file == null || content == null) return;
+        boolean ok = MediaStorageManager.safeAtomicWrite(file, content.getBytes(StandardCharsets.UTF_8));
+        if (!ok) {
+            Log.e(TAG, "Failed safe atomic write of reset PIN file: " + file.getAbsolutePath());
         }
     }
 
