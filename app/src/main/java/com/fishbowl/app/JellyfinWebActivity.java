@@ -129,7 +129,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         }
 
         // Enable responsive mobile viewport: respects <meta name="viewport" content="width=device-width">
@@ -244,6 +244,14 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
             }
 
             @Override
+            public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
+                Log.e(TAG, "SSL certificate validation failed: " + (error != null ? error.toString() : "unknown") + ". Rejecting connection for security.");
+                if (handler != null) {
+                    handler.cancel();
+                }
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 // Guarantee responsive mobile viewport for any UI missing meta tag
@@ -255,6 +263,15 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                     "    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes';" +
                     "    document.getElementsByTagName('head')[0].appendChild(meta);" +
                     "  }" +
+                    "})();", null);
+
+                // Only install authorized local authentication bridge callbacks on verified local service origins
+                if (!isLocalServiceUrl(url)) {
+                    return;
+                }
+
+                view.evaluateJavascript(
+                    "(function() {" +
                     "  if (window._fbHooksInstalled) return;" +
                     "  window._fbHooksInstalled = true;" +
                     "  function parseJsonBody(b) {" +
@@ -296,42 +313,6 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                     "    this._fbUrl = u;" +
                     "    return origOpen.apply(this, arguments);" +
                     "  };" +
-                    "  function scanAndNotifyPassword() {" +
-                    "    var pInputs = document.querySelectorAll('input[type=\"password\"]');" +
-                    "    var pw = '';" +
-                    "    for (var i = 0; i < pInputs.length; i++) {" +
-                    "      if (pInputs[i].value) { pw = pInputs[i].value; break; }" +
-                    "    }" +
-                    "    if (pw && window.FishbowlBridge) {" +
-                    "      var uInputs = document.querySelectorAll('input[id*=\"Name\"], input[id*=\"User\"], input[name*=\"user\"], input[name*=\"Name\"]');" +
-                    "      var u = '';" +
-                    "      for (var j = 0; j < uInputs.length; j++) {" +
-                    "        if (uInputs[j].value) { u = uInputs[j].value; break; }" +
-                    "      }" +
-                    "      window.FishbowlBridge.notifyPasswordChanged(u, pw);" +
-                    "    }" +
-                    "  }" +
-                    "  document.addEventListener('click', function(e) {" +
-                    "    var t = e.target;" +
-                    "    if (!t) return;" +
-                    "    var tag = (t.tagName || '').toLowerCase();" +
-                    "    var type = (t.type || '').toLowerCase();" +
-                    "    var txt = (t.innerText || t.textContent || '').toLowerCase();" +
-                    "    if (tag === 'button' || type === 'submit' || txt.indexOf('save') >= 0 || txt.indexOf('submit') >= 0 || txt.indexOf('reset') >= 0 || txt.indexOf('sign in') >= 0 || txt.indexOf('change') >= 0) {" +
-                    "      setTimeout(scanAndNotifyPassword, 120);" +
-                    "    }" +
-                    "  }, true);" +
-                    "  function attachPasswordWatchers() {" +
-                    "    document.querySelectorAll('form').forEach(function(f) {" +
-                    "      if (f._fbWatched) return;" +
-                    "      f._fbWatched = true;" +
-                    "      f.addEventListener('submit', function() {" +
-                    "        setTimeout(scanAndNotifyPassword, 50);" +
-                    "      });" +
-                    "    });" +
-                    "  }" +
-                    "  attachPasswordWatchers();" +
-                    "  setInterval(attachPasswordWatchers, 1500);" +
                     "})();", null);
             }
 
@@ -702,6 +683,11 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
     public class FishbowlWebBridge {
         @android.webkit.JavascriptInterface
         public void notifyPasswordChanged(String username, String password) {
+            String currentUrl = (web != null) ? web.getUrl() : null;
+            if (!isLocalServiceUrl(currentUrl)) {
+                Log.w(TAG, "Rejected unauthorized FishbowlWebBridge call from origin: " + currentUrl);
+                return;
+            }
             if (password != null && !password.trim().isEmpty()) {
                 String u = (username != null && !username.trim().isEmpty()) ? username.trim() : "";
                 if (u.isEmpty()) {
@@ -713,9 +699,24 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                 }
                 if (!u.isEmpty()) {
                     com.fishbowl.app.JellyfinAccountManager.storeKnownPassword(JellyfinWebActivity.this, u, password.trim());
-                    Log.i(TAG, "Captured password change in web client for user: " + u);
                 }
             }
+        }
+    }
+
+    private boolean isLocalServiceUrl(String url) {
+        if (url == null || url.isEmpty()) return false;
+        try {
+            android.net.Uri uri = android.net.Uri.parse(url);
+            String host = uri.getHost();
+            int port = uri.getPort();
+            if (host == null) return false;
+            boolean isLocal = "127.0.0.1".equals(host) || "localhost".equals(host) || isLocalOrLanHost(host);
+            boolean isAllowedPort = (port == 8096 || port == 7878 || port == 8989 || port == 9696
+                    || port == 9091 || port == 5055 || port == 6767 || port == 8686 || port == 9117);
+            return isLocal && isAllowedPort;
+        } catch (Throwable t) {
+            return false;
         }
     }
 

@@ -168,6 +168,55 @@ public class OrphanMediaCleanupTest {
         assertTrue(radarrDownloads.exists());
     }
 
+    @Test
+    public void testActiveDownloadsExcludedFromCleanup() throws IOException {
+        File moviesDir = tempFolder.newFolder("ActiveDownloadsTest");
+        File downloadingMovie = new File(moviesDir, "Dune.Part.Two (2024)");
+        assertTrue(downloadingMovie.mkdirs());
+
+        // Incomplete download in progress: has .part and metadata
+        File partFile = new File(downloadingMovie, "Dune.Part.Two.mkv.part");
+        writeFile(partFile, "download in progress...");
+        File nfoFile = new File(downloadingMovie, "Dune.Part.Two.nfo");
+        writeFile(nfoFile, "<movie/>");
+
+        assertTrue("hasActiveDownloadArtifacts should detect .part file",
+                MediaStorageManager.hasActiveDownloadArtifacts(downloadingMovie));
+
+        MediaStorageManager.OrphanFolderReport report = MediaStorageManager.cleanMediaSubfolders(moviesDir, false);
+
+        assertEquals("Folder with active .part file must NOT be deleted/quarantined", 0, report.foldersDeleted);
+        assertTrue("Downloading movie directory must remain intact", downloadingMovie.exists());
+        assertTrue("Part file must remain intact", partFile.exists());
+        assertTrue("Nfo file must remain intact", nfoFile.exists());
+    }
+
+    @Test
+    public void testPreviewOrphanMediaFoldersDoesNotDelete() throws IOException {
+        File root = tempFolder.newFolder("PreviewRoot");
+        File movies = new File(root, "Movies");
+        assertTrue(movies.mkdirs());
+
+        File orphanMovie = new File(movies, "Orphan (2015)");
+        assertTrue(orphanMovie.mkdirs());
+        writeFile(new File(orphanMovie, "poster.jpg"), "fake jpg");
+        writeFile(new File(orphanMovie, "movie.nfo"), "fake nfo");
+
+        java.util.List<MediaStorageManager.OrphanCandidate> preview = MediaStorageManager.previewOrphanMediaFolders(root);
+
+        assertFalse("Preview list should identify orphan folder", preview.isEmpty());
+        boolean found = false;
+        for (MediaStorageManager.OrphanCandidate cand : preview) {
+            if (cand.folderPath.contains("Orphan (2015)")) {
+                found = true;
+                assertEquals(2, cand.fileCount);
+                break;
+            }
+        }
+        assertTrue("Candidate should match orphan folder", found);
+        assertTrue("Folder must NOT be moved or deleted during preview", orphanMovie.exists());
+    }
+
     private static void writeFile(File file, String content) throws IOException {
         try (FileOutputStream fos = new FileOutputStream(file)) {
             fos.write(content.getBytes(StandardCharsets.UTF_8));

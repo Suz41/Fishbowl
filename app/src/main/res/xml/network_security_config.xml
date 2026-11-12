@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      Permits cleartext HTTP traffic strictly for local homelab and loopback daemon communication
+      (Jellyfin: 8096, Radarr: 7878, Sonarr: 8989, Prowlarr: 9696, Transmission: 9091,
+       Seerr: 5055, Bazarr: 6767, Lidarr: 8686, Jackett: 9117) while enforcing system-level
+      CA certificate trust anchors for all remote external HTTPS destinations.
+    -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -36,9 +36,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -450,39 +452,115 @@ public final class MediaStorageManager {
         dir.delete();
     }
 
+    public static final String QUARANTINE_DIR_NAME = ".quarantine";
+    public static final long QUARANTINE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000L; // 7-day retention guarantee
+
     public static final Set<String> MEDIA_VIDEO_EXTENSIONS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             ".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".m4v", ".webm",
-            ".ts", ".m2ts", ".vob", ".ogv", ".iso", ".3gp", ".rmvb", ".divx"
+            ".ts", ".m2ts", ".vob", ".ogv", ".iso", ".3gp", ".rmvb", ".divx",
+            ".asf", ".mpg", ".mpeg", ".mpe", ".mpv", ".m4p", ".m2v", ".mts", ".f4v"
     )));
 
     public static final Set<String> MEDIA_AUDIO_EXTENSIONS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-            ".mp3", ".flac", ".aac", ".m4a", ".wav", ".ogg", ".opus", ".wma", ".alac", ".aiff"
+            ".mp3", ".flac", ".aac", ".m4a", ".wav", ".ogg", ".opus", ".wma", ".alac", ".aiff",
+            ".mka", ".ape", ".dsf", ".dff"
     )));
 
+    public static final Set<String> INCOMPLETE_OR_ACTIVE_EXTENSIONS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            ".part", ".aria2", ".crdownload", ".incomplete", "!ut", ".tmp", ".downloading", ".temp", ".rar"
+    )));
+
+    public static class OrphanCandidate {
+        public final String folderPath;
+        public final int fileCount;
+        public final long totalSizeBytes;
+        public final String reason;
+
+        public OrphanCandidate(String folderPath, int fileCount, long totalSizeBytes, String reason) {
+            this.folderPath = folderPath;
+            this.fileCount = fileCount;
+            this.totalSizeBytes = totalSizeBytes;
+            this.reason = reason;
+        }
+    }
+
     public static class OrphanFolderReport {
-        public int foldersDeleted = 0;
-        public int filesDeleted = 0;
+        public int foldersDeleted = 0;       // Maintained for backward compatibility (maps to quarantined)
+        public int foldersQuarantined = 0;
+        public int filesDeleted = 0;         // Maintained for backward compatibility (maps to quarantined)
+        public int filesQuarantined = 0;
         public long bytesReclaimed = 0;
+        public final List<String> quarantinedPaths = new ArrayList<>();
 
         @Override
         public String toString() {
             return "OrphanFolderReport{" +
-                    "foldersDeleted=" + foldersDeleted +
-                    ", filesDeleted=" + filesDeleted +
+                    "foldersQuarantined=" + foldersQuarantined +
+                    ", filesQuarantined=" + filesQuarantined +
                     ", bytesReclaimed=" + bytesReclaimed +
+                    ", quarantinedPaths=" + quarantinedPaths.size() +
                     '}';
         }
     }
 
     /**
+     * Verifies that the media storage root is reliably mounted, accessible, and writable.
+     * Guards against USB disconnects or storage unmounts during cleanup.
+     */
+    public static boolean isStorageAccessReliable(File mediaRoot) {
+        if (mediaRoot == null || !mediaRoot.exists() || !mediaRoot.isDirectory() || !mediaRoot.canRead() || !mediaRoot.canWrite()) {
+            return false;
+        }
+        try {
+            String state = Environment.getExternalStorageState();
+            if (state != null && !state.isEmpty() && !Environment.MEDIA_MOUNTED.equals(state)) {
+                String abs = mediaRoot.getAbsolutePath();
+                if (abs.startsWith("/storage") || abs.startsWith("/sdcard")) {
+                    return false;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return true;
+    }
+
+    /**
+     * Checks if directory contains any in-progress downloads, incomplete parts, or archives (.part, .aria2, etc.).
+     */
+    public static boolean hasActiveDownloadArtifacts(File dir) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) return false;
+        File[] children = dir.listFiles();
+        if (children == null) return true; // Safety safeguard: inaccessible/unreadable folder -> assume active
+        for (File child : children) {
+            if (child.isDirectory()) {
+                if (hasActiveDownloadArtifacts(child)) return true;
+            } else {
+                String name = child.getName().toLowerCase(Locale.ROOT);
+                for (String ext : INCOMPLETE_OR_ACTIVE_EXTENSIONS) {
+                    if (name.endsWith(ext)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Legacy alias for hasActiveDownloadArtifacts.
+     */
+    public static boolean hasActiveOrRecentFiles(File dir) {
+        return hasActiveDownloadArtifacts(dir);
+    }
+
+    /**
      * Determines whether a directory contains any valid media/video files.
-     * Recursively traverses subdirectories. Returns false if directory contains
-     * only non-media metadata (.nfo, .srt, .jpg, .png, .txt, etc.) or is empty.
+     * Recursively traverses subdirectories. Returns true if inaccessible or contains valid media.
      */
     public static boolean containsMediaFile(File dir, boolean allowAudio) {
         if (dir == null || !dir.exists() || !dir.isDirectory()) return false;
         File[] children = dir.listFiles();
-        if (children == null) return false;
+        if (children == null) {
+            // Safety: Directory unreadable or permission denied; protect it from cleanup
+            return true;
+        }
         for (File child : children) {
             if (child.isDirectory()) {
                 if (containsMediaFile(child, allowAudio)) {
@@ -508,17 +586,294 @@ public final class MediaStorageManager {
     }
 
     /**
+     * Evaluates whether a directory is an orphan candidate (exists, readable, no active/recent files, no media files).
+     */
+    public static boolean isOrphanFolder(File dir, boolean allowAudio) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) return false;
+        if (!dir.canRead() || !dir.canWrite()) return false;
+        File[] children = dir.listFiles();
+        if (children == null) return false;
+        if (hasActiveOrRecentFiles(dir)) return false;
+        if (containsMediaFile(dir, allowAudio)) return false;
+        return true;
+    }
+
+    /**
+     * Resolves or scaffolds the quarantine directory (.quarantine) under the media root.
+     */
+    public static File getQuarantineDirectory(File mediaRoot) {
+        File qDir = new File(mediaRoot, QUARANTINE_DIR_NAME);
+        if (!qDir.exists()) {
+            qDir.mkdirs();
+        }
+        return qDir;
+    }
+
+    private static int countFilesInDir(File dir) {
+        if (dir == null || !dir.exists()) return 0;
+        if (!dir.isDirectory()) return 1;
+        int count = 0;
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File f : files) count += countFilesInDir(f);
+        }
+        return count;
+    }
+
+    private static long countBytesInDir(File dir) {
+        if (dir == null || !dir.exists()) return 0L;
+        if (!dir.isDirectory()) return dir.length();
+        long total = 0L;
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File f : files) total += countBytesInDir(f);
+        }
+        return total;
+    }
+
+    /**
+     * Moves an orphan folder safely into the quarantine directory with manifest tracking and audit logging.
+     * Never permanently deletes media files automatically.
+     */
+    private static boolean quarantineDirectory(File orphanDir, File mediaRoot, OrphanFolderReport report) {
+        if (orphanDir == null || !orphanDir.exists() || mediaRoot == null) return false;
+        File quarantineDir = getQuarantineDirectory(mediaRoot);
+        String quarantineId = System.currentTimeMillis() + "_" + orphanDir.getName().replaceAll("[^a-zA-Z0-9._-]", "_");
+        File targetQuarantine = new File(quarantineDir, quarantineId);
+
+        int fileCount = countFilesInDir(orphanDir);
+        long byteCount = countBytesInDir(orphanDir);
+
+        boolean moved = orphanDir.renameTo(targetQuarantine);
+        if (!moved) {
+            try {
+                java.nio.file.Files.move(orphanDir.toPath(), targetQuarantine.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                moved = true;
+            } catch (Throwable t) {
+                Log.w(TAG, "Failed to move orphan to quarantine: " + t.getMessage());
+            }
+        }
+
+        if (moved) {
+            report.foldersDeleted++;
+            report.foldersQuarantined++;
+            report.filesDeleted += fileCount;
+            report.filesQuarantined += fileCount;
+            report.bytesReclaimed += byteCount;
+            report.quarantinedPaths.add(targetQuarantine.getAbsolutePath());
+
+            recordQuarantineEntry(mediaRoot, quarantineId, orphanDir.getAbsolutePath(), targetQuarantine.getAbsolutePath(), fileCount, byteCount);
+            Log.i(TAG, "Quarantined orphan media folder (no media files found): " + orphanDir.getAbsolutePath() + " -> " + targetQuarantine.getName());
+            return true;
+        }
+        return false;
+    }
+
+    private static synchronized void recordQuarantineEntry(File mediaRoot, String quarantineId, String originalPath,
+                                                           String quarantinedPath, int fileCount, long byteCount) {
+        try {
+            File qDir = getQuarantineDirectory(mediaRoot);
+
+            // 1. Append to cleanup history log
+            File historyLog = new File(qDir, "cleanup_history.log");
+            String logEntry = String.format(Locale.ROOT, "[%s] QUARANTINED: %s -> %s (%d files, %d bytes)\n",
+                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()),
+                    originalPath, quarantineId, fileCount, byteCount);
+            try (FileOutputStream fos = new FileOutputStream(historyLog, true)) {
+                fos.write(logEntry.getBytes(StandardCharsets.UTF_8));
+            } catch (Throwable ignored) {}
+
+            // 2. Update quarantine manifest JSON
+            File manifestFile = new File(qDir, "quarantine_manifest.json");
+            JSONArray array = new JSONArray();
+            if (manifestFile.exists()) {
+                try {
+                    String existing = new String(Files.readAllBytes(manifestFile.toPath()), StandardCharsets.UTF_8);
+                    array = new JSONArray(existing);
+                } catch (Throwable ignored) {}
+            }
+
+            JSONObject record = new JSONObject();
+            record.put("quarantineId", quarantineId);
+            record.put("originalPath", originalPath);
+            record.put("quarantinedPath", quarantinedPath);
+            record.put("timestamp", System.currentTimeMillis());
+            record.put("fileCount", fileCount);
+            record.put("byteCount", byteCount);
+            array.put(record);
+
+            safeAtomicWrite(manifestFile, array.toString(2).getBytes(StandardCharsets.UTF_8));
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to record quarantine entry: " + t.getMessage());
+        }
+    }
+
+    /**
+     * Restores a previously quarantined folder back to its original location.
+     */
+    public static synchronized boolean restoreFromQuarantine(File mediaRoot, String quarantineId) {
+        if (mediaRoot == null || quarantineId == null || quarantineId.trim().isEmpty()) return false;
+        try {
+            File qDir = getQuarantineDirectory(mediaRoot);
+            File manifestFile = new File(qDir, "quarantine_manifest.json");
+            if (!manifestFile.exists()) return false;
+
+            String content = new String(Files.readAllBytes(manifestFile.toPath()), StandardCharsets.UTF_8);
+            JSONArray array = new JSONArray(content);
+            JSONArray updated = new JSONArray();
+            boolean restored = false;
+
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject obj = array.getJSONObject(i);
+                if (quarantineId.equals(obj.optString("quarantineId"))) {
+                    File qPath = new File(obj.optString("quarantinedPath"));
+                    File origPath = new File(obj.optString("originalPath"));
+                    if (qPath.exists()) {
+                        File origParent = origPath.getParentFile();
+                        if (origParent != null && !origParent.exists()) {
+                            origParent.mkdirs();
+                        }
+                        boolean ok = qPath.renameTo(origPath);
+                        if (!ok) {
+                            try {
+                                Files.move(qPath.toPath(), origPath.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                                ok = true;
+                            } catch (Throwable ignored) {}
+                        }
+                        if (ok) {
+                            restored = true;
+                            File historyLog = new File(qDir, "cleanup_history.log");
+                            String logEntry = String.format(Locale.ROOT, "[%s] RESTORED: %s -> %s\n",
+                                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()),
+                                    quarantineId, origPath.getAbsolutePath());
+                            try (FileOutputStream fos = new FileOutputStream(historyLog, true)) {
+                                fos.write(logEntry.getBytes(StandardCharsets.UTF_8));
+                            } catch (Throwable ignored) {}
+                            continue; // Skip adding back to manifest
+                        }
+                    }
+                }
+                updated.put(obj);
+            }
+
+            if (restored) {
+                safeAtomicWrite(manifestFile, updated.toString(2).getBytes(StandardCharsets.UTF_8));
+                return true;
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "restoreFromQuarantine failed: " + t.getMessage(), t);
+        }
+        return false;
+    }
+
+    /**
+     * Purges quarantined entries that have exceeded the retention policy duration (default 7 days).
+     */
+    public static synchronized int purgeExpiredQuarantine(File mediaRoot, long maxAgeMs) {
+        if (mediaRoot == null) return 0;
+        int purgedCount = 0;
+        try {
+            File qDir = getQuarantineDirectory(mediaRoot);
+            File manifestFile = new File(qDir, "quarantine_manifest.json");
+            if (!manifestFile.exists()) return 0;
+
+            String content = new String(Files.readAllBytes(manifestFile.toPath()), StandardCharsets.UTF_8);
+            JSONArray array = new JSONArray(content);
+            JSONArray active = new JSONArray();
+            long now = System.currentTimeMillis();
+
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject obj = array.getJSONObject(i);
+                long timestamp = obj.optLong("timestamp", 0L);
+                File qPath = new File(obj.optString("quarantinedPath"));
+                if (now - timestamp > maxAgeMs) {
+                    if (qPath.exists()) {
+                        deleteDirectoryRecursively(qPath);
+                    }
+                    purgedCount++;
+                    File historyLog = new File(qDir, "cleanup_history.log");
+                    String logEntry = String.format(Locale.ROOT, "[%s] PURGED_EXPIRED: %s (exceeded %d days retention)\n",
+                            new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()),
+                            obj.optString("quarantineId"), maxAgeMs / (24 * 3600 * 1000L));
+                    try (FileOutputStream fos = new FileOutputStream(historyLog, true)) {
+                        fos.write(logEntry.getBytes(StandardCharsets.UTF_8));
+                    } catch (Throwable ignored) {}
+                } else {
+                    active.put(obj);
+                }
+            }
+
+            if (purgedCount > 0) {
+                safeAtomicWrite(manifestFile, active.toString(2).getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "purgeExpiredQuarantine error: " + t.getMessage());
+        }
+        return purgedCount;
+    }
+
+    /**
+     * Scans and returns a non-destructive preview of folders eligible for quarantine cleanup.
+     */
+    public static List<OrphanCandidate> previewOrphanMediaFolders(File mediaRoot) {
+        List<OrphanCandidate> candidates = new ArrayList<>();
+        if (!isStorageAccessReliable(mediaRoot)) return candidates;
+
+        File[] scanDirs = new File[] {
+                new File(mediaRoot, SUB_MOVIES),
+                new File(mediaRoot, SUB_TV),
+                new File(mediaRoot, SUB_MUSIC),
+                new File(mediaRoot, SUB_DOWNLOADS_RADARR),
+                new File(mediaRoot, SUB_DOWNLOADS_SONARR)
+        };
+
+        for (File dir : scanDirs) {
+            if (dir.exists() && dir.isDirectory()) {
+                boolean allowAudio = dir.getName().equals(SUB_MUSIC);
+                previewDirRecursive(dir, allowAudio, candidates);
+            }
+        }
+        return candidates;
+    }
+
+    private static void previewDirRecursive(File dir, boolean allowAudio, List<OrphanCandidate> candidates) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) return;
+        File[] children = dir.listFiles();
+        if (children == null) return;
+
+        for (File child : children) {
+            if (!child.isDirectory()) continue;
+            if (isOrphanFolder(child, allowAudio)) {
+                candidates.add(new OrphanCandidate(
+                        child.getAbsolutePath(),
+                        countFilesInDir(child),
+                        countBytesInDir(child),
+                        "Folder contains only non-media metadata (.nfo, posters, subtitles) or is empty"
+                ));
+            } else {
+                previewDirRecursive(child, allowAudio, candidates);
+            }
+        }
+    }
+
+    /**
      * Clean subfolders in a media directory if they contain no media files.
-     * Deletes all orphan metadata files (.nfo, .jpg, subtitles, etc.) and deletes the folder.
+     * Quarantines all orphan metadata files (.nfo, .jpg, subtitles, etc.) and moves the folder safely.
      */
     public static OrphanFolderReport cleanMediaSubfolders(File parentDir, boolean allowAudio) {
         OrphanFolderReport report = new OrphanFolderReport();
-        cleanMediaSubfoldersInternal(parentDir, allowAudio, report);
+        File mediaRoot = parentDir;
+        while (mediaRoot != null && !mediaRoot.getName().equals("FishbowlMedia") && mediaRoot.getParentFile() != null) {
+            if (new File(mediaRoot, ".quarantine").exists() || mediaRoot.getName().equals("FishbowlMedia")) break;
+            mediaRoot = mediaRoot.getParentFile();
+        }
+        if (mediaRoot == null) mediaRoot = parentDir;
+        cleanMediaSubfoldersInternal(parentDir, allowAudio, report, mediaRoot);
         return report;
     }
 
-    private static void cleanMediaSubfoldersInternal(File parentDir, boolean allowAudio, OrphanFolderReport report) {
-        if (parentDir == null || !parentDir.exists() || !parentDir.isDirectory()) return;
+    private static void cleanMediaSubfoldersInternal(File parentDir, boolean allowAudio, OrphanFolderReport report, File mediaRoot) {
+        if (parentDir == null || !parentDir.exists() || !parentDir.isDirectory() || !parentDir.canRead() || !parentDir.canWrite()) return;
         File[] children = parentDir.listFiles();
         if (children == null) return;
 
@@ -529,65 +884,47 @@ public final class MediaStorageManager {
             File[] grandChildren = child.listFiles(File::isDirectory);
             if (grandChildren != null && grandChildren.length > 0) {
                 for (File grandChild : grandChildren) {
-                    if (!containsMediaFile(grandChild, allowAudio)) {
-                        accumulateFilesAndBytes(grandChild, report);
-                        deleteDirectoryRecursively(grandChild);
-                        report.foldersDeleted++;
-                        Log.i(TAG, "Deleted orphan nested media folder: " + grandChild.getAbsolutePath());
+                    if (isOrphanFolder(grandChild, allowAudio)) {
+                        quarantineDirectory(grandChild, mediaRoot, report);
                     }
                 }
             }
 
             // Now check child directory itself (e.g. Movies/MovieName or TV/Show after seasons cleaned)
-            if (!containsMediaFile(child, allowAudio)) {
-                accumulateFilesAndBytes(child, report);
-                deleteDirectoryRecursively(child);
-                report.foldersDeleted++;
-                Log.i(TAG, "Deleted orphan media folder (no media files found): " + child.getAbsolutePath());
+            if (isOrphanFolder(child, allowAudio)) {
+                quarantineDirectory(child, mediaRoot, report);
             }
-        }
-    }
-
-    private static void accumulateFilesAndBytes(File dir, OrphanFolderReport report) {
-        if (dir == null || !dir.exists()) return;
-        if (dir.isDirectory()) {
-            File[] files = dir.listFiles();
-            if (files != null) {
-                for (File f : files) {
-                    accumulateFilesAndBytes(f, report);
-                }
-            }
-        } else {
-            report.filesDeleted++;
-            report.bytesReclaimed += dir.length();
         }
     }
 
     /**
      * Scans all standard media library directories (Movies, TV, Downloads/radarr, Downloads/sonarr)
-     * and automatically removes any empty movie folders or folders containing only .nfo/artwork/subtitles.
+     * and safely quarantines any empty movie folders or folders containing only .nfo/artwork/subtitles.
      */
     public static OrphanFolderReport cleanupOrphanMediaFolders(File mediaRoot) {
         OrphanFolderReport report = new OrphanFolderReport();
-        if (mediaRoot == null || !mediaRoot.exists() || !mediaRoot.isDirectory()) return report;
+        if (!isStorageAccessReliable(mediaRoot)) return report;
         try {
             // 1. Movies: /sdcard/FishbowlMedia/Movies/<MovieTitle>
             File moviesDir = new File(mediaRoot, SUB_MOVIES);
-            cleanMediaSubfoldersInternal(moviesDir, false, report);
+            cleanMediaSubfoldersInternal(moviesDir, false, report, mediaRoot);
 
             // 2. TV Shows: /sdcard/FishbowlMedia/TV/<ShowTitle>/<Season>
             File tvDir = new File(mediaRoot, SUB_TV);
-            cleanMediaSubfoldersInternal(tvDir, false, report);
+            cleanMediaSubfoldersInternal(tvDir, false, report, mediaRoot);
 
             // 3. Staging downloads: /sdcard/FishbowlMedia/Downloads/radarr & sonarr
             File radarrDir = new File(mediaRoot, SUB_DOWNLOADS_RADARR);
-            cleanMediaSubfoldersInternal(radarrDir, false, report);
+            cleanMediaSubfoldersInternal(radarrDir, false, report, mediaRoot);
             File sonarrDir = new File(mediaRoot, SUB_DOWNLOADS_SONARR);
-            cleanMediaSubfoldersInternal(sonarrDir, false, report);
+            cleanMediaSubfoldersInternal(sonarrDir, false, report, mediaRoot);
 
             // 4. Music: /sdcard/FishbowlMedia/Music/<Artist>/<Album>
             File musicDir = new File(mediaRoot, SUB_MUSIC);
-            cleanMediaSubfoldersInternal(musicDir, true, report);
+            cleanMediaSubfoldersInternal(musicDir, true, report, mediaRoot);
+
+            // 5. Purge expired quarantined entries older than 7 days
+            purgeExpiredQuarantine(mediaRoot, QUARANTINE_RETENTION_MS);
         } catch (Throwable t) {
             Log.w(TAG, "cleanupOrphanMediaFolders notice: " + t.getMessage());
         }
@@ -603,10 +940,13 @@ public final class MediaStorageManager {
                 for (StorageDriveHelper.DriveInfo drive : drives) {
                     if (drive != null && drive.isRemovable && drive.rootPath != null) {
                         File extRoot = new File(drive.rootPath);
-                        File extMovies = new File(extRoot, SUB_MOVIES);
-                        cleanMediaSubfoldersInternal(extMovies, false, report);
-                        File extTv = new File(extRoot, SUB_TV);
-                        cleanMediaSubfoldersInternal(extTv, false, report);
+                        if (isStorageAccessReliable(extRoot)) {
+                            File extMovies = new File(extRoot, SUB_MOVIES);
+                            cleanMediaSubfoldersInternal(extMovies, false, report, extRoot);
+                            File extTv = new File(extRoot, SUB_TV);
+                            cleanMediaSubfoldersInternal(extTv, false, report, extRoot);
+                            purgeExpiredQuarantine(extRoot, QUARANTINE_RETENTION_MS);
+                        }
                     }
                 }
             }
@@ -2386,15 +2726,17 @@ public final class MediaStorageManager {
             File activeBackup = backupFile.exists() ? backupFile : (hiddenBackupFile.exists() ? hiddenBackupFile : null);
 
             if (activeBackup != null && activeBackup.exists()) {
-                if (destFile.exists()) {
-                    // Scenario B: Temporary file was already promoted to destFile; destFile is valid.
+                if (destFile.exists() && (destFile.length() > 0 || activeBackup.length() == 0)) {
+                    // Scenario B: Temporary file was already promoted to destFile; destFile is valid with data.
                     // The backup is obsolete and safe to delete.
-                    Log.i(TAG, "recoverAtomicFile: Destination exists; clearing obsolete backup: " + activeBackup.getName());
+                    Log.i(TAG, "recoverAtomicFile: Destination exists with valid data; clearing obsolete backup: " + activeBackup.getName());
                     deleteSilently(activeBackup);
                 } else {
-                    // Scenario A: Crash occurred after original was renamed to backup.
+                    // Scenario A: Crash occurred after original was renamed to backup,
+                    // or destination exists but was truncated/left at 0-bytes during an interrupted write.
                     // Restore backup to destination immediately!
-                    Log.w(TAG, "recoverAtomicFile: Destination missing; restoring last valid state from backup: " + activeBackup.getName());
+                    Log.w(TAG, "recoverAtomicFile: Destination missing or 0-bytes; restoring last valid state from backup: " + activeBackup.getName());
+                    deleteSilently(destFile);
                     boolean restored = activeBackup.renameTo(destFile);
                     if (!restored) {
                         Log.e(TAG, "recoverAtomicFile CRITICAL: Failed to rename backup to destination: " + destFile.getAbsolutePath());
@@ -2457,6 +2799,14 @@ public final class MediaStorageManager {
         }
 
         synchronized (sStorageLock) {
+            // Check available storage to prevent incomplete writes on low memory
+            long requiredSpace = (data != null ? data.length : 0) + 1048576L; // payload + 1MB safety buffer
+            if (parent != null && parent.getUsableSpace() > 0 && parent.getUsableSpace() < requiredSpace) {
+                Log.e(TAG, "safeAtomicWrite: Insufficient storage space in " + parent.getAbsolutePath()
+                        + " (available: " + parent.getUsableSpace() + ", required: " + requiredSpace + ")");
+                return false;
+            }
+
             // Step 1: Reconcile any prior crashed state for this destination first
             recoverAtomicFile(destFile);
 
@@ -2501,6 +2851,7 @@ public final class MediaStorageManager {
                             StandardCopyOption.ATOMIC_MOVE,
                             StandardCopyOption.REPLACE_EXISTING);
                     deleteSilently(backupFile);
+                    syncParentDirectory(parent);
                     return true;
                 } catch (AtomicMoveNotSupportedException e) {
                     Log.d(TAG, "safeAtomicWrite: Filesystem does not support ATOMIC_MOVE, using crash-safe backup swap: " + e.getMessage());
@@ -2512,6 +2863,7 @@ public final class MediaStorageManager {
             // Strategy B: If destination does not exist yet, direct rename is atomic on POSIX
             if (!destFile.exists()) {
                 if (tmpFile.renameTo(destFile)) {
+                    syncParentDirectory(parent);
                     return true;
                 }
             }
@@ -2531,6 +2883,7 @@ public final class MediaStorageManager {
             if (replaced) {
                 // Success: delete backup file
                 deleteSilently(backupFile);
+                syncParentDirectory(parent);
                 return true;
             } else {
                 // Failure: restore original destination from backup immediately
@@ -2550,6 +2903,20 @@ public final class MediaStorageManager {
         if (f != null && f.exists()) {
             try { f.delete(); } catch (Throwable ignored) {}
         }
+    }
+
+    private static void syncParentDirectory(File parentDir) {
+        if (parentDir == null || !parentDir.exists() || !parentDir.isDirectory()) return;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                java.io.FileDescriptor fd = Os.open(parentDir.getAbsolutePath(), OsConstants.O_RDONLY, 0);
+                try {
+                    Os.fsync(fd);
+                } finally {
+                    Os.close(fd);
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     private static void cleanupStaleTempFiles(File parentDir, String baseName) {

@@ -324,4 +324,26 @@ public class MediaStorageAtomicWriteTest {
         assertTrue("Final content must be a complete uncorrupted winner string",
                 finalContent.startsWith("Winner Thread #"));
     }
+
+    @Test
+    public void testCrashRecoveryZeroByteDestRestoresBackup() throws Exception {
+        File destFile = new File(testDir, "interrupted_target.json");
+        File backupFile = new File(testDir, "interrupted_target.json.bak");
+
+        // Simulate crash right after destination was truncated to 0 bytes or interrupted
+        writeFileRaw(destFile, new byte[0]);
+        byte[] originalValidData = "{\"valid\": true, \"data\": \"preserved\"}".getBytes(StandardCharsets.UTF_8);
+        writeFileRaw(backupFile, originalValidData);
+
+        assertEquals("Destination file starts at 0 bytes", 0L, destFile.length());
+        assertTrue("Backup file exists with valid data", backupFile.exists() && backupFile.length() > 0);
+
+        boolean recovered = MediaStorageManager.recoverAtomicFile(destFile);
+
+        assertTrue("recoverAtomicFile should return true", recovered);
+        assertTrue("Destination file must exist after recovery", destFile.exists());
+        assertEquals("Destination file size must equal backup size", originalValidData.length, destFile.length());
+        assertArrayEquals("Destination file content must match backup data", originalValidData, readFile(destFile));
+        assertFalse("Backup file should be cleaned up after successful recovery", backupFile.exists());
+    }
 }
