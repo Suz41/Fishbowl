@@ -590,6 +590,7 @@ public final class MediaStorageManager {
      */
     public static boolean isOrphanFolder(File dir, boolean allowAudio) {
         if (dir == null || !dir.exists() || !dir.isDirectory()) return false;
+        if (QUARANTINE_DIR_NAME.equals(dir.getName()) || dir.getName().startsWith(".")) return false;
         if (!dir.canRead() || !dir.canWrite()) return false;
         File[] children = dir.listFiles();
         if (children == null) return false;
@@ -862,14 +863,21 @@ public final class MediaStorageManager {
      */
     public static OrphanFolderReport cleanMediaSubfolders(File parentDir, boolean allowAudio) {
         OrphanFolderReport report = new OrphanFolderReport();
-        File mediaRoot = parentDir;
-        while (mediaRoot != null && !mediaRoot.getName().equals("FishbowlMedia") && mediaRoot.getParentFile() != null) {
-            if (new File(mediaRoot, ".quarantine").exists() || mediaRoot.getName().equals("FishbowlMedia")) break;
-            mediaRoot = mediaRoot.getParentFile();
-        }
-        if (mediaRoot == null) mediaRoot = parentDir;
+        File mediaRoot = resolveMediaRoot(parentDir);
         cleanMediaSubfoldersInternal(parentDir, allowAudio, report, mediaRoot);
         return report;
+    }
+
+    public static File resolveMediaRoot(File dir) {
+        if (dir == null) return null;
+        File curr = dir;
+        while (curr != null) {
+            if ("FishbowlMedia".equals(curr.getName())) {
+                return curr;
+            }
+            curr = curr.getParentFile();
+        }
+        return dir;
     }
 
     private static void cleanMediaSubfoldersInternal(File parentDir, boolean allowAudio, OrphanFolderReport report, File mediaRoot) {
@@ -879,6 +887,7 @@ public final class MediaStorageManager {
 
         for (File child : children) {
             if (!child.isDirectory()) continue;
+            if (QUARANTINE_DIR_NAME.equals(child.getName()) || child.getName().startsWith(".")) continue;
 
             // Bottom-up recursion for nested structures (e.g. TV/Show/Season)
             File[] grandChildren = child.listFiles(File::isDirectory);
