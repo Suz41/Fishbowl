@@ -304,103 +304,12 @@ public class FishbowlWidgetProvider extends AppWidgetProvider {
         if (intent == null) return;
 
         String action = intent.getAction();
-        Log.i(TAG, "onReceive action=" + action);
+        Log.d(TAG, "onReceive action=" + action);
 
-        JellyfinController controller = JellyfinController.getInstance();
-        MediaServiceManager sm = MediaServiceManager.getInstance(context);
-
-        if (ACTION_START_JELLYFIN.equals(action)) {
-            Log.i(TAG, "Widget clicked START JELLYFIN (starting Jellyfin only)");
-            Intent serviceIntent = new Intent(context, JellyfinServerService.class);
-            serviceIntent.setAction(JellyfinServerService.ACTION_START_JELLYFIN);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent);
-            } else {
-                context.startService(serviceIntent);
-            }
-
-            if (controller != null) {
-                controller.start(context);
-            }
-
-            updateAllWidgets(context);
-            new Handler(Looper.getMainLooper()).postDelayed(() -> updateAllWidgets(context), 1500);
-            new Handler(Looper.getMainLooper()).postDelayed(() -> updateAllWidgets(context), 3500);
-
-        } else if (ACTION_START_ALL.equals(action)) {
-            Log.i(TAG, "Widget clicked START ALL");
-            Intent serviceIntent = new Intent(context, JellyfinServerService.class);
-            serviceIntent.setAction(JellyfinServerService.ACTION_START_ALL);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent);
-            } else {
-                context.startService(serviceIntent);
-            }
-
-            if (sm != null) {
-                sm.startAllServices();
-            } else if (controller != null) {
-                controller.start(context);
-            }
-
-            updateAllWidgets(context);
-            new Handler(Looper.getMainLooper()).postDelayed(() -> updateAllWidgets(context), 1500);
-            new Handler(Looper.getMainLooper()).postDelayed(() -> updateAllWidgets(context), 3500);
-
-        } else if (ACTION_RESTART_ALL.equals(action)) {
-            Log.i(TAG, "Widget clicked RESTART ALL");
-            // 1. Immediately stop services
-            Intent stopIntent = new Intent(context, JellyfinServerService.class);
-            stopIntent.setAction(JellyfinServerService.ACTION_STOP_ALL);
-            context.startService(stopIntent);
-
-            if (sm != null) {
-                sm.stopAllServices();
-            }
-            if (controller != null) {
-                controller.stop();
-            }
-
-            updateAllWidgets(context);
-
-            // 2. Delayed restart after processes gracefully exit
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                Log.i(TAG, "Widget restart executing delayed launch");
-                Intent startIntent = new Intent(context, JellyfinServerService.class);
-                startIntent.setAction(JellyfinServerService.ACTION_START_ALL);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(startIntent);
-                } else {
-                    context.startService(startIntent);
-                }
-
-                if (sm != null) {
-                    sm.startAllServices();
-                } else if (controller != null) {
-                    controller.start(context);
-                }
-
-                updateAllWidgets(context);
-                new Handler(Looper.getMainLooper()).postDelayed(() -> updateAllWidgets(context), 2500);
-            }, 1600);
-
-        } else if (ACTION_STOP_ALL.equals(action) || ACTION_TOGGLE_SERVER.equals(action)) {
-            Log.i(TAG, "Widget clicked STOP ALL");
-            Intent stopIntent = new Intent(context, JellyfinServerService.class);
-            stopIntent.setAction(JellyfinServerService.ACTION_STOP_ALL);
-            context.startService(stopIntent);
-
-            if (sm != null) {
-                sm.stopAllServices();
-            }
-            if (controller != null) {
-                controller.stop();
-            }
-
-            updateAllWidgets(context);
-            new Handler(Looper.getMainLooper()).postDelayed(() -> updateAllWidgets(context), 1500);
-
-        } else if (ACTION_PIN_WIDGET.equals(action)) {
+        // Security: Widget control actions are executed strictly via explicit PendingIntents
+        // to JellyfinServerService (exported="false"). The broadcast receiver handles only
+        // layout refresh and launcher lifecycle events.
+        if (ACTION_PIN_WIDGET.equals(action)) {
             Log.i(TAG, "Requesting launcher to pin Fishbowl widget");
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
@@ -413,7 +322,9 @@ public class FishbowlWidgetProvider extends AppWidgetProvider {
                     Log.w(TAG, "requestPinAppWidget error: " + t.getMessage());
                 }
             }
-        } else if (ACTION_WIDGET_UPDATE.equals(action) || AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(action)) {
+        } else if (ACTION_WIDGET_UPDATE.equals(action)
+                || AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(action)
+                || AppWidgetManager.ACTION_APPWIDGET_OPTIONS_CHANGED.equals(action)) {
             updateAllWidgets(context);
         }
     }

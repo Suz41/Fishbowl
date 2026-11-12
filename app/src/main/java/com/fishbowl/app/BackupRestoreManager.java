@@ -207,6 +207,12 @@ public final class BackupRestoreManager {
                 File jfDataDir = new File(homeDir, ".local/share/jellyfin/data");
                 File stagingJfData = new File(stagingDir, "jellyfin_data");
                 if (jfDataDir.exists() && jfDataDir.isDirectory()) {
+                    File[] jfDbs = jfDataDir.listFiles((d, name) -> name != null && name.endsWith(".db"));
+                    if (jfDbs != null) {
+                        for (File db : jfDbs) {
+                            verifySqliteIntegrity(db);
+                        }
+                    }
                     totalCount += stageConfigDir(jfDataDir, stagingJfData, "jellyfin_data", itemsArray);
                 }
 
@@ -567,7 +573,40 @@ public final class BackupRestoreManager {
                     postProgress(callback, "Restoring Jellyfin user database...");
                     File targetJfData = new File(TermuxConstants.TERMUX_HOME_DIR, ".local/share/jellyfin/data");
                     if (!targetJfData.exists()) targetJfData.mkdirs();
+
+                    // WAL/SHM coordination: check if incoming backup has WAL/SHM files
+                    boolean backupHasWal = false;
+                    File[] stagedFiles = stagingJfData.listFiles();
+                    if (stagedFiles != null) {
+                        for (File sf : stagedFiles) {
+                            if (sf.getName().endsWith("-wal") || sf.getName().endsWith("-shm")) {
+                                backupHasWal = true;
+                                break;
+                            }
+                        }
+                    }
+                    // If backup does NOT include WAL/SHM, delete stale target WAL/SHM to avoid replay corruption
+                    if (!backupHasWal) {
+                        File[] liveFiles = targetJfData.listFiles();
+                        if (liveFiles != null) {
+                            for (File lf : liveFiles) {
+                                if (lf.getName().endsWith("-wal") || lf.getName().endsWith("-shm")) {
+                                    lf.delete();
+                                }
+                            }
+                        }
+                    }
+
                     configCount += copyDirectory(stagingJfData, targetJfData);
+
+                    // Verify SQLite database integrity after restoration before confirming success
+                    postProgress(callback, "Verifying SQLite database integrity...");
+                    File[] restoredDbs = targetJfData.listFiles((d, name) -> name != null && name.endsWith(".db"));
+                    if (restoredDbs != null) {
+                        for (File db : restoredDbs) {
+                            verifySqliteIntegrity(db);
+                        }
+                    }
                 }
 
                 // 7. POSIX block sync
@@ -639,6 +678,34 @@ public final class BackupRestoreManager {
 
     private static void postProgress(RestoreCallback callback, String msg) {
         if (callback != null) postOnMainThread(() -> callback.onProgress(msg));
+    }
+
+    /**
+     * Executes SQLite PRAGMA integrity_check to verify database structural consistency.
+     * Throws an IOException if corrupted or unreadable to trigger automated rollback.
+     */
+    public static void verifySqliteIntegrity(File dbFile) throws java.io.IOException {
+        if (dbFile == null || !dbFile.exists() || dbFile.length() == 0) return;
+        SQLiteDatabase db = null;
+        try {
+            db = SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY);
+            if (db == null) return; // SQLiteDatabase provider stubbed/unavailable in unit test environment
+            try (Cursor c = db.rawQuery("PRAGMA integrity_check;", null)) {
+                if (c != null && c.moveToFirst()) {
+                    String result = c.getString(0);
+                    if (!"ok".equalsIgnoreCase(result)) {
+                        throw new java.io.IOException("SQLite integrity check failed for " + dbFile.getName() + ": " + result);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            if (t instanceof java.io.IOException) throw (java.io.IOException) t;
+            throw new java.io.IOException("SQLite database verification failed for " + dbFile.getName() + ": " + t.getMessage(), t);
+        } finally {
+            if (db != null) {
+                try { db.close(); } catch (Throwable ignored) {}
+            }
+        }
     }
 
     public static String computeSHA256(File file) throws Exception {

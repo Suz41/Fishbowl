@@ -32,4 +32,20 @@ public class PasswordResetAndNetworkTest {
         Assert.assertEquals("fishbowl_password_reset_channel", PasswordResetManager.CHANNEL_ID);
         Assert.assertEquals(2048, PasswordResetManager.NOTIFICATION_ID);
     }
+
+    @Test
+    public void testKeystoreCryptoRoundtripAndTamperResistance() {
+        String originalPassword = "FishBowl_Super_Secret_Password_2026!";
+        String encrypted = com.fishbowl.app.security.FishbowlKeystoreCrypto.encrypt(null, originalPassword);
+        Assert.assertNotNull("Encrypted string should not be null", encrypted);
+        Assert.assertNotEquals("Encrypted ciphertext must not match plaintext", originalPassword, encrypted);
+
+        String decrypted = com.fishbowl.app.security.FishbowlKeystoreCrypto.decrypt(null, encrypted);
+        Assert.assertEquals("Decrypted password must match original plaintext", originalPassword, decrypted);
+
+        // Tamper resistance: corrupted ciphertext should fail decryption gracefully without crash
+        String tampered = encrypted.substring(0, encrypted.length() - 4) + "AAAA";
+        String tamperedDecrypted = com.fishbowl.app.security.FishbowlKeystoreCrypto.decrypt(null, tampered);
+        Assert.assertNull("Tampered ciphertext should fail decryption and return null", tamperedDecrypted);
+    }
 }

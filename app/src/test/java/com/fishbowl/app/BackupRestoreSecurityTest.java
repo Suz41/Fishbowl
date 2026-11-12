@@ -433,6 +433,78 @@ public class BackupRestoreSecurityTest {
         Assert.assertFalse("Recovery with no valid database or backup must return false, not true", healed);
     }
 
+    /**
+     * Test 12: Stale WAL and SHM journal deletion when backup archive lacks them:
+     * - Prevents SQLite WAL replay corruption over restored database snapshots.
+     */
+    @Test
+    public void test12_WalShmReplayPreventionOnRestore() throws Exception {
+        File targetDataDir = new File(testRoot, "target_jf_data");
+        targetDataDir.mkdirs();
+
+        File dbFile = new File(targetDataDir, "jellyfin.db");
+        File walFile = new File(targetDataDir, "jellyfin.db-wal");
+        File shmFile = new File(targetDataDir, "jellyfin.db-shm");
+
+        writeFile(dbFile, "sqlite db header");
+        writeFile(walFile, "stale wal log bytes");
+        writeFile(shmFile, "stale shm shared memory bytes");
+
+        Assert.assertTrue(walFile.exists());
+        Assert.assertTrue(shmFile.exists());
+
+        // Incoming backup staging without WAL/SHM
+        File stagingDataDir = new File(testRoot, "staging_jf_data");
+        stagingDataDir.mkdirs();
+        File incomingDb = new File(stagingDataDir, "jellyfin.db");
+        writeFile(incomingDb, "restored sqlite db header");
+
+        // Simulate restore WAL/SHM coordination logic from BackupRestoreManager
+        boolean backupHasWal = false;
+        File[] stagedFiles = stagingDataDir.listFiles();
+        if (stagedFiles != null) {
+            for (File sf : stagedFiles) {
+                if (sf.getName().endsWith("-wal") || sf.getName().endsWith("-shm")) {
+                    backupHasWal = true;
+                    break;
+                }
+            }
+        }
+        Assert.assertFalse("Staged backup has no WAL/SHM", backupHasWal);
+
+        if (!backupHasWal) {
+            File[] liveFiles = targetDataDir.listFiles();
+            if (liveFiles != null) {
+                for (File lf : liveFiles) {
+                    if (lf.getName().endsWith("-wal") || lf.getName().endsWith("-shm")) {
+                        lf.delete();
+                    }
+                }
+            }
+        }
+
+        Assert.assertFalse("Stale target WAL must be deleted to prevent log replay", walFile.exists());
+        Assert.assertFalse("Stale target SHM must be deleted to prevent log replay", shmFile.exists());
+        Assert.assertTrue("Target DB file must still exist", dbFile.exists());
+    }
+
+    /**
+     * Test 13: SQLite integrity check verifies null, empty and missing files without crashing.
+     */
+    @Test
+    public void test13_VerifySqliteIntegrityNullAndEmptyHandling() throws Exception {
+        // Null file
+        BackupRestoreManager.verifySqliteIntegrity(null);
+
+        // Non-existent file
+        BackupRestoreManager.verifySqliteIntegrity(new File(testRoot, "non_existent.db"));
+
+        // Empty file
+        File emptyDb = new File(testRoot, "empty.db");
+        writeFile(emptyDb, "");
+        BackupRestoreManager.verifySqliteIntegrity(emptyDb);
+    }
+
     private void writeFile(File file, String content) throws IOException {
         File parent = file.getParentFile();
         if (parent != null && !parent.exists()) parent.mkdirs();

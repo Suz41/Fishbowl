@@ -2,6 +2,7 @@ package com.fishbowl.app;
 
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.os.Environment;
@@ -212,34 +213,88 @@ public final class JellyfinAccountManager {
     }
 
     private static final String PREF_KNOWN_PASSWORDS = "fishbowl_jellyfin_known_passwords";
+    private static final String PREF_SECURE_CREDENTIALS = "fishbowl_jellyfin_secure_credentials";
 
+    /**
+     * Retrieves the decrypted password for a given username using Android Keystore.
+     * Automatically migrates and purges legacy plaintext entries from ordinary SharedPreferences.
+     */
     public static String getKnownPassword(Context context, String username) {
         if (context == null || username == null) return null;
+        String key = username.trim().toLowerCase(Locale.ROOT);
         try {
-            return context.getSharedPreferences(PREF_KNOWN_PASSWORDS, Context.MODE_PRIVATE)
-                    .getString(username.trim().toLowerCase(Locale.ROOT), null);
+            // 1. Check encrypted credentials
+            String encrypted = context.getSharedPreferences(PREF_SECURE_CREDENTIALS, Context.MODE_PRIVATE)
+                    .getString(key, null);
+            if (encrypted != null && !encrypted.isEmpty()) {
+                String decrypted = com.fishbowl.app.security.FishbowlKeystoreCrypto.decrypt(context, encrypted);
+                if (decrypted != null) {
+                    return decrypted;
+                }
+            }
+
+            // 2. Legacy migration check: if legacy plaintext entry exists, migrate it to Keystore encryption
+            SharedPreferences legacyPrefs = context.getSharedPreferences(PREF_KNOWN_PASSWORDS, Context.MODE_PRIVATE);
+            String legacyPlain = legacyPrefs.getString(key, null);
+            if (legacyPlain != null && !legacyPlain.isEmpty()) {
+                storeKnownPassword(context, username, legacyPlain);
+                legacyPrefs.edit().remove(key).apply();
+                return legacyPlain;
+            }
         } catch (Throwable t) {
-            return null;
+            Log.w(TAG, "getKnownPassword error: " + t.getMessage());
         }
+        return null;
     }
 
+    /**
+     * Encrypts and stores the password using hardware-backed Android Keystore AES-256-GCM.
+     * Purges any unencrypted legacy plaintext entries immediately.
+     */
     public static void storeKnownPassword(Context context, String username, String plainPassword) {
-        if (context == null || username == null || plainPassword == null) return;
+        if (context == null || username == null || plainPassword == null || plainPassword.isEmpty()) return;
+        String key = username.trim().toLowerCase(Locale.ROOT);
         try {
+            String encrypted = com.fishbowl.app.security.FishbowlKeystoreCrypto.encrypt(context, plainPassword);
+            if (encrypted != null) {
+                context.getSharedPreferences(PREF_SECURE_CREDENTIALS, Context.MODE_PRIVATE)
+                        .edit()
+                        .putString(key, encrypted)
+                        .apply();
+            }
+            // Ensure no plaintext remains in legacy prefs
             context.getSharedPreferences(PREF_KNOWN_PASSWORDS, Context.MODE_PRIVATE)
                     .edit()
-                    .putString(username.trim().toLowerCase(Locale.ROOT), plainPassword)
+                    .remove(key)
                     .apply();
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            Log.e(TAG, "storeKnownPassword error: " + t.getMessage());
+        }
     }
 
     public static void removeKnownPassword(Context context, String username) {
         if (context == null || username == null) return;
+        String key = username.trim().toLowerCase(Locale.ROOT);
         try {
+            context.getSharedPreferences(PREF_SECURE_CREDENTIALS, Context.MODE_PRIVATE)
+                    .edit()
+                    .remove(key)
+                    .apply();
             context.getSharedPreferences(PREF_KNOWN_PASSWORDS, Context.MODE_PRIVATE)
                     .edit()
-                    .remove(username.trim().toLowerCase(Locale.ROOT))
+                    .remove(key)
                     .apply();
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Purges all cached encrypted credentials from device storage.
+     */
+    public static void purgeAllKnownPasswords(Context context) {
+        if (context == null) return;
+        try {
+            context.getSharedPreferences(PREF_SECURE_CREDENTIALS, Context.MODE_PRIVATE).edit().clear().apply();
+            context.getSharedPreferences(PREF_KNOWN_PASSWORDS, Context.MODE_PRIVATE).edit().clear().apply();
         } catch (Throwable ignored) {}
     }
 

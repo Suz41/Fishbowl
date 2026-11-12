@@ -229,8 +229,20 @@ public final class PasswordResetManager {
         return new File(TermuxConstants.TERMUX_HOME_DIR, ".local/share/jellyfin");
     }
 
-    public static File getPasswordDirectory() {
-        File passDir = new File(MediaStorageManager.DEFAULT_MEDIA_ROOT, "password");
+    public File getPasswordDirectory() {
+        File passDir = new File(appContext.getFilesDir(), "password_resets");
+        if (!passDir.exists()) {
+            passDir.mkdirs();
+        }
+        return passDir;
+    }
+
+    /**
+     * Legacy compatibility accessor; redirects to app-private storage.
+     */
+    public static File getPasswordDirectory(Context context) {
+        File baseDir = (context != null) ? context.getFilesDir() : new File(TermuxConstants.TERMUX_HOME_DIR, ".fishbowl");
+        File passDir = new File(baseDir, "password_resets");
         if (!passDir.exists()) {
             passDir.mkdirs();
         }
@@ -339,11 +351,10 @@ public final class PasswordResetManager {
     }
 
     private void writeTextFile(File file, String content) {
-        try (FileOutputStream fos = new FileOutputStream(file)) {
-            fos.write(content.getBytes(StandardCharsets.UTF_8));
-            fos.flush();
-        } catch (Throwable t) {
-            Log.e(TAG, "Failed writing reset PIN file: " + file.getAbsolutePath(), t);
+        if (file == null || content == null) return;
+        boolean ok = MediaStorageManager.safeAtomicWrite(file, content.getBytes(StandardCharsets.UTF_8));
+        if (!ok) {
+            Log.e(TAG, "Failed safe atomic write of reset PIN file: " + file.getAbsolutePath());
         }
     }
 
@@ -375,6 +386,19 @@ public final class PasswordResetManager {
                     }
                 }
             }
+
+            // Also clean up any legacy plaintext PIN files that may have been written to public external storage
+            try {
+                File legacyExternalPasswordDir = new File(MediaStorageManager.DEFAULT_MEDIA_ROOT, "password");
+                if (legacyExternalPasswordDir.exists() && legacyExternalPasswordDir.isDirectory()) {
+                    File[] legacyFiles = legacyExternalPasswordDir.listFiles((dir, name) -> name != null && name.startsWith("jellyfin_password_reset"));
+                    if (legacyFiles != null) {
+                        for (File lf : legacyFiles) {
+                            lf.delete();
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
 
             // Also check internal Jellyfin share directory for expired reset json files
             File jfDir = getJellyfinShareDir();
