@@ -105,6 +105,11 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     private final ProcessExitSupervisor processExitSupervisor = new ProcessExitSupervisor();
     private final ExecutorService processExitExecutor = processExitSupervisor.getPrimaryExecutor();
     private final java.util.concurrent.ScheduledExecutorService dedupScheduler = Executors.newSingleThreadScheduledExecutor();
+    private final java.util.concurrent.ScheduledExecutorService automationScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "Fishbowl-Automation");
+        t.setDaemon(true);
+        return t;
+    });
         private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ServiceHealthMonitor healthMonitor = new ServiceHealthMonitor();
     private volatile boolean isBridgeInitialized = false;
@@ -393,6 +398,45 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         bridgeJellyfinController();
         reconcileRunningServices();
         startDeduplicationWatcher();
+        startAutomationWatchers();
+    }
+
+    /** Never lets a failure in the Wi-Fi only feature block a service from starting. */
+    private boolean wifiStartAllowedSafe(String id) {
+        try {
+            return NetworkPolicyEnforcer.isStartAllowed(appContext, id);
+        } catch (Throwable t) {
+            Log.w(TAG, "Wi-Fi only check failed, allowing start: " + t);
+            return true;
+        }
+    }
+
+    /** Built-in automations: Transmission auto-cleanup/recheck and the per-service Wi-Fi only policy. */
+    private void startAutomationWatchers() {
+        try {
+            automationScheduler.scheduleWithFixedDelay(() -> {
+                try {
+                    if (appContext == null || !AutomationPrefs.isCleanupEnabled(appContext)) return;
+                    if (!isServiceRunning("transmission")) return;
+                    TransmissionAutoCleanup.run(appContext, false);
+                } catch (Throwable t) {
+                    Log.w(TAG, "[AutoCleanup] pass failed: " + t.getMessage());
+                }
+            }, 2, 30, java.util.concurrent.TimeUnit.MINUTES);
+            automationScheduler.scheduleWithFixedDelay(() -> {
+                try {
+                    if (appContext == null || !AutomationPrefs.isAutoRecheckEnabled(appContext)) return;
+                    if (!isServiceRunning("transmission")) return;
+                    TransmissionAutoRecheck.run(appContext);
+                } catch (Throwable t) {
+                    Log.w(TAG, "[AutoRecheck] pass failed: " + t.getMessage());
+                }
+            }, 90, 60, java.util.concurrent.TimeUnit.SECONDS);
+            NetworkPolicyEnforcer.start(appContext, this);
+            ExitDiagnostics.install(appContext, this);
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to start automation watchers: " + t.getMessage());
+        }
     }
 
     private void startDeduplicationWatcher() {
@@ -889,6 +933,17 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         if (ms == null) {
             if (callback != null) {
                 callback.onResult(new ServiceLifecycleResult.Failure(id, "Service not found in registry", null));
+            }
+            return;
+        }
+
+        // Per-service "Wi-Fi only": defer the start while the device is on mobile data
+        if (appContext != null && !wifiStartAllowedSafe(id)) {
+            recordServiceActive(id, true);
+            AutomationPrefs.addWifiPaused(appContext, id);
+            ms.appendLog("[Wi-Fi only] Mobile data active - start deferred until Wi-Fi is available.");
+            if (callback != null) {
+                callback.onResult(new ServiceLifecycleResult.Failure(id, "Wi-Fi only: waiting for Wi-Fi", null));
             }
             return;
         }
@@ -1468,6 +1523,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
 
     @Override
     public void stopService(String id, ServiceLifecycleCallback callback) {
+        try { NetworkPolicyEnforcer.onStopRequested(appContext, id); } catch (Throwable ignored) {}
         recordServiceActive(id, false);
         ManagedService ms = services.get(id);
         if (ms == null) {

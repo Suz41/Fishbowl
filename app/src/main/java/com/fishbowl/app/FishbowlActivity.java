@@ -3226,6 +3226,8 @@ public final class FishbowlActivity extends AppCompatActivity
         ProgressBar progressBar;
         TextView metaLeftTv;
         TextView btnDelete;
+        TextView btnToggle;
+        int status;
     }
 
     private void refreshDownloadCenter() {
@@ -3311,6 +3313,8 @@ public final class FishbowlActivity extends AppCompatActivity
                         holder.pillTv.setBackground(createBorderedRoundedDrawable(colorWithAlpha(pillColor, 20), colorWithAlpha(pillColor, 50), dp(1), dp(4)));
 
                         holder.progressBar.setProgress((int) Math.round(t.percentDone * 1000));
+                        holder.status = t.status;
+                        if (holder.btnToggle != null) holder.btnToggle.setText(t.status == 0 ? "PLAY" : "PAUSE");
 
                         StringBuilder meta = new StringBuilder();
                         if (t.sizeWhenDone > 0) {
@@ -3459,6 +3463,46 @@ public final class FishbowlActivity extends AppCompatActivity
 
                     item.addView(metaRow);
 
+                    // Row 4: Actions (Pause/Play, Force start, Recheck)
+                    LinearLayout actionRow = new LinearLayout(this);
+                    actionRow.setOrientation(LinearLayout.HORIZONTAL);
+                    actionRow.setGravity(Gravity.CENTER_VERTICAL);
+                    actionRow.setPadding(0, dp(8), 0, 0);
+
+                    final TextView btnToggle = createTorrentActionButton(t.status == 0 ? "PLAY" : "PAUSE", Color.parseColor("#38BDF8"));
+                    holder.btnToggle = btnToggle;
+                    holder.status = t.status;
+                    final int torrentId = t.id;
+                    btnToggle.setOnClickListener(v -> {
+                        final MediaStorageManager msm = MediaStorageManager.getInstance(this);
+                        if (holder.status == 0) {
+                            runTorrentAction("Resumed.", () -> msm.resumeTransmissionTorrent(torrentId));
+                        } else {
+                            runTorrentAction("Paused.", () -> msm.pauseTransmissionTorrent(torrentId));
+                        }
+                    });
+
+                    final TextView btnForce = createTorrentActionButton("FORCE START", Color.parseColor("#22C55E"));
+                    btnForce.setOnClickListener(v -> {
+                        final MediaStorageManager msm = MediaStorageManager.getInstance(this);
+                        runTorrentAction("Force started.", () -> msm.forceStartTransmissionTorrent(torrentId));
+                    });
+
+                    final TextView btnRecheck = createTorrentActionButton("RECHECK", Color.parseColor("#F59E0B"));
+                    btnRecheck.setOnClickListener(v -> {
+                        final MediaStorageManager msm = MediaStorageManager.getInstance(this);
+                        runTorrentAction("Recheck started.", () -> msm.recheckTransmissionTorrent(torrentId));
+                    });
+
+                    LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(0, -2, 1.0f);
+                    alp.rightMargin = dp(6);
+                    actionRow.addView(btnToggle, alp);
+                    LinearLayout.LayoutParams alp2 = new LinearLayout.LayoutParams(0, -2, 1.3f);
+                    alp2.rightMargin = dp(6);
+                    actionRow.addView(btnForce, alp2);
+                    actionRow.addView(btnRecheck, new LinearLayout.LayoutParams(0, -2, 1.0f));
+                    item.addView(actionRow);
+
                     item.setTag(holder);
                     downloadItemsContainer.addView(item);
                 }
@@ -3560,6 +3604,36 @@ public final class FishbowlActivity extends AppCompatActivity
         ));
 
         dRef[0] = showOledDialog("Clear Downloads", "Select an action for active and completed tasks", content, null, 0, null, "CANCEL", null);
+    }
+
+    private TextView createTorrentActionButton(String label, int color) {
+        TextView b = new TextView(this);
+        b.setText(label);
+        b.setTextSize(9.5f);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setTextColor(color);
+        b.setGravity(Gravity.CENTER);
+        b.setPadding(dp(4), dp(5), dp(4), dp(5));
+        b.setBackground(createBorderedRoundedDrawable(colorWithAlpha(color, 20), colorWithAlpha(color, 60), dp(1), dp(4)));
+        b.setClickable(true);
+        b.setFocusable(true);
+        return b;
+    }
+
+    private void runTorrentAction(final String okMessage, final java.util.concurrent.Callable<Boolean> action) {
+        new Thread(() -> {
+            boolean ok;
+            try {
+                ok = Boolean.TRUE.equals(action.call());
+            } catch (Throwable t) {
+                ok = false;
+            }
+            final boolean result = ok;
+            runOnUiThread(() -> {
+                Toast.makeText(this, result ? okMessage : "Transmission did not accept the command.", Toast.LENGTH_SHORT).show();
+                refreshDownloadCenter();
+            });
+        }, "Fishbowl-TorrentAction").start();
     }
 
     private void showRemoveSingleTorrentDialog(MediaStorageManager.TorrentInfo torrent) {
@@ -8379,6 +8453,9 @@ public final class FishbowlActivity extends AppCompatActivity
         // Section 1: GENERAL & STARTUP (At top as requested)
         layout.addView(buildGeneralSection());
 
+        // AUTOMATION: Transmission auto-cleanup/recheck + per-service Wi-Fi only
+        layout.addView(buildAutomationSection());
+
         // Section 2: FISHBOWL STORAGE (Hardware runtime & app footprint)
         layout.addView(buildStorageSection());
 
@@ -9383,6 +9460,197 @@ public final class FishbowlActivity extends AppCompatActivity
 
         section.addView(card);
         return section;
+    }
+
+
+    // -- AUTOMATION: Transmission auto-cleanup, auto-recheck & per-service Wi-Fi only ----------
+
+    private View buildAutomationSection() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        section.addView(createSettingsSectionHeader("AUTOMATION"));
+
+        LinearLayout card = createSettingsSectionCard();
+
+        // --- Transmission auto-cleanup -------------------------------------------------
+        LinearLayout cleanRow = new LinearLayout(this);
+        cleanRow.setOrientation(LinearLayout.HORIZONTAL);
+        cleanRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout cleanText = new LinearLayout(this);
+        cleanText.setOrientation(LinearLayout.VERTICAL);
+        TextView cleanTitle = new TextView(this);
+        cleanTitle.setText("Transmission auto-cleanup");
+        cleanTitle.setTextSize(13.5f);
+        cleanTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        cleanTitle.setTextColor(Color.parseColor("#F4F4F5"));
+        cleanText.addView(cleanTitle);
+        TextView cleanSub = new TextView(this);
+        cleanSub.setText("Remove finished torrents AND their downloaded files after the period below. Make sure Radarr/Sonarr have already imported them (or that they hard-link/copy), otherwise the files are lost.");
+        cleanSub.setTextSize(11f);
+        cleanSub.setTextColor(Color.parseColor("#71717A"));
+        cleanSub.setPadding(0, dp(2), dp(8), 0);
+        cleanText.addView(cleanSub);
+        cleanRow.addView(cleanText, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        Switch cleanSwitch = new Switch(this);
+        cleanSwitch.setChecked(com.fishbowl.app.services.AutomationPrefs.isCleanupEnabled(this));
+        cleanSwitch.setOnCheckedChangeListener((v, checked) -> {
+            com.fishbowl.app.services.AutomationPrefs.setCleanupEnabled(this, checked);
+            Toast.makeText(this, checked ? "Auto-cleanup enabled." : "Auto-cleanup disabled.", Toast.LENGTH_SHORT).show();
+        });
+        cleanRow.addView(cleanSwitch);
+        card.addView(cleanRow);
+
+        // Period (hours)
+        LinearLayout periodRow = new LinearLayout(this);
+        periodRow.setOrientation(LinearLayout.HORIZONTAL);
+        periodRow.setGravity(Gravity.CENTER_VERTICAL);
+        periodRow.setPadding(0, dp(10), 0, dp(4));
+        TextView periodLabel = new TextView(this);
+        periodLabel.setText("Delete after (hours)");
+        periodLabel.setTextSize(12.5f);
+        periodLabel.setTextColor(Color.parseColor("#F4F4F5"));
+        periodRow.addView(periodLabel, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        final android.widget.EditText hoursInput = new android.widget.EditText(this);
+        hoursInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        hoursInput.setText(String.valueOf(com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this)));
+        hoursInput.setTextColor(Color.WHITE);
+        hoursInput.setTextSize(13f);
+        hoursInput.setGravity(Gravity.CENTER);
+        hoursInput.setSingleLine(true);
+        periodRow.addView(hoursInput, new LinearLayout.LayoutParams(dp(80), -2));
+        Button btnSaveHours = createPixelButton("SAVE", Color.argb(25, 56, 189, 248), Color.parseColor("#38BDF8"));
+        btnSaveHours.setTextSize(10f);
+        btnSaveHours.setPadding(dp(10), 0, dp(10), 0);
+        btnSaveHours.setOnClickListener(v -> {
+            int h = com.fishbowl.app.services.AutomationPrefs.DEFAULT_CLEANUP_HOURS;
+            try { h = Integer.parseInt(hoursInput.getText().toString().trim()); } catch (Throwable ignored) {}
+            com.fishbowl.app.services.AutomationPrefs.setCleanupHours(this, h);
+            hoursInput.setText(String.valueOf(com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this)));
+            Toast.makeText(this, "Saved: " + com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this) + " h", Toast.LENGTH_SHORT).show();
+        });
+        LinearLayout.LayoutParams saveLp = new LinearLayout.LayoutParams(-2, dp(32));
+        saveLp.leftMargin = dp(8);
+        periodRow.addView(btnSaveHours, saveLp);
+        card.addView(periodRow);
+
+        // Preview + run now
+        final TextView statusText = new TextView(this);
+        statusText.setTextSize(11f);
+        statusText.setTextColor(Color.parseColor("#A1A1AA"));
+        statusText.setPadding(0, dp(4), 0, dp(6));
+        long lastRun = com.fishbowl.app.services.AutomationPrefs.getCleanupLastRun(this);
+        statusText.setText(lastRun > 0
+                ? "Last run: " + new java.util.Date(lastRun) + "\n" + com.fishbowl.app.services.AutomationPrefs.getCleanupLastSummary(this)
+                : "Checks every 30 minutes while Transmission is running. Not run yet.");
+        card.addView(statusText);
+
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button btnPreview = createPixelButton("PREVIEW", Color.parseColor("#18191E"), Color.parseColor("#38BDF8"));
+        btnPreview.setTextSize(10.5f);
+        btnPreview.setOnClickListener(v -> runCleanupAsync(true, statusText));
+        Button btnRunNow = createPixelButton("CLEAN NOW", Color.parseColor("#18191E"), Color.parseColor("#F87171"));
+        btnRunNow.setTextSize(10.5f);
+        btnRunNow.setOnClickListener(v -> runCleanupAsync(false, statusText));
+        LinearLayout.LayoutParams b1 = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
+        b1.rightMargin = dp(6);
+        LinearLayout.LayoutParams b2 = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
+        btnRow.addView(btnPreview, b1);
+        btnRow.addView(btnRunNow, b2);
+        card.addView(btnRow);
+
+        card.addView(createSettingsDivider());
+
+        // --- Transmission auto-recheck on error ----------------------------------------
+        LinearLayout recheckRow = new LinearLayout(this);
+        recheckRow.setOrientation(LinearLayout.HORIZONTAL);
+        recheckRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout recheckText = new LinearLayout(this);
+        recheckText.setOrientation(LinearLayout.VERTICAL);
+        TextView recheckTitle = new TextView(this);
+        recheckTitle.setText("Auto-recheck on download error");
+        recheckTitle.setTextSize(13.5f);
+        recheckTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        recheckTitle.setTextColor(Color.parseColor("#F4F4F5"));
+        recheckText.addView(recheckTitle);
+        TextView recheckSub = new TextView(this);
+        recheckSub.setText("When a torrent reports any error, Fishbowl re-verifies its data and resumes it. Retries back off (5, 10, 20, 40, 80 min) and stop after 5 attempts until the error clears.");
+        recheckSub.setTextSize(11f);
+        recheckSub.setTextColor(Color.parseColor("#71717A"));
+        recheckSub.setPadding(0, dp(2), dp(8), 0);
+        recheckText.addView(recheckSub);
+        recheckRow.addView(recheckText, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        Switch recheckSwitch = new Switch(this);
+        recheckSwitch.setChecked(com.fishbowl.app.services.AutomationPrefs.isAutoRecheckEnabled(this));
+        recheckSwitch.setOnCheckedChangeListener((v, checked) -> {
+            com.fishbowl.app.services.AutomationPrefs.setAutoRecheckEnabled(this, checked);
+            Toast.makeText(this, checked ? "Auto-recheck enabled." : "Auto-recheck disabled.", Toast.LENGTH_SHORT).show();
+        });
+        recheckRow.addView(recheckSwitch);
+        card.addView(recheckRow);
+
+        card.addView(createSettingsDivider());
+
+        // --- Per-service Wi-Fi only ----------------------------------------------------
+        TextView wifiTitle = new TextView(this);
+        wifiTitle.setText("Wi-Fi only (per service)");
+        wifiTitle.setTextSize(13.5f);
+        wifiTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        wifiTitle.setTextColor(Color.parseColor("#F4F4F5"));
+        card.addView(wifiTitle);
+        TextView wifiSub = new TextView(this);
+        wifiSub.setText("A service switched on here is stopped while the phone uses mobile data and starts again automatically when Wi-Fi/Ethernet returns. Going offline does not stop it.");
+        wifiSub.setTextSize(11f);
+        wifiSub.setTextColor(Color.parseColor("#71717A"));
+        wifiSub.setPadding(0, dp(2), 0, dp(8));
+        card.addView(wifiSub);
+
+        com.fishbowl.app.services.MediaServiceManager msm = com.fishbowl.app.services.MediaServiceManager.getInstance();
+        if (msm != null) {
+            for (com.fishbowl.app.model.ManagedService svc : msm.getAllServices()) {
+                final String svcId = svc.getId();
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(0, dp(4), 0, dp(4));
+                TextView name = new TextView(this);
+                name.setText(svc.getManifest().getDisplayName());
+                name.setTextSize(12.5f);
+                name.setTextColor(Color.parseColor("#F4F4F5"));
+                row.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
+                Switch sw = new Switch(this);
+                sw.setChecked(com.fishbowl.app.services.AutomationPrefs.isWifiOnly(this, svcId));
+                sw.setOnCheckedChangeListener((v, checked) -> {
+                    com.fishbowl.app.services.AutomationPrefs.setWifiOnly(this, svcId, checked);
+                    com.fishbowl.app.services.NetworkPolicyEnforcer.reevaluate();
+                });
+                row.addView(sw);
+                card.addView(row);
+            }
+        } else {
+            TextView none = new TextView(this);
+            none.setText("Service manager not ready yet - reopen this tab in a moment.");
+            none.setTextSize(11f);
+            none.setTextColor(Color.parseColor("#71717A"));
+            card.addView(none);
+        }
+
+        section.addView(card);
+        return section;
+    }
+
+    private void runCleanupAsync(final boolean dryRun, final TextView statusText) {
+        statusText.setText(dryRun ? "Checking..." : "Cleaning...");
+        new Thread(() -> {
+            String msg;
+            try {
+                msg = com.fishbowl.app.services.TransmissionAutoCleanup.run(this, dryRun).describe();
+            } catch (Throwable t) {
+                msg = "Failed: " + t.getMessage();
+            }
+            final String out = msg;
+            runOnUiThread(() -> statusText.setText(out));
+        }, "Fishbowl-CleanupNow").start();
     }
 
     // -- Section 3: Permissions & Background Survival (Drawer) -----------------
