@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: apk-${{ github.ref }}
@@ -90,3 +90,16 @@ jobs:
           name: fishbowl-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
+
+      - name: Publish APK as a GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(ls -1 app/build/outputs/apk/debug/*.apk | head -n 1)
+          TAG="build-${GITHUB_RUN_NUMBER}-${FISHBOWL_VERSION_NAME}"
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          gh release create "$TAG" "$APK" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Fishbowl ${FISHBOWL_VERSION_NAME} (build ${GITHUB_RUN_NUMBER})" \
+            --notes "Debug APK signed with the repository test key (updates over previous installs). sha256: ${SHA}"
