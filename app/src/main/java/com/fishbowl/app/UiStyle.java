@@ -150,7 +150,7 @@ public final class UiStyle {
             if (Build.VERSION.SDK_INT >= 31) {
                 w.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
                 WindowManager.LayoutParams lp = w.getAttributes();
-                lp.blurBehindRadius = dp(c, 6 + blur(c) * 0.3f);
+                lp.setBlurBehindRadius(dp(c, 6 + blur(c) * 0.3f));
                 w.setAttributes(lp);
                 w.setDimAmount(0.55f);
             }
