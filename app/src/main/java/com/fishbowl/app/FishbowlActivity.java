@@ -768,7 +768,7 @@ public final class FishbowlActivity extends AppCompatActivity
     private int getBorderColor() { return Color.argb(20, 255, 255, 255); }
     private int getPrimaryTextColor() { return Color.parseColor("#F4F4F5"); }
     private int getSecondaryTextColor() { return Color.parseColor("#A1A1AA"); }
-    private int getAccentColor() { return Color.parseColor("#38BDF8"); }
+    private int getAccentColor() { return UiStyle.accent(this); }
     private int getSuccessColor() { return Color.parseColor("#34D399"); }
     private int getWarningColor() { return Color.parseColor("#FFD51E"); }
     private int getDangerColor() { return Color.parseColor("#FF1744"); }
@@ -5541,6 +5541,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams wlp = new WindowManager.LayoutParams();
             wlp.copyFrom(d.getWindow().getAttributes());
             wlp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.94);
@@ -5779,6 +5780,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
             lp.copyFrom(d.getWindow().getAttributes());
             lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.94);
@@ -6113,6 +6115,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
             lp.copyFrom(d.getWindow().getAttributes());
             lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.90);
@@ -6322,6 +6325,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
             lp.copyFrom(d.getWindow().getAttributes());
             lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.90);
@@ -6502,6 +6506,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams wlp = new WindowManager.LayoutParams();
             wlp.copyFrom(d.getWindow().getAttributes());
             wlp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.92);
@@ -8039,6 +8044,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
             lp.copyFrom(d.getWindow().getAttributes());
             lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.92);
@@ -8259,6 +8265,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
             lp.copyFrom(d.getWindow().getAttributes());
             lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.92);
@@ -8502,7 +8509,7 @@ public final class FishbowlActivity extends AppCompatActivity
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setSmoothScrollingEnabled(true);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(getBgColor());
+        scroll.setBackground(UiStyle.pageBackground(this));
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -8531,6 +8538,9 @@ public final class FishbowlActivity extends AppCompatActivity
 
         // Section 1: GENERAL & STARTUP (At top as requested)
         layout.addView(buildGeneralSection());
+
+        // APPEARANCE: accent, glass, blur, corners, background
+        layout.addView(buildAppearanceSection());
 
         // AUTOMATION: Transmission auto-cleanup/recheck + per-service Wi-Fi only
         layout.addView(buildAutomationSection());
@@ -8593,6 +8603,7 @@ public final class FishbowlActivity extends AppCompatActivity
         layout.addView(communityRow);
 
         scroll.addView(layout);
+        UiStyle.styleAllSwitches(this, layout);
         refreshStorageBar();
         return scroll;
     }
@@ -8600,8 +8611,9 @@ public final class FishbowlActivity extends AppCompatActivity
     private LinearLayout createSettingsSectionCard() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(createRoundedDrawable(Color.parseColor("#0C0D10"), dp(12)));
-        card.setPadding(dp(16), dp(12), dp(16), dp(12));
+        card.setBackground(UiStyle.card(this));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        if (Build.VERSION.SDK_INT >= 21) card.setElevation(dp(2));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.bottomMargin = dp(14);
         card.setLayoutParams(lp);
@@ -8613,9 +8625,9 @@ public final class FishbowlActivity extends AppCompatActivity
         tv.setText(title);
         tv.setTextSize(10.5f);
         tv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        tv.setTextColor(Color.parseColor("#71717A"));
-        tv.setLetterSpacing(0.08f);
-        tv.setPadding(dp(4), dp(6), 0, dp(6));
+        tv.setTextColor(getAccentColor());
+        tv.setLetterSpacing(0.12f);
+        tv.setPadding(dp(6), dp(8), 0, dp(8));
         return tv;
     }
 
@@ -9387,6 +9399,142 @@ public final class FishbowlActivity extends AppCompatActivity
 
     // -- Section 1: General & Startup -----------------------------------------
 
+    // -- Appearance (accent, glass, blur, corners, background) ------------------
+
+    private View buildAppearanceSection() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        section.addView(createSettingsSectionHeader("APPEARANCE"));
+        LinearLayout card = createSettingsSectionCard();
+
+        card.addView(appearanceLabel("Accent colour"));
+        LinearLayout swatches = new LinearLayout(this);
+        swatches.setOrientation(LinearLayout.HORIZONTAL);
+        swatches.setPadding(0, dp(8), 0, dp(4));
+        final int cur = UiStyle.accentIndex(this);
+        for (int i = 0; i < UiStyle.ACCENTS.length; i++) {
+            final int idx = i;
+            FrameLayout sw = new FrameLayout(this);
+            GradientDrawable dot = new GradientDrawable();
+            dot.setShape(GradientDrawable.OVAL);
+            dot.setColor(UiStyle.ACCENTS[i]);
+            if (i == cur) dot.setStroke(dp(3), Color.WHITE);
+            else dot.setStroke(dp(1), Color.argb(60, 255, 255, 255));
+            sw.setBackground(dot);
+            sw.setContentDescription(UiStyle.ACCENT_NAMES[i]);
+            sw.setOnClickListener(v -> {
+                if (idx == UiStyle.accentIndex(this)) return;
+                UiStyle.setAccentIndex(this, idx);
+                recreate();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(34), dp(34));
+            lp.rightMargin = dp(10);
+            swatches.addView(sw, lp);
+        }
+        card.addView(swatches);
+        card.addView(createSettingsDivider());
+
+        // Glass toggle
+        LinearLayout glassRow = new LinearLayout(this);
+        glassRow.setOrientation(LinearLayout.HORIZONTAL);
+        glassRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout gt = new LinearLayout(this);
+        gt.setOrientation(LinearLayout.VERTICAL);
+        gt.addView(appearanceLabel("Glass cards"));
+        TextView gs = new TextView(this);
+        gs.setText("Translucent frosted cards and blurred dialogs (blur needs Android 12+). Off = solid cards.");
+        gs.setTextSize(11f);
+        gs.setTextColor(Color.parseColor("#71717A"));
+        gs.setPadding(0, dp(2), dp(8), 0);
+        gt.addView(gs);
+        glassRow.addView(gt, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        Switch glassSwitch = new Switch(this);
+        glassSwitch.setChecked(UiStyle.glass(this));
+        glassSwitch.setOnCheckedChangeListener((v, checked) -> {
+            if (checked == UiStyle.glass(this)) return;
+            UiStyle.setGlass(this, checked);
+            recreate();
+        });
+        glassRow.addView(glassSwitch);
+        card.addView(glassRow);
+        card.addView(createSettingsDivider());
+
+        card.addView(appearanceSeek("Glass strength", 0, 100, UiStyle.blur(this), "%", v -> UiStyle.setBlur(this, v)));
+        card.addView(appearanceSeek("Corner radius", 8, 28, UiStyle.radius(this), " dp", v -> UiStyle.setRadius(this, v)));
+        card.addView(createSettingsDivider());
+
+        card.addView(appearanceLabel("Background"));
+        LinearLayout bgRow = new LinearLayout(this);
+        bgRow.setOrientation(LinearLayout.HORIZONTAL);
+        bgRow.setPadding(0, dp(8), 0, dp(4));
+        String[] names = {"BLACK (OLED)", "AURORA"};
+        for (int i = 0; i < 2; i++) {
+            final int idx = i;
+            boolean sel = UiStyle.background(this) == i;
+            Button b = createPixelButton(names[i], sel ? colorWithAlpha(getAccentColor(), 60) : Color.parseColor("#18191E"),
+                    sel ? getAccentColor() : Color.parseColor("#A1A1AA"));
+            b.setTextSize(10.5f);
+            b.setOnClickListener(v -> {
+                if (UiStyle.background(this) == idx) return;
+                UiStyle.setBackground(this, idx);
+                recreate();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
+            if (i == 0) lp.rightMargin = dp(8);
+            bgRow.addView(b, lp);
+        }
+        card.addView(bgRow);
+
+        Button reset = createPixelButton("RESET APPEARANCE", Color.parseColor("#18191E"), Color.parseColor("#A1A1AA"));
+        reset.setTextSize(10.5f);
+        reset.setOnClickListener(v -> { UiStyle.reset(this); recreate(); });
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, dp(38));
+        rlp.topMargin = dp(10);
+        card.addView(reset, rlp);
+
+        section.addView(card);
+        return section;
+    }
+
+    private interface IntSink { void set(int v); }
+
+    private TextView appearanceLabel(String t) {
+        TextView tv = new TextView(this);
+        tv.setText(t);
+        tv.setTextSize(13.5f);
+        tv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        tv.setTextColor(Color.parseColor("#F4F4F5"));
+        return tv;
+    }
+
+    private View appearanceSeek(String label, final int min, int max, int value, final String unit, final IntSink sink) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(0, dp(6), 0, dp(6));
+        final TextView head = appearanceLabel(label + "  " + value + unit);
+        box.addView(head);
+        android.widget.SeekBar sb = new android.widget.SeekBar(this);
+        sb.setMax(max - min);
+        sb.setProgress(value - min);
+        if (Build.VERSION.SDK_INT >= 21) {
+            sb.setProgressTintList(android.content.res.ColorStateList.valueOf(getAccentColor()));
+            sb.setThumbTintList(android.content.res.ColorStateList.valueOf(getAccentColor()));
+        }
+        final String base = label;
+        sb.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(android.widget.SeekBar s, int p, boolean u) {
+                head.setText(base + "  " + (p + min) + unit);
+            }
+            @Override public void onStartTrackingTouch(android.widget.SeekBar s) {}
+            @Override public void onStopTrackingTouch(android.widget.SeekBar s) {
+                sink.set(s.getProgress() + min);
+                recreate();
+            }
+        });
+        box.addView(sb);
+        return box;
+    }
+
     private View buildGeneralSection() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
@@ -9610,6 +9758,16 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout.LayoutParams saveLp = new LinearLayout.LayoutParams(-2, dp(32));
         saveLp.leftMargin = dp(8);
         periodRow.addView(btnSaveHours, saveLp);
+        final Runnable hoursDirty = UiStyle.bindDirty(btnSaveHours, hoursInput,
+                () -> String.valueOf(com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this)));
+        btnSaveHours.setOnClickListener(v -> {
+            int h = com.fishbowl.app.services.AutomationPrefs.DEFAULT_CLEANUP_HOURS;
+            try { h = Integer.parseInt(hoursInput.getText().toString().trim()); } catch (Throwable ignored) {}
+            com.fishbowl.app.services.AutomationPrefs.setCleanupHours(this, h);
+            hoursInput.setText(String.valueOf(com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this)));
+            hoursDirty.run();
+            Toast.makeText(this, "Saved: " + com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this) + " h", Toast.LENGTH_SHORT).show();
+        });
         card.addView(periodRow);
 
         // Preview + run now
@@ -10421,6 +10579,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams wlp = new WindowManager.LayoutParams();
             wlp.copyFrom(d.getWindow().getAttributes());
             wlp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.88);
@@ -10520,6 +10679,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams wlp = new WindowManager.LayoutParams();
             wlp.copyFrom(d.getWindow().getAttributes());
             wlp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.90);
@@ -10628,6 +10788,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams wlp = new WindowManager.LayoutParams();
             wlp.copyFrom(d.getWindow().getAttributes());
             wlp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.92);
@@ -10767,6 +10928,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams wlp = new WindowManager.LayoutParams();
             wlp.copyFrom(d.getWindow().getAttributes());
             wlp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.90);
@@ -10826,6 +10988,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(0.85f);
+            UiStyle.blurWindow(this, d.getWindow());
             WindowManager.LayoutParams wlp = new WindowManager.LayoutParams();
             wlp.copyFrom(d.getWindow().getAttributes());
             wlp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.90);
@@ -11378,7 +11541,7 @@ public final class FishbowlActivity extends AppCompatActivity
     private LinearLayout buildCollapsibleCard(String titleText, String subtitleText, View contentContainer, boolean initiallyExpanded) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(createRoundedDrawable(Color.parseColor("#0C0D10"), dp(12)));
+        card.setBackground(UiStyle.card(this));
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         params.bottomMargin = dp(14);

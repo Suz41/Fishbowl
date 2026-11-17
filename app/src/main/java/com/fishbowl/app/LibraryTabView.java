@@ -260,7 +260,7 @@ public final class LibraryTabView {
         LinearLayout card = new LinearLayout(act);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(12), dp(10), dp(12), dp(10));
-        card.setBackground(rounded(Color.parseColor("#0C0C0E"), Color.argb(20, 255, 255, 255), 10));
+        card.setBackground(UiStyle.card(act));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(8);
         card.setLayoutParams(lp);
@@ -281,6 +281,7 @@ public final class LibraryTabView {
             setOn.set(checked);
             Toast.makeText(act, name + (checked ? " auto-delete enabled." : " auto-delete disabled."), Toast.LENGTH_SHORT).show();
         });
+        UiStyle.styleSwitch(act, sw);
         top.addView(sw);
         card.addView(top);
 
@@ -307,6 +308,15 @@ public final class LibraryTabView {
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-2, dp(34));
         slp.leftMargin = dp(8);
         period.addView(save, slp);
+        final Runnable dirty = UiStyle.bindDirty(save, input, () -> String.valueOf(getHours.get()));
+        save.setOnClickListener(v -> {
+            int val = LibraryPrefs.DEFAULT_HOURS;
+            try { val = Integer.parseInt(input.getText().toString().trim()); } catch (Throwable ignored) {}
+            setHours.set(val);
+            input.setText(String.valueOf(getHours.get()));
+            dirty.run();
+            Toast.makeText(act, "Saved: " + getHours.get() + " h", Toast.LENGTH_SHORT).show();
+        });
         card.addView(period);
         return card;
     }
