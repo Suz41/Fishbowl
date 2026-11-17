@@ -160,7 +160,7 @@ public final class LibraryTabView {
                     for (JellyfinLibraryClient.LibItem it : items) addBrowseRow(it);
                 });
             } catch (Throwable t) {
-                act.runOnUiThread(() -> { if (req == requestCounter) showError(t.getMessage()); });
+                act.runOnUiThread(() -> { if (req == requestCounter) showError(t); });
             }
         });
     }
@@ -207,7 +207,7 @@ public final class LibraryTabView {
                     }
                 });
             } catch (Throwable t) {
-                act.runOnUiThread(() -> { if (req == requestCounter) showError(t.getMessage()); });
+                act.runOnUiThread(() -> { if (req == requestCounter) showError(t); });
             }
         });
     }
@@ -399,12 +399,52 @@ public final class LibraryTabView {
         listContainer.addView(t);
     }
 
-    private void showError(String msg) {
+    private void showError(Throwable err) {
         listContainer.removeAllViews();
+        String msg = err == null ? null : err.getMessage();
         TextView t = text(msg == null ? "Unknown error" : msg, 12f, "#F87171", false);
         t.setPadding(0, dp(16), 0, dp(8));
         listContainer.addView(t);
         listContainer.addView(actionButton("RETRY", "#38BDF8", v -> refresh()), new LinearLayout.LayoutParams(-1, dp(40)));
+
+        if (err instanceof JellyfinLibraryClient.AuthException) {
+            TextView help = text("Sign in once with a Jellyfin administrator account. The password is stored on this device only.",
+                    11f, "#A1A1AA", false);
+            help.setPadding(0, dp(16), 0, dp(6));
+            listContainer.addView(help);
+            final EditText user = new EditText(act);
+            user.setHint("Username");
+            user.setSingleLine(true);
+            user.setTextColor(Color.WHITE);
+            user.setHintTextColor(Color.parseColor("#52525B"));
+            user.setText(JellyfinLibraryClient.suggestedUsername(act));
+            listContainer.addView(user, new LinearLayout.LayoutParams(-1, -2));
+            final EditText pass = new EditText(act);
+            pass.setHint("Password (leave empty if none)");
+            pass.setSingleLine(true);
+            pass.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            pass.setTextColor(Color.WHITE);
+            pass.setHintTextColor(Color.parseColor("#52525B"));
+            listContainer.addView(pass, new LinearLayout.LayoutParams(-1, -2));
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, dp(40));
+            blp.topMargin = dp(8);
+            listContainer.addView(actionButton("SIGN IN", "#34D399", v -> {
+                final String u = user.getText().toString().trim();
+                final String pw = pass.getText().toString();
+                Toast.makeText(act, "Signing in...", Toast.LENGTH_SHORT).show();
+                bg.execute(() -> {
+                    final String res = JellyfinLibraryClient.loginAndStore(act, u, pw);
+                    act.runOnUiThread(() -> {
+                        if (res == null) {
+                            Toast.makeText(act, "Signed in.", Toast.LENGTH_SHORT).show();
+                            refresh();
+                        } else {
+                            Toast.makeText(act, res, Toast.LENGTH_LONG).show();
+                        }
+                    });
+                });
+            }), blp);
+        }
     }
 
     private LinearLayout.LayoutParams weight() {

@@ -69,7 +69,7 @@ public final class JellyfinLibraryClient {
         }
     }
 
-    public static final class ApiException extends Exception {
+    public static class ApiException extends Exception {
         public ApiException(String m) { super(m); }
     }
 
@@ -79,34 +79,72 @@ public final class JellyfinLibraryClient {
 
     // ------------------------------------------------------------------ authentication
 
-    public static synchronized String getToken(Context ctx) throws ApiException {
-        if (token == null) token = LibraryPrefs.getToken(ctx);
-        if (token != null && validate(token)) return token;
-        token = null;
-        LibraryPrefs.setToken(ctx, null);
-
-        String t = createApiKeyInDb(ctx);
-        if (t != null && validate(t)) {
-            token = t;
-            LibraryPrefs.setToken(ctx, t);
-            return t;
-        }
-        t = authenticateAsAdmin(ctx);
-        if (t != null && validate(t)) {
-            token = t;
-            LibraryPrefs.setToken(ctx, t);
-            return t;
-        }
-        throw new ApiException("Could not authenticate to Jellyfin (API key and admin login both failed).");
+    public static final class AuthException extends ApiException {
+        public AuthException(String m) { super(m); }
     }
 
-    private static boolean validate(String t) {
+    private static final StringBuilder diag = new StringBuilder();
+
+    private static void d(String line) {
+        Log.w(TAG, line);
+        if (diag.length() < 1200) diag.append("\n- ").append(line);
+    }
+
+    public static synchronized String getToken(Context ctx) throws ApiException {
+        if (token == null) token = LibraryPrefs.getToken(ctx);
+        if (token != null && validate(token, "cached token")) return token;
+        token = null;
+        LibraryPrefs.setToken(ctx, null);
+        diag.setLength(0);
+
+        String t = createApiKeyInDb(ctx);
+        if (t != null && validate(t, "API key")) {
+            token = t;
+            LibraryPrefs.setToken(ctx, t);
+            return t;
+        }
+        t = authenticateWithStoredPassword(ctx);
+        if (t != null && validate(t, "login token")) {
+            token = t;
+            LibraryPrefs.setToken(ctx, t);
+            return t;
+        }
+        throw new AuthException("Could not authenticate to Jellyfin." + diag);
+    }
+
+    /** Signs in with the given admin credentials, remembers them and caches the token. Returns null on success, else an error text. */
+    public static synchronized String loginAndStore(Context ctx, String username, String password) {
+        diag.setLength(0);
+        String t = authenticate(username, password);
+        if (t == null || !validate(t, "login token")) {
+            return "Login failed." + diag;
+        }
+        token = t;
+        LibraryPrefs.setToken(ctx, t);
+        if (password != null && !password.isEmpty()) {
+            try { JellyfinAccountManager.storeKnownPassword(ctx, username, password); } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    public static String suggestedUsername(Context ctx) {
+        try {
+            List<JellyfinAccountManager.JellyfinUser> us = users(ctx);
+            for (JellyfinAccountManager.JellyfinUser u : us) if (u.isAdmin) return u.username;
+            if (!us.isEmpty()) return us.get(0).username;
+        } catch (Throwable ignored) {}
+        return "";
+    }
+
+    private static boolean validate(String t, String label) {
         try {
             HttpURLConnection c = open("/Users", "GET", t);
             int code = c.getResponseCode();
             c.disconnect();
+            if (code != 200) d(label + " rejected by Jellyfin: HTTP " + code);
             return code == 200;
         } catch (Throwable e) {
+            d(label + " check failed: " + e.getClass().getSimpleName() + " " + e.getMessage());
             return false;
         }
     }
@@ -115,7 +153,10 @@ public final class JellyfinLibraryClient {
         SQLiteDatabase db = null;
         try {
             File dbFile = JellyfinAccountManager.getJellyfinDatabaseFile();
-            if (!dbFile.exists()) return null;
+            if (!dbFile.exists()) {
+                d("jellyfin.db not found at " + dbFile.getAbsolutePath());
+                return null;
+            }
             db = SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
             String existing = null;
             try (android.database.Cursor cur = db.rawQuery("SELECT AccessToken FROM ApiKeys WHERE Name = ?", new String[]{KEY_NAME})) {
@@ -138,9 +179,10 @@ public final class JellyfinLibraryClient {
             cv.put("Name", KEY_NAME);
             cv.put("AccessToken", key);
             long row = db.insert("ApiKeys", null, cv);
+            if (row < 0) d("ApiKeys insert returned " + row);
             return row >= 0 ? key : null;
         } catch (Throwable t) {
-            Log.w(TAG, "API key creation in jellyfin.db failed: " + t.getMessage());
+            d("API key in jellyfin.db: " + t.getClass().getSimpleName() + " " + t.getMessage());
             return null;
         } finally {
             if (db != null) {
@@ -149,37 +191,59 @@ public final class JellyfinLibraryClient {
         }
     }
 
-    private static String authenticateAsAdmin(Context ctx) {
+    private static String authenticateWithStoredPassword(Context ctx) {
         try {
             List<JellyfinAccountManager.JellyfinUser> users = JellyfinAccountManager.getRegisteredUsers(ctx);
-            for (JellyfinAccountManager.JellyfinUser u : users) {
-                if (!u.isAdmin) continue;
-                String pw = u.hasPassword ? u.knownPlaintextPassword : "";
-                if (pw == null) continue;
-                JSONObject body = new JSONObject();
-                body.put("Username", u.username);
-                body.put("Pw", pw);
-                URL url = new URL(BASE + "/Users/AuthenticateByName");
-                HttpURLConnection c = (HttpURLConnection) url.openConnection();
-                c.setRequestMethod("POST");
-                c.setConnectTimeout(3000);
-                c.setReadTimeout(15000);
-                c.setRequestProperty("Content-Type", "application/json");
-                c.setRequestProperty("X-Emby-Authorization",
-                        "MediaBrowser Client=\"Fishbowl\", Device=\"Android\", DeviceId=\"fishbowl-library\", Version=\"1.0\"");
-                c.setDoOutput(true);
-                try (OutputStream os = c.getOutputStream()) {
-                    os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+            if (users.isEmpty()) {
+                d("No Jellyfin users could be read from jellyfin.db");
+                return null;
+            }
+            // Administrators first, then everybody else (admin detection can fail on some schemas).
+            for (int pass = 0; pass < 2; pass++) {
+                for (JellyfinAccountManager.JellyfinUser u : users) {
+                    if ((pass == 0) != u.isAdmin) continue;
+                    String pw = u.hasPassword ? u.knownPlaintextPassword : "";
+                    if (pw == null) {
+                        d("User '" + u.username + "' has a password the app does not know yet");
+                        continue;
+                    }
+                    String t = authenticate(u.username, pw);
+                    if (t != null) return t;
                 }
-                if (c.getResponseCode() == 200) {
-                    String res = readAll(c.getInputStream());
-                    c.disconnect();
-                    return new JSONObject(res).optString("AccessToken", null);
-                }
-                c.disconnect();
             }
         } catch (Throwable t) {
-            Log.w(TAG, "Admin authentication failed: " + t.getMessage());
+            d("Stored-password login: " + t.getClass().getSimpleName() + " " + t.getMessage());
+        }
+        return null;
+    }
+
+    private static String authenticate(String username, String pw) {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("Username", username);
+            body.put("Pw", pw == null ? "" : pw);
+            HttpURLConnection c = (HttpURLConnection) new URL(BASE + "/Users/AuthenticateByName").openConnection();
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(3000);
+            c.setReadTimeout(15000);
+            c.setRequestProperty("Content-Type", "application/json");
+            String authHeader = "MediaBrowser Client=\"Fishbowl\", Device=\"Android\", DeviceId=\"fishbowl-library\", Version=\"1.0\"";
+            c.setRequestProperty("X-Emby-Authorization", authHeader);
+            c.setRequestProperty("Authorization", authHeader);
+            c.setDoOutput(true);
+            try (OutputStream os = c.getOutputStream()) {
+                os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            int code = c.getResponseCode();
+            if (code == 200) {
+                String res = readAll(c.getInputStream());
+                c.disconnect();
+                return new JSONObject(res).optString("AccessToken", null);
+            }
+            c.disconnect();
+            d("Login as '" + username + "': HTTP " + code);
+        } catch (Throwable t) {
+            d("Login as '" + username + "': " + t.getClass().getSimpleName() + " " + t.getMessage());
         }
         return null;
     }
@@ -191,7 +255,10 @@ public final class JellyfinLibraryClient {
         c.setRequestMethod(method);
         c.setConnectTimeout(3000);
         c.setReadTimeout(30000);
-        if (t != null) c.setRequestProperty("X-Emby-Token", t);
+        if (t != null) {
+            c.setRequestProperty("X-Emby-Token", t);
+            c.setRequestProperty("Authorization", "MediaBrowser Token=\"" + t + "\"");
+        }
         c.setRequestProperty("Accept", "application/json");
         return c;
     }
