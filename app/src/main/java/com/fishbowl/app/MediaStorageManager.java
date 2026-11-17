@@ -1409,7 +1409,11 @@ public final class MediaStorageManager {
 
     private String cachedTransmissionSessionId = null;
 
+    /** True when the last torrent-get call reached Transmission and returned a valid answer. */
+    public volatile boolean lastTransmissionQueryOk = false;
+
     public List<TorrentInfo> queryTransmissionTorrents() {
+        lastTransmissionQueryOk = false;
         List<TorrentInfo> result = new ArrayList<>();
         HttpURLConnection conn = null;
         try {
@@ -1478,6 +1482,7 @@ public final class MediaStorageManager {
                 }
                 JSONObject resObj = new JSONObject(sb.toString());
                 JSONObject argsObj = resObj.optJSONObject("arguments");
+                lastTransmissionQueryOk = "success".equals(resObj.optString("result")) && argsObj != null;
                 if (argsObj != null) {
                     JSONArray torrents = argsObj.optJSONArray("torrents");
                     if (torrents != null) {
@@ -1520,6 +1525,7 @@ public final class MediaStorageManager {
     }
 
     public boolean removeTransmissionTorrent(int torrentId, boolean deleteData) {
+        com.fishbowl.app.services.TransmissionHistoryTracker.noteRemoval(torrentId, deleteData, "manual");
         HttpURLConnection conn = null;
         try {
             URL url = new URL("http://127.0.0.1:9091/transmission/rpc");

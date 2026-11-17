@@ -69,6 +69,9 @@ public final class TransmissionAutoRecheck {
                     + " (attempt " + a.count + "/" + MAX_ATTEMPTS + ")";
             Log.i(TAG, msg);
             log(msg);
+            TransmissionHistory.append(app, TransmissionHistory.AUTO_RECHECK, t.name,
+                    "Error: " + t.errorString + " -> recheck " + (verified ? "queued" : "failed") + (started ? ", resumed" : "")
+                    + " (attempt " + a.count + "/" + MAX_ATTEMPTS + ")");
         }
 
         // Forget torrents whose error cleared (or that were removed).

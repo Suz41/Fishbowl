@@ -432,6 +432,24 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     Log.w(TAG, "[AutoRecheck] pass failed: " + t.getMessage());
                 }
             }, 90, 60, java.util.concurrent.TimeUnit.SECONDS);
+            automationScheduler.scheduleWithFixedDelay(() -> {
+                try {
+                    if (appContext == null || !isServiceRunning("transmission")) return;
+                    TransmissionHistoryTracker.run(appContext);
+                } catch (Throwable t) {
+                    Log.w(TAG, "[DownloadHistory] pass failed: " + t.getMessage());
+                }
+            }, 45, 30, java.util.concurrent.TimeUnit.SECONDS);
+            automationScheduler.scheduleWithFixedDelay(() -> {
+                try {
+                    if (appContext == null) return;
+                    if (!LibraryPrefs.isMoviesEnabled(appContext) && !LibraryPrefs.isSeriesEnabled(appContext)) return;
+                    if (!isServiceRunning("jellyfin")) return;
+                    LibraryAutoDelete.run(appContext, false);
+                } catch (Throwable t) {
+                    Log.w(TAG, "[LibraryAutoDelete] pass failed: " + t.getMessage());
+                }
+            }, 3, 30, java.util.concurrent.TimeUnit.MINUTES);
             NetworkPolicyEnforcer.start(appContext, this);
             ExitDiagnostics.install(appContext, this);
         } catch (Throwable t) {

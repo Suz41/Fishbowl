@@ -105,6 +105,7 @@ public final class TransmissionAutoCleanup {
             eligibleBytes += size;
             if (dryRun) continue;
 
+            TransmissionHistoryTracker.noteRemoval(t.id, true, "auto-cleanup");
             if (msm.removeTransmissionTorrent(t.id, true)) {
                 removed++;
                 removedBytes += size;

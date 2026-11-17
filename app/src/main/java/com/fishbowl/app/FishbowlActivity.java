@@ -146,6 +146,8 @@ public final class FishbowlActivity extends AppCompatActivity
 
     // Active tab state (0: Home, 1: Logs, 2: Settings)
     private int activeTab = 0;
+    private View cachedLibraryView;
+    private LibraryTabView libraryTabView;
 
     // Containers
     private LinearLayout rootLayout;
@@ -680,6 +682,9 @@ public final class FishbowlActivity extends AppCompatActivity
 
     @Override
     public void onBackPressed() {
+        if (activeTab == 5 && libraryTabView != null && libraryTabView.onBack()) {
+            return;
+        }
         if (activeTab != 0) {
             activeTab = 0;
             updateBottomNavSelection();
@@ -836,6 +841,12 @@ public final class FishbowlActivity extends AppCompatActivity
         contentContainer.addView(cachedLogsView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        libraryTabView = new LibraryTabView(this);
+        cachedLibraryView = libraryTabView.getView();
+        cachedLibraryView.setVisibility(View.GONE);
+        contentContainer.addView(cachedLibraryView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
         // Dedicated Full-Screen Setup / Loading Overlay (placed on top of tabs)
         setupOverlayView = buildSetupOverlay();
         contentContainer.addView(setupOverlayView, new FrameLayout.LayoutParams(
@@ -913,6 +924,7 @@ public final class FishbowlActivity extends AppCompatActivity
             addNavTab(nav, 1, R.drawable.ic_services);
         }
         addNavTab(nav, 2, R.drawable.ic_activity);
+        addNavTab(nav, 5, R.drawable.ic_service_jellyfin);
         addNavTab(nav, 3, R.drawable.ic_settings);
 
         return nav;
@@ -996,6 +1008,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (cachedActivityView != null) cachedActivityView.setVisibility(activeTab == 2 ? View.VISIBLE : View.GONE);
         if (cachedSettingsView != null) cachedSettingsView.setVisibility(activeTab == 3 ? View.VISIBLE : View.GONE);
         if (cachedLogsView != null) cachedLogsView.setVisibility(activeTab == 4 ? View.VISIBLE : View.GONE);
+        if (cachedLibraryView != null) cachedLibraryView.setVisibility(activeTab == 5 ? View.VISIBLE : View.GONE);
 
         if (activeTab == 0) {
             refreshLanAddress();
@@ -1021,6 +1034,8 @@ public final class FishbowlActivity extends AppCompatActivity
             }
             refreshUpdateUI();
             refreshKillTrackerUI();
+        } else if (activeTab == 5) {
+            if (libraryTabView != null) libraryTabView.refresh();
         } else if (activeTab == 4) {
             refreshUnifiedLogsDisplay();
             if (autoScrollEnabled && logsScrollView != null) {
@@ -3168,6 +3183,21 @@ public final class FishbowlActivity extends AppCompatActivity
         View sp = new View(this);
         headerRow.addView(sp, new LinearLayout.LayoutParams(dp(8), 1));
 
+        TextView btnHistoryDl = new TextView(this);
+        btnHistoryDl.setText("HISTORY");
+        btnHistoryDl.setTextSize(9.5f);
+        btnHistoryDl.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        btnHistoryDl.setTextColor(Color.parseColor("#38BDF8"));
+        btnHistoryDl.setGravity(Gravity.CENTER);
+        btnHistoryDl.setBackground(createBorderedRoundedDrawable(Color.parseColor("#0B1A24"), Color.parseColor("#0369A1"), dp(1), dp(4)));
+        btnHistoryDl.setPadding(dp(8), dp(4), dp(8), dp(4));
+        btnHistoryDl.setClickable(true);
+        btnHistoryDl.setFocusable(true);
+        btnHistoryDl.setOnClickListener(v -> showTransmissionHistoryDialog());
+        headerRow.addView(btnHistoryDl, new LinearLayout.LayoutParams(-2, -2));
+        View spHist = new View(this);
+        headerRow.addView(spHist, new LinearLayout.LayoutParams(dp(6), 1));
+
         TextView btnRefreshDl = new TextView(this);
         btnRefreshDl.setText("REFRESH");
         btnRefreshDl.setTextSize(9.5f);
@@ -3634,6 +3664,55 @@ public final class FishbowlActivity extends AppCompatActivity
                 refreshDownloadCenter();
             });
         }, "Fishbowl-TorrentAction").start();
+    }
+
+    private void showTransmissionHistoryDialog() {
+        final java.util.List<com.fishbowl.app.services.TransmissionHistory.Entry> entries =
+                com.fishbowl.app.services.TransmissionHistory.read(this, 300);
+        ScrollView sv = new ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(dp(4), dp(4), dp(4), dp(4));
+        sv.addView(list);
+        java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("MM-dd HH:mm", Locale.US);
+        if (entries.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("No downloads logged yet. Events are recorded while Transmission is running.");
+            empty.setTextSize(11.5f);
+            empty.setTextColor(Color.parseColor("#A1A1AA"));
+            list.addView(empty);
+        }
+        for (com.fishbowl.app.services.TransmissionHistory.Entry e : entries) {
+            int color = Color.parseColor("#A1A1AA");
+            switch (e.event) {
+                case "COMPLETED": color = getSuccessColor(); break;
+                case "FAILED": color = getDangerColor(); break;
+                case "CANCELLED": color = getWarningColor(); break;
+                case "REMOVED": color = Color.parseColor("#F59E0B"); break;
+                case "ADDED": color = Color.parseColor("#38BDF8"); break;
+                case "RECOVERED": color = getSuccessColor(); break;
+                case "AUTO-RECHECK":
+                case "AUTO-CLEANUP": color = Color.parseColor("#C084FC"); break;
+                default: break;
+            }
+            TextView head = new TextView(this);
+            head.setText(fmt.format(new java.util.Date(e.timeMs)) + "  " + e.event);
+            head.setTextSize(10.5f);
+            head.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            head.setTextColor(color);
+            head.setPadding(0, dp(8), 0, 0);
+            list.addView(head);
+            TextView body = new TextView(this);
+            body.setText(e.name + (e.detail != null && !e.detail.isEmpty() ? "\n" + e.detail : ""));
+            body.setTextSize(11f);
+            body.setTextColor(Color.parseColor("#E4E4E7"));
+            list.addView(body);
+        }
+        showOledDialog("Download History", entries.size() + " event(s), newest first", sv,
+                "CLEAR LOG", getDangerColor(), () -> {
+                    com.fishbowl.app.services.TransmissionHistory.clear(this);
+                    Toast.makeText(this, "History cleared.", Toast.LENGTH_SHORT).show();
+                }, "CLOSE", null);
     }
 
     private void showRemoveSingleTorrentDialog(MediaStorageManager.TorrentInfo torrent) {
