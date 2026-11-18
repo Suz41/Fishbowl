@@ -260,7 +260,7 @@ public final class LibraryTabView {
         LinearLayout card = new LinearLayout(act);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(12), dp(10), dp(12), dp(10));
-        card.setBackground(UiStyle.card(act));
+        card.setBackground(rounded(Color.parseColor("#0C0C0E"), Color.argb(20, 255, 255, 255), 10));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(8);
         card.setLayoutParams(lp);
