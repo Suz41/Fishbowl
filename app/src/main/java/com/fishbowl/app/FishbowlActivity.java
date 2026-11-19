@@ -497,7 +497,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         // Auto-start server on app launch ONLY if explicitly enabled in preferences or uninitialized
         if (!JellyfinBootstrapper.isInitialized(this)) {
-            Log.i(TAG, "Fishbowl runtime uninitialized on app launch. Automatically initiating initial setup & extraction.");
+            Log.i(TAG, "Jellyarr runtime uninitialized on app launch. Automatically initiating initial setup & extraction.");
             showSetupOverlay(false);
             ensureBootstrapStartedIfNeeded();
         } else {
@@ -708,7 +708,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 renderActiveTab();
                 return;
             }
-            Toast.makeText(this, "Setup in progress. Please keep Fishbowl open.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Setup in progress. Please keep Jellyarr open.", Toast.LENGTH_SHORT).show();
             moveTaskToBack(true);
             return;
         }
@@ -1114,7 +1114,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         // Setup Title
         TextView title = new TextView(this);
-        title.setText("FishBowl System Setup");
+        title.setText("Jellyarr System Setup");
         title.setTextSize(20);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         title.setTextColor(getPrimaryTextColor());
@@ -1175,7 +1175,7 @@ public final class FishbowlActivity extends AppCompatActivity
         row1.setTag("setup_step_1");
         progressCard.addView(row1);
 
-        TextView row2 = createSetupCheckItem("2. Extracting FishBowl & Jellyfin Core 12.4.0 ARM64 runtime");
+        TextView row2 = createSetupCheckItem("2. Extracting Jellyarr & Jellyfin Core 12.4.0 ARM64 runtime");
         row2.setTag("setup_step_2");
         progressCard.addView(row2);
 
@@ -1281,7 +1281,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         // Advisory Note
         TextView note = new TextView(this);
-        note.setText("Please keep FishBowl open while runtime extraction completes.\nThis setup process only runs once.");
+        note.setText("Please keep Jellyarr open while runtime extraction completes.\nThis setup process only runs once.");
         note.setTextSize(11.5f);
         note.setTextColor(getSecondaryTextColor());
         note.setGravity(Gravity.CENTER);
@@ -1591,7 +1591,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
             // Update stage rows
             updateSetupStageItem("setup_step_1", "1. Recombining split package archives (asset chunks)", pct >= 35 || initialized, pct > 0 && pct < 35);
-            updateSetupStageItem("setup_step_2", "2. Extracting FishBowl & Jellyfin Core 12.4.0 ARM64 runtime", pct >= 65 || initialized, pct >= 35 && pct < 65);
+            updateSetupStageItem("setup_step_2", "2. Extracting Jellyarr & Jellyfin Core 12.4.0 ARM64 runtime", pct >= 65 || initialized, pct >= 35 && pct < 65);
             updateSetupStageItem("setup_step_3", "3. Unpacking Microsoft .NET 10 & FFmpeg 7.1.4 transcoder", pct >= 88 || initialized, pct >= 65 && pct < 88);
             updateSetupStageItem("setup_step_4", "4. Configuring POSIX permissions & system libraries", pct >= 95 || initialized, pct >= 88 && pct < 95);
             updateSetupStageItem("setup_step_5", "5. Verifying server binaries & service readiness", initialized || pct == 100, pct >= 95 && !initialized);
@@ -2492,7 +2492,7 @@ public final class FishbowlActivity extends AppCompatActivity
         card.setLayoutParams(params);
 
         startupProgressHeader = new TextView(this);
-        startupProgressHeader.setText("Starting FishBowl Server");
+        startupProgressHeader.setText("Starting Jellyarr Server");
         startupProgressHeader.setTextSize(13);
         startupProgressHeader.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         startupProgressHeader.setTextColor(getPrimaryTextColor());
@@ -2506,7 +2506,7 @@ public final class FishbowlActivity extends AppCompatActivity
         card.addView(startupProgressBar, progressParams);
 
         txtStage1 = createStageText("1. Starting runtime environment");
-        txtStage2 = createStageText("2. Launching FishBowl core server process");
+        txtStage2 = createStageText("2. Launching Jellyarr core server process");
         txtStage3 = createStageText("3. Waiting for server (binding port 8096)");
         txtStage4 = createStageText("4. Checking readiness & migrating database");
         txtStage5 = createStageText("5. Ready");
@@ -2693,11 +2693,11 @@ public final class FishbowlActivity extends AppCompatActivity
         tile.setOnClickListener(v -> {
             if ("jellyfin".equalsIgnoreCase(id)) {
                 if (controller != null && controller.getState() == JellyfinController.State.RUNNING) {
-                    Toast.makeText(this, "Stopping FishBowl Server...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Stopping Jellyarr Server...", Toast.LENGTH_SHORT).show();
                     controller.stop();
                     triggerServerAction(JellyfinServerService.ACTION_STOP);
                 } else {
-                    Toast.makeText(this, "Starting FishBowl Server...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Starting Jellyarr Server...", Toast.LENGTH_SHORT).show();
                     triggerServerAction(JellyfinServerService.ACTION_START);
                 }
             } else {
@@ -3077,7 +3077,7 @@ public final class FishbowlActivity extends AppCompatActivity
             if (!content.isEmpty()) {
                 ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                 if (cm != null) {
-                    cm.setPrimaryClip(ClipData.newPlainText("Fishbowl Console Logs", content));
+                    cm.setPrimaryClip(ClipData.newPlainText("Jellyarr Console Logs", content));
                     Toast.makeText(this, "Logs copied (" + selectedLogService + ")", Toast.LENGTH_SHORT).show();
                 }
             }
@@ -4594,7 +4594,7 @@ public final class FishbowlActivity extends AppCompatActivity
             disabledCard.addView(dTitle);
 
             TextView dSub = new TextView(this);
-            dSub.setText("Fishbowl is currently operating in standalone Jellyfin mode to conserve storage and RAM. Companion services are paused.");
+            dSub.setText("Jellyarr is currently operating in standalone Jellyfin mode to conserve storage and RAM. Companion services are paused.");
             dSub.setTextSize(10.5f);
             dSub.setTextColor(Color.parseColor("#A1A1AA"));
             dSub.setPadding(0, dp(4), 0, dp(12));
@@ -5569,7 +5569,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         if ("jellyfin".equalsIgnoreCase(svc.getId())) {
             if (controller == null || controller.getState() != JellyfinController.State.RUNNING) {
-                Toast.makeText(this, "Starting FishBowl...", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Starting Jellyarr...", Toast.LENGTH_SHORT).show();
                 triggerServerAction(JellyfinServerService.ACTION_START);
                 refreshServicesTabUI();
                 refreshHomeServicesBadge();
@@ -5816,8 +5816,8 @@ public final class FishbowlActivity extends AppCompatActivity
             Intent shareIntent = new Intent(Intent.ACTION_SEND);
             shareIntent.setType("text/plain");
             shareIntent.putExtra(Intent.EXTRA_STREAM, uri);
-            shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Fishbowl Diagnostic Report - " + (serviceName != null ? serviceName : "System"));
-            shareIntent.putExtra(Intent.EXTRA_TEXT, "Fishbowl Media Stack diagnostic report attached.");
+            shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Jellyarr Diagnostic Report - " + (serviceName != null ? serviceName : "System"));
+            shareIntent.putExtra(Intent.EXTRA_TEXT, "Jellyarr Media Stack diagnostic report attached.");
             shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivity(Intent.createChooser(shareIntent, "Save or Share Diagnostic Report"));
         } catch (Throwable t) {
@@ -8399,7 +8399,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private void exportSanitizedDiagnostics() {
         StringBuilder sb = new StringBuilder();
-        sb.append("=== Fishbowl System Diagnostics ===\n");
+        sb.append("=== Jellyarr System Diagnostics ===\n");
         sb.append("App Version: ").append("1.4.8-beta.1 (101412)\n");
         sb.append("Device: ").append(Build.MANUFACTURER).append(" ").append(Build.MODEL).append("\n");
         sb.append("Android: ").append(Build.VERSION.RELEASE).append(" (API ").append(Build.VERSION.SDK_INT).append(")\n");
@@ -8539,7 +8539,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         addSettingsMenuRow("General & Startup", "Auto-start, keep screen on, media stack", buildGeneralSection());
         addSettingsMenuRow("Automation", "Transmission cleanup, auto-recheck, Wi-Fi only", buildAutomationSection());
-        addSettingsMenuRow("Storage", "Fishbowl footprint and disk usage", buildStorageSection());
+        addSettingsMenuRow("Storage", "Jellyarr footprint and disk usage", buildStorageSection());
         addSettingsMenuRow("Permissions & Health", "Background survival and system permissions", buildPermissionsSection());
         addSettingsMenuRow("Security & Identity", "Jellyfin users and service identity", buildSecuritySection());
         addSettingsMenuRow("Diagnostics", "Health checks and crash reports", buildDiagnosticsSection());
@@ -8547,7 +8547,7 @@ public final class FishbowlActivity extends AppCompatActivity
         addSettingsMenuRow("Software Updates", "Check for new versions", buildUpdatesSection());
         addSettingsMenuRow("Backup & Restore", "Save and restore your configuration", buildBackupRestoreSection());
         addSettingsMenuRow("Movie Importer", "Downloads and folder organizer", buildMovieImporterSection());
-        addSettingsMenuRow("About Fishbowl", "Specs, architecture and licenses", buildAboutSection());
+        addSettingsMenuRow("About Jellyarr", "Specs, architecture and licenses", buildAboutSection());
 
         // Community actions
         LinearLayout communityRow = new LinearLayout(this);
@@ -8771,7 +8771,7 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout card = createSettingsSectionCard();
 
         storageHeaderTitle = new TextView(this);
-        storageHeaderTitle.setText("Fishbowl Storage");
+        storageHeaderTitle.setText("Jellyarr Storage");
         storageHeaderTitle.setTextSize(20f);
         storageHeaderTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         storageHeaderTitle.setTextColor(Color.parseColor("#F4F4F5"));
@@ -9500,7 +9500,7 @@ public final class FishbowlActivity extends AppCompatActivity
         asAppTextCol.addView(asAppTitle);
 
         TextView asAppSub = new TextView(this);
-        asAppSub.setText("Automatically start Jellyfin server when opening Fishbowl (Jellyfin only)");
+        asAppSub.setText("Automatically start Jellyfin server when opening Jellyarr (Jellyfin only)");
         asAppSub.setTextSize(11f);
         asAppSub.setTextColor(Color.parseColor("#71717A"));
         asAppSub.setPadding(0, dp(2), 0, 0);
@@ -9537,7 +9537,7 @@ public final class FishbowlActivity extends AppCompatActivity
         asCompTextCol.addView(asCompTitle);
 
         TextView asCompSub = new TextView(this);
-        asCompSub.setText("Automatically launch companion services (Radarr, Sonarr, etc.) when Fishbowl starts. Disabled by default to prevent port conflicts.");
+        asCompSub.setText("Automatically launch companion services (Radarr, Sonarr, etc.) when Jellyarr starts. Disabled by default to prevent port conflicts.");
         asCompSub.setTextSize(11f);
         asCompSub.setTextColor(Color.parseColor("#71717A"));
         asCompSub.setPadding(0, dp(2), 0, 0);
@@ -9617,11 +9617,11 @@ public final class FishbowlActivity extends AppCompatActivity
         btnAddTile.setOnClickListener(v -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 FishbowlQuickSettingsTileService.requestAddTile(this,
-                    () -> Toast.makeText(this, "Fishbowl Quick Settings tile added!", Toast.LENGTH_SHORT).show(),
+                    () -> Toast.makeText(this, "Jellyarr Quick Settings tile added!", Toast.LENGTH_SHORT).show(),
                     () -> Toast.makeText(this, "Quick Settings tile request cancelled or already present.", Toast.LENGTH_SHORT).show()
                 );
             } else {
-                Toast.makeText(this, "To add the Fishbowl tile: swipe down twice from the top of your screen, tap Edit (pencil icon), and drag the Fishbowl tile into active tiles.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "To add the Jellyarr tile: swipe down twice from the top of your screen, tap Edit (pencil icon), and drag the Jellyarr tile into active tiles.", Toast.LENGTH_LONG).show();
             }
         });
         qsRow.addView(btnAddTile, new LinearLayout.LayoutParams(-2, dp(32)));
@@ -9753,7 +9753,7 @@ public final class FishbowlActivity extends AppCompatActivity
         recheckTitle.setTextColor(Color.parseColor("#F4F4F5"));
         recheckText.addView(recheckTitle);
         TextView recheckSub = new TextView(this);
-        recheckSub.setText("When a torrent reports any error, Fishbowl re-verifies its data and resumes it. Retries back off (5, 10, 20, 40, 80 min) and stop after 5 attempts until the error clears.");
+        recheckSub.setText("When a torrent reports any error, Jellyarr re-verifies its data and resumes it. Retries back off (5, 10, 20, 40, 80 min) and stop after 5 attempts until the error clears.");
         recheckSub.setTextSize(11f);
         recheckSub.setTextColor(Color.parseColor("#71717A"));
         recheckSub.setPadding(0, dp(2), dp(8), 0);
@@ -10434,7 +10434,7 @@ public final class FishbowlActivity extends AppCompatActivity
         content.setOrientation(LinearLayout.VERTICAL);
 
         TextView descTv = new TextView(this);
-        descTv.setText("Create a portable compressed backup of your FishBowl settings, credentials, and service configurations, or restore from an existing backup archive.");
+        descTv.setText("Create a portable compressed backup of your Jellyarr settings, credentials, and service configurations, or restore from an existing backup archive.");
         descTv.setTextSize(12f);
         descTv.setTextColor(Color.parseColor("#A1A1AA"));
         descTv.setLineSpacing(dp(3), 1.15f);
@@ -10628,7 +10628,7 @@ public final class FishbowlActivity extends AppCompatActivity
         box.addView(title);
 
         TextView info = new TextView(this);
-        info.setText("FishBowl configuration archive created successfully:\n\n"
+        info.setText("Jellyarr configuration archive created successfully:\n\n"
                 + "File: " + backupFile.getName() + "\n"
                 + "Size: " + MediaStorageManager.formatBytes(sizeBytes) + "\n"
                 + "Items: " + itemsCount + " files\n"
@@ -10795,7 +10795,7 @@ public final class FishbowlActivity extends AppCompatActivity
             Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
             intent.setType("*/*");
             intent.addCategory(Intent.CATEGORY_OPENABLE);
-            restoreFilePickerLauncher.launch(Intent.createChooser(intent, "Select FishBowl Backup (.zip)"));
+            restoreFilePickerLauncher.launch(Intent.createChooser(intent, "Select Jellyarr Backup (.zip)"));
         } catch (Throwable t) {
             Toast.makeText(this, "Cannot open file picker: " + t.getMessage(), Toast.LENGTH_SHORT).show();
         }
@@ -10877,7 +10877,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         TextView msg = new TextView(this);
         msg.setText("Restoring from:\n" + sourceName + "\n\n"
-                + "This will overwrite your current FishBowl preferences, API keys, and media service configurations with the backup archive.\n\n"
+                + "This will overwrite your current Jellyarr preferences, API keys, and media service configurations with the backup archive.\n\n"
                 + "Are you sure you want to proceed?");
         msg.setTextSize(11.5f);
         msg.setTextColor(Color.parseColor("#D4D4D8"));
@@ -11206,7 +11206,7 @@ public final class FishbowlActivity extends AppCompatActivity
         content.setOrientation(LinearLayout.VERTICAL);
 
         TextView descTv = new TextView(this);
-        descTv.setText("Fishbowl is an all-in-one local media streaming server for Android, bundling Jellyfin Server, .NET runtime, and native hardware transcoding with zero trackers.");
+        descTv.setText("Jellyarr is an all-in-one local media streaming server for Android, bundling Jellyfin Server, .NET runtime, and native hardware transcoding with zero trackers.");
         descTv.setTextSize(12f);
         descTv.setTextColor(Color.parseColor("#A1A1AA"));
         descTv.setLineSpacing(dp(3), 1.15f);
@@ -11270,7 +11270,7 @@ public final class FishbowlActivity extends AppCompatActivity
         licHeading.setPadding(0, dp(8), 0, dp(6));
         content.addView(licHeading);
 
-        content.addView(buildSpecRow("Fishbowl", "GNU GPL v3.0"));
+        content.addView(buildSpecRow("Jellyarr", "GNU GPL v3.0"));
         content.addView(createSettingsDivider());
         content.addView(buildSpecRow("Jellyfin Server Core", "GNU GPL v2.0"));
         content.addView(createSettingsDivider());
@@ -11323,7 +11323,7 @@ public final class FishbowlActivity extends AppCompatActivity
         content.addView(licActionRow);
 
         return buildCollapsibleCard(
-                "About Fishbowl",
+                "About Jellyarr",
                 "v" + com.termux.BuildConfig.VERSION_NAME + " • Architecture, Specs & Licenses",
                 content,
                 false
@@ -11337,8 +11337,8 @@ public final class FishbowlActivity extends AppCompatActivity
         tv.setTextColor(Color.parseColor("#D4D4D8"));
         tv.setLineSpacing(dp(2), 1.15f);
         String licText = "FISHBOWL OPEN SOURCE LICENSES & NOTICES\n\n"
-                + "1. Fishbowl (GPL-3.0)\n"
-                + "Copyright (c) 2026 Fishbowl Contributors\n"
+                + "1. Jellyarr (GPL-3.0)\n"
+                + "Copyright (c) 2026 Jellyarr Contributors\n"
                 + "Licensed under the GNU General Public License v3.0.\n\n"
                 + "2. Jellyfin Server (GPL-2.0)\n"
                 + "Copyright (c) Jellyfin Contributors\n"
@@ -11366,9 +11366,9 @@ public final class FishbowlActivity extends AppCompatActivity
                 + "Copyright (c) FlareSolverr Contributors\n"
                 + "Licensed under the MIT License.\n\n"
                 + "12. Legal & Anti-Piracy Policy\n"
-                + "Fishbowl is a personal homelab management utility and does not host, index, or distribute copyrighted media. End users are solely responsible for ensuring compliance with all applicable copyright and intellectual property laws.\n\n"
+                + "Jellyarr is a personal homelab management utility and does not host, index, or distribute copyrighted media. End users are solely responsible for ensuring compliance with all applicable copyright and intellectual property laws.\n\n"
                 + "13. AI-Assisted Development Disclosure\n"
-                + "Fishbowl is developed and maintained with the assistance of artificial intelligence systems (Google DeepMind Antigravity and Gemini CLI) and empirically verified on physical hardware.\n";
+                + "Jellyarr is developed and maintained with the assistance of artificial intelligence systems (Google DeepMind Antigravity and Gemini CLI) and empirically verified on physical hardware.\n";
         tv.setText(licText);
 
         ScrollView sc = new ScrollView(this);
@@ -11523,7 +11523,7 @@ public final class FishbowlActivity extends AppCompatActivity
         aboutContent.addView(buildTransparencyItem("OpenSSL Security & TLS Stack", "OpenSSL 3.x cryptographic SSL/TLS engine managing local HTTPS encryption and secure outbound metadata sockets."));
         aboutContent.addView(buildTransparencyItem("Fontconfig & FreeType Engines", "libfontconfig.so / libfreetype.so native C libraries used by FFmpeg for video subtitle burn-in and text rendering."));
         aboutContent.addView(buildTransparencyItem("SQLite3 Database Driver", "libe_sqlite3.so embedded lightweight relational database engine storing user library indexes and watch progress locally."));
-        aboutContent.addView(buildTransparencyItem("Application Package & Scope", getPackageName() + " (Fishbowl v" + com.termux.BuildConfig.VERSION_NAME + ") isolated Android package namespace."));
+        aboutContent.addView(buildTransparencyItem("Application Package & Scope", getPackageName() + " (Jellyarr v" + com.termux.BuildConfig.VERSION_NAME + ") isolated Android package namespace."));
         aboutContent.addView(buildTransparencyItem("Privacy & Telemetry Verification", "No background metrics are collected or transmitted to external servers. All media data stays strictly on your device."));
         return aboutContent;
     }
@@ -12206,7 +12206,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private void copyDiagnosticsToClipboard() {
         StringBuilder diag = new StringBuilder();
-        diag.append("Fishbowl Jellyfin Diagnostic Report\n");
+        diag.append("Jellyarr Jellyfin Diagnostic Report\n");
         diag.append("App Version: ").append(com.termux.BuildConfig.VERSION_NAME).append(" (Build ").append(com.termux.BuildConfig.VERSION_CODE).append(")\n");
         diag.append("Jellyfin Core: 12.4.0 ARM64\n");
         diag.append("Device: ").append(Build.MANUFACTURER).append(" ").append(Build.MODEL).append("\n");
@@ -12226,7 +12226,7 @@ public final class FishbowlActivity extends AppCompatActivity
         }
         ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         if (cm != null) {
-            cm.setPrimaryClip(ClipData.newPlainText("Fishbowl Error Diagnostics", diag.toString()));
+            cm.setPrimaryClip(ClipData.newPlainText("Jellyarr Error Diagnostics", diag.toString()));
             Toast.makeText(this, "Diagnostic report copied to clipboard", Toast.LENGTH_SHORT).show();
         }
     }
@@ -12472,7 +12472,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         btnSettingsRetry = createPixelButton("RETRY SETUP", getAccentColor(), Color.WHITE);
         btnSettingsRetry.setOnClickListener(v -> {
-            Toast.makeText(this, "Retrying FishBowl setup...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Retrying Jellyarr setup...", Toast.LENGTH_SHORT).show();
             controller.reinstallRuntime(this);
         });
         btnSettingsRetry.setVisibility(View.GONE);
@@ -12494,11 +12494,11 @@ public final class FishbowlActivity extends AppCompatActivity
         btnAddQsTile.setOnClickListener(v -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 FishbowlQuickSettingsTileService.requestAddTile(this,
-                    () -> Toast.makeText(this, "Fishbowl Quick Settings tile added!", Toast.LENGTH_SHORT).show(),
+                    () -> Toast.makeText(this, "Jellyarr Quick Settings tile added!", Toast.LENGTH_SHORT).show(),
                     () -> Toast.makeText(this, "Quick Settings tile request cancelled or already present.", Toast.LENGTH_SHORT).show()
                 );
             } else {
-                Toast.makeText(this, "To add the Fishbowl tile: swipe down twice from the top of your screen, tap Edit (pencil icon), and drag the Fishbowl tile into active tiles.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "To add the Jellyarr tile: swipe down twice from the top of your screen, tap Edit (pencil icon), and drag the Jellyarr tile into active tiles.", Toast.LENGTH_LONG).show();
             }
         });
         LinearLayout.LayoutParams pAddTile = new LinearLayout.LayoutParams(-1, dp(36));
@@ -12527,7 +12527,7 @@ public final class FishbowlActivity extends AppCompatActivity
             runtimeStatusText.setTextColor(Color.parseColor("#FFD54F"));
         } else if (initialized) {
             sb.append("STATUS: INSTALLED & VERIFIED\n");
-            sb.append("- FishBowl & Jellyfin Core 12.4.0\n");
+            sb.append("- Jellyarr & Jellyfin Core 12.4.0\n");
             sb.append("- Microsoft .NET 10.0.12 Runtime Engine\n");
             sb.append("- FFmpeg 7.1.4-Jellyfin Transcoder\n");
             sb.append("- OpenSSL & SQLite3 System Libraries\n");
@@ -12560,12 +12560,12 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private void showReinstallConfirmation() {
         TextView tv = new TextView(this);
-        tv.setText("This will extract a fresh copy of FishBowl and FFmpeg runtime files.\n\nYour existing media libraries, user accounts, database, and configurations will NOT be deleted.");
+        tv.setText("This will extract a fresh copy of Jellyarr and FFmpeg runtime files.\n\nYour existing media libraries, user accounts, database, and configurations will NOT be deleted.");
         tv.setTextSize(11.5f);
         tv.setTextColor(Color.parseColor("#A1A1AA"));
         tv.setLineSpacing(dp(2), 1.15f);
 
-        showOledDialog("Reinstall FishBowl Runtime?", "Clean runtime re-extraction", tv,
+        showOledDialog("Reinstall Jellyarr Runtime?", "Clean runtime re-extraction", tv,
                 "REINSTALL", getAccentColor(), () -> {
                     Toast.makeText(this, "Beginning clean runtime extraction...", Toast.LENGTH_SHORT).show();
                     controller.reinstallRuntime(this);
@@ -12612,7 +12612,7 @@ public final class FishbowlActivity extends AppCompatActivity
         }
 
         updateSetupStageItem("setup_step_1", "1. Recombining split package archives (asset chunks)", percent >= 35, percent > 0 && percent < 35);
-        updateSetupStageItem("setup_step_2", "2. Extracting FishBowl & Jellyfin Core 12.4.0 ARM64 runtime", percent >= 65, percent >= 35 && percent < 65);
+        updateSetupStageItem("setup_step_2", "2. Extracting Jellyarr & Jellyfin Core 12.4.0 ARM64 runtime", percent >= 65, percent >= 35 && percent < 65);
         updateSetupStageItem("setup_step_3", "3. Unpacking Microsoft .NET 10 & FFmpeg 7.1.4 transcoder", percent >= 88, percent >= 65 && percent < 88);
         updateSetupStageItem("setup_step_4", "4. Configuring POSIX permissions & system libraries", percent >= 95, percent >= 88 && percent < 95);
         updateSetupStageItem("setup_step_5", "5. Verifying server binaries & service readiness", percent >= 100, percent >= 95 && percent < 100);
@@ -12767,7 +12767,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
             if (showStartupProgress && txtStage1 != null) {
                 if (startupProgressHeader != null) {
-                    startupProgressHeader.setText(isJustReady ? "FishBowl Server Ready" : "Starting FishBowl Server...");
+                    startupProgressHeader.setText(isJustReady ? "Jellyarr Server Ready" : "Starting Jellyarr Server...");
                 }
                 if (startupProgressBar != null) {
                     if (isJustReady) {
@@ -12787,7 +12787,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
                 boolean isLaunchDone = stage.ordinal() > JellyfinController.StartupStage.LAUNCHING_SERVER.ordinal() || state == JellyfinController.State.RUNNING;
                 boolean isLaunchActive = stage == JellyfinController.StartupStage.LAUNCHING_SERVER && state != JellyfinController.State.RUNNING;
-                updateStageRow(txtStage2, "2. Launching FishBowl core server process", isLaunchDone, isLaunchActive);
+                updateStageRow(txtStage2, "2. Launching Jellyarr core server process", isLaunchDone, isLaunchActive);
 
                 boolean isWaitDone = stage.ordinal() > JellyfinController.StartupStage.WAITING_FOR_SERVER.ordinal() || state == JellyfinController.State.RUNNING;
                 boolean isWaitActive = stage == JellyfinController.StartupStage.WAITING_FOR_SERVER && state != JellyfinController.State.RUNNING;
@@ -13370,7 +13370,7 @@ public final class FishbowlActivity extends AppCompatActivity
                         requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 101);
                     }
                 }));
-        box.addView(updateToggleRow("Notice inside the app", "Pop-up with what's new when you open Fishbowl.",
+        box.addView(updateToggleRow("Notice inside the app", "Pop-up with what's new when you open Jellyarr.",
                 UpdateNotifier.inAppNotify(this, ch), checked -> UpdateNotifier.setInAppNotify(this, ch, checked)));
 
         final TextView status = new TextView(this);
@@ -13444,7 +13444,7 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private void showWhatsNewDialog() {
-        showOledDialog("What's new", "Fishbowl v" + UpdateManager.getInstance(this).getCurrentVersionName(this),
+        showOledDialog("What's new", "Jellyarr v" + UpdateManager.getInstance(this).getCurrentVersionName(this),
                 notesView(readBundledReleaseNotes()), "OK", getAccentColor(), null, null, null);
     }
 
@@ -13488,7 +13488,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private void showUpdateNotice(final String ch, final UpdateNotifier.Latest l) {
         String label = UpdateManager.CHANNEL_STABLE.equals(ch) ? "Stable" : "Beta";
-        showOledDialog("Update available (" + label + ")", "Fishbowl v" + l.name,
+        showOledDialog("Update available (" + label + ")", "Jellyarr v" + l.name,
                 notesView(l.notes.isEmpty() ? "No release notes." : l.notes),
                 "DOWNLOAD & INSTALL", getAccentColor(), () -> beginInAppUpdate(ch),
                 "LATER", () -> UpdateNotifier.setDismissed(this, ch, l.code));
@@ -13694,7 +13694,7 @@ public final class FishbowlActivity extends AppCompatActivity
         long totalMb = total / (1024 * 1024);
         int percent = total > 0 ? (int) ((downloaded * 100) / total) : 0;
 
-        updateStatusText.setText(verInfo + "Downloading update: Fishbowl v" + manager.getLatestVersionName() + "\n" + percent + "%\nProgress: " + downloadedMb + " MB / " + totalMb + " MB");
+        updateStatusText.setText(verInfo + "Downloading update: Jellyarr v" + manager.getLatestVersionName() + "\n" + percent + "%\nProgress: " + downloadedMb + " MB / " + totalMb + " MB");
     }
 
     private String readFirstLine(File f) {

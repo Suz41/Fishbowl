@@ -151,7 +151,7 @@ public final class PasswordResetManager {
             if (nm != null) {
                 NotificationChannel channel = new NotificationChannel(
                         CHANNEL_ID,
-                        "Fishbowl Password Reset",
+                        "Jellyarr Password Reset",
                         NotificationManager.IMPORTANCE_HIGH
                 );
                 channel.setDescription("Jellyfin Password Reset PIN notifications");
@@ -299,7 +299,7 @@ public final class PasswordResetManager {
             File userPinTextFile = new File(passwordDir, "jellyfin_password_reset_" + userName + ".txt");
 
             String content = "==================================================\n"
-                    + "Fishbowl Jellyfin Password Reset PIN\n"
+                    + "Jellyarr Jellyfin Password Reset PIN\n"
                     + "==================================================\n"
                     + "Username:   " + userName + "\n"
                     + "Reset PIN:  " + pin + "\n"

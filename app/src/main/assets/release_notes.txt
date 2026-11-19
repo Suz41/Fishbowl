@@ -1,4 +1,7 @@
-What's new in 2.0.0 (first stable release)
+What's new in 2.0.1 (stable)
+- The app is now named Jellyarr (display name, notifications and screens). Same signing key and package, so it installs over the previous version and keeps all data.
+
+From 2.0.0 (first stable release):
 - Update notifications: Fishbowl now checks for new versions in the background and notifies you outside the app (system notification) and inside the app (pop-up).
 - Separate Stable and Beta update settings: choose for each channel whether to get a system notification and/or an in-app notice, and set the check interval.
 - In-app download, verification and installation of updates, straight from the notice or from Settings > Software Updates.

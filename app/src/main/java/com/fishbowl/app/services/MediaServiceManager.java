@@ -2610,7 +2610,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 org.json.JSONObject root = new org.json.JSONObject();
                 org.json.JSONObject main = new org.json.JSONObject();
                 main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
-                main.put("applicationTitle", "Fishbowl Requests");
+                main.put("applicationTitle", "Jellyarr Requests");
                 main.put("applicationUrl", "http://127.0.0.1:5055");
                 main.put("trustProxy", false);
                 main.put("csrfProtection", true);
@@ -2627,7 +2627,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 org.json.JSONObject root = new org.json.JSONObject();
                 org.json.JSONObject main = new org.json.JSONObject();
                 main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
-                main.put("applicationTitle", "Fishbowl Requests");
+                main.put("applicationTitle", "Jellyarr Requests");
                 main.put("applicationUrl", "http://127.0.0.1:5055");
                 main.put("trustProxy", false);
                 main.put("csrfProtection", true);
@@ -2660,7 +2660,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             if (!main.has("apiKey") || main.optString("apiKey", "").trim().isEmpty()) {
                 main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
             }
-            main.put("applicationTitle", "Fishbowl Requests");
+            main.put("applicationTitle", "Jellyarr Requests");
             main.put("applicationUrl", "http://127.0.0.1:5055");
             main.put("trustProxy", false);
             main.put("csrfProtection", true);

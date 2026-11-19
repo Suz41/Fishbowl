@@ -157,7 +157,7 @@ public final class UpdateNotifier {
             Notification.Builder b = Build.VERSION.SDK_INT >= 26
                     ? new Notification.Builder(ctx, NOTIF_CHANNEL_ID) : new Notification.Builder(ctx);
             b.setSmallIcon(R.drawable.ic_service_notification)
-                    .setContentTitle("Fishbowl update available (" + label + ")")
+                    .setContentTitle("Jellyarr update available (" + label + ")")
                     .setContentText("v" + l.name + " - tap to see what's new and install")
                     .setStyle(new Notification.BigTextStyle().bigText("v" + l.name + "\n" + l.notes))
                     .setContentIntent(pi)

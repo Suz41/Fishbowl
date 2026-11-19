@@ -97,7 +97,7 @@ object BugReportHelper {
             append("- Model: ").append(info.model).append("\n")
             append("- Android Version: ").append(info.androidVersion).append("\n")
             append("- API Level: ").append(info.apiLevel).append("\n")
-            append("- Fishbowl Version: ").append(info.versionName).append("\n")
+            append("- Jellyarr Version: ").append(info.versionName).append("\n")
             append("- Version Code: ").append(info.versionCode).append("\n")
             append("- Architecture: ").append(info.architecture)
         }

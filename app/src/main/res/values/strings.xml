@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="application_name">FishBowl</string>
-    <string name="fishbowl_name">FishBowl</string>
-    <string name="shared_user_label">FishBowl user</string>
-    <string name="fishbowl_widget_desc">Start, restart, stop, and monitor FishBowl and companion media services with live runtime.</string>
-    <string name="fishbowl_services_widget_name">FishBowl Services</string>
+    <string name="application_name">Jellyarr</string>
+    <string name="fishbowl_name">Jellyarr</string>
+    <string name="shared_user_label">Jellyarr user</string>
+    <string name="fishbowl_widget_desc">Start, restart, stop, and monitor Jellyarr and companion media services with live runtime.</string>
+    <string name="fishbowl_services_widget_name">Jellyarr Services</string>
     <string name="fishbowl_services_widget_desc">Glanceable service logos to individually start and stop installed media daemons.</string>
     <string name="quick_settings_tile_label">Jellyfin</string>
 </resources>

@@ -154,7 +154,7 @@ public class JellyfinServerService extends Service implements JellyfinController
                 Log.i(TAG, "Service received RESTART_ALL - restarting all media stack services");
                 hasStarted = true;
                 acquireLocks();
-                promoteToForeground(buildNotification("Fishbowl Stack", "Restarting services...", false));
+                promoteToForeground(buildNotification("Jellyarr Stack", "Restarting services...", false));
                 if (serviceManager != null) {
                     serviceManager.stopAllServices();
                 }
@@ -194,7 +194,7 @@ public class JellyfinServerService extends Service implements JellyfinController
                             Log.i(TAG, "Starting companion service via toggle: " + serviceId);
                             hasStarted = true;
                             acquireLocks();
-                            promoteToForeground(buildNotification("Fishbowl Services", "Starting " + ms.getDisplayName() + "...", false));
+                            promoteToForeground(buildNotification("Jellyarr Services", "Starting " + ms.getDisplayName() + "...", false));
                             serviceManager.startService(serviceId, getApplicationContext());
                         }
                     }
@@ -266,7 +266,7 @@ public class JellyfinServerService extends Service implements JellyfinController
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        Log.i(TAG, "Fishbowl task removed from recents - preserving foreground streaming & download service");
+        Log.i(TAG, "Jellyarr task removed from recents - preserving foreground streaming & download service");
         super.onTaskRemoved(rootIntent);
     }
 
@@ -360,7 +360,7 @@ public class JellyfinServerService extends Service implements JellyfinController
                     iconRes = R.drawable.ic_notification_jellyfin;
                 } else {
                     // Only companions are running; Jellyfin is stopped
-                    title = "Fishbowl Services";
+                    title = "Jellyarr Services";
                     shortText = activeCompanions.size() + " active: " + android.text.TextUtils.join(", ", activeCompanions);
                     expandedText = "Running services:\n• " + android.text.TextUtils.join("\n• ", activeCompanions);
                     subText = activeCompanions.size() + " Active";
@@ -433,7 +433,7 @@ public class JellyfinServerService extends Service implements JellyfinController
         }
         if (wakeLock != null && !wakeLock.isHeld()) {
             wakeLock.acquire(24 * 60 * 60 * 1000L); // 24 hours
-            Log.i(TAG, "CPU WakeLock acquired for Fishbowl media stack & background supervision");
+            Log.i(TAG, "CPU WakeLock acquired for Jellyarr media stack & background supervision");
         }
 
         acquireDiscoveryMulticastLock(DISCOVERY_WINDOW_MS);

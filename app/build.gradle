@@ -170,10 +170,10 @@ android {
         variant.outputs.all { output ->
             if (variant.buildType.name == "debug") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("Fishbowl-v" + versionName + "-debug" + (abi ? "-" + abi : "-universal") + ".apk")
+                outputFileName = new File("Jellyarr-v" + versionName + "-debug" + (abi ? "-" + abi : "-universal") + ".apk")
             } else if (variant.buildType.name == "release") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("Fishbowl-v" + versionName + "-release" + (abi ? "-" + abi : "-universal") + ".apk")
+                outputFileName = new File("Jellyarr-v" + versionName + "-release" + (abi ? "-" + abi : "-universal") + ".apk")
             }
         }
     }

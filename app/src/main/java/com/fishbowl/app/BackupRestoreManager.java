@@ -161,7 +161,7 @@ public final class BackupRestoreManager {
                 return;
             }
 
-            postProgress(callback, "Preparing FishBowl backup staging...");
+            postProgress(callback, "Preparing Jellyarr backup staging...");
             File stagingDir = new File(context.getCacheDir(), "fishbowl_backup_staging_" + System.currentTimeMillis());
             if (!stagingDir.exists()) stagingDir.mkdirs();
             File tempZipFile = null;
@@ -171,7 +171,7 @@ public final class BackupRestoreManager {
                 org.json.JSONArray itemsArray = new org.json.JSONArray();
 
                 // 1. Collect SharedPreferences
-                postProgress(callback, "Backing up FishBowl preferences...");
+                postProgress(callback, "Backing up Jellyarr preferences...");
                 File prefsDir = new File(context.getApplicationInfo().dataDir, "shared_prefs");
                 File stagingPrefs = new File(stagingDir, "shared_prefs");
                 if (prefsDir.exists() && prefsDir.isDirectory()) {
@@ -343,7 +343,7 @@ public final class BackupRestoreManager {
                     }
                     String metaContent = baos.toString(StandardCharsets.UTF_8.name());
                     if (!metaContent.toLowerCase(Locale.ROOT).contains("\"fishbowl\"")) {
-                        throw new java.io.IOException("Backup archive manifest does not identify FishBowl.");
+                        throw new java.io.IOException("Backup archive manifest does not identify Jellyarr.");
                     }
                 } else {
                     // Drain entry bytes to verify zip entry CRC32 integrity
@@ -671,10 +671,10 @@ public final class BackupRestoreManager {
             Intent shareIntent = new Intent(Intent.ACTION_SEND);
             shareIntent.setType("application/zip");
             shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
-            shareIntent.putExtra(Intent.EXTRA_SUBJECT, "FishBowl Configuration Backup");
-            shareIntent.putExtra(Intent.EXTRA_TEXT, "FishBowl System Backup: " + backupFile.getName());
+            shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Jellyarr Configuration Backup");
+            shareIntent.putExtra(Intent.EXTRA_TEXT, "Jellyarr System Backup: " + backupFile.getName());
             shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            context.startActivity(Intent.createChooser(shareIntent, "Share / Save FishBowl Backup"));
+            context.startActivity(Intent.createChooser(shareIntent, "Share / Save Jellyarr Backup"));
         } catch (Throwable t) {
             Log.e(TAG, "Share backup failed", t);
         }
@@ -776,7 +776,7 @@ public final class BackupRestoreManager {
         }
 
         if (!isFishbowl) {
-            throw new IllegalArgumentException("Incompatible backup archive (Not a FishBowl backup).");
+            throw new IllegalArgumentException("Incompatible backup archive (Not a Jellyarr backup).");
         }
 
         if (entries.isEmpty() && metaContent.contains("\"items\"")) {

@@ -315,7 +315,7 @@ public final class UpdateManager {
                             for (int i = 0; i < assets.length(); i++) {
                                 JSONObject asset = assets.getJSONObject(i);
                                 String name = asset.optString("name", "");
-                                if (name.startsWith("Fishbowl") && name.endsWith(".apk") && !name.contains("indices")) {
+                                if ((name.startsWith("Fishbowl") || name.startsWith("Jellyarr")) && name.endsWith(".apk") && !name.contains("indices")) {
                                     downloadUrl = asset.optString("browser_download_url", "");
                                     bestApkName = name;
                                     break;
@@ -789,7 +789,7 @@ public final class UpdateManager {
     public java.util.List<ServiceVersionInfo> getUniversalServiceVersionMatrix() {
         java.util.List<ServiceVersionInfo> list = new java.util.ArrayList<>();
         list.add(new ServiceVersionInfo("jellyfin", "Jellyfin Server", "12.4.0", "12.4.0", false,
-                "Official release v12.4.0 active (.NET 10.0.14 ARM64 maintenance update & security patches). Minimum requirements: Android API 24+, ARM64 (aarch64), .NET 10 LTS, FFmpeg 7.x, 1GB free storage. Verified 100% compatible with Fishbowl runtime."));
+                "Official release v12.4.0 active (.NET 10.0.14 ARM64 maintenance update & security patches). Minimum requirements: Android API 24+, ARM64 (aarch64), .NET 10 LTS, FFmpeg 7.x, 1GB free storage. Verified 100% compatible with Jellyarr runtime."));
         list.add(new ServiceVersionInfo("radarr", "Radarr", "6.4.4", "6.4.4", false,
                 "Current release up to date (.NET 10 ARM64 Bionic runtime ready)."));
         list.add(new ServiceVersionInfo("sonarr", "Sonarr", "4.0.13", "4.0.13", false,

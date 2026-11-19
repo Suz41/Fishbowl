@@ -395,7 +395,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         centerBox.addView(loadingBar);
 
         loadingText = new TextView(this);
-        loadingText.setText(customTitle != null ? "Starting " + customTitle + "..." : "Starting Fishbowl...");
+        loadingText.setText(customTitle != null ? "Starting " + customTitle + "..." : "Starting Jellyarr...");
         loadingText.setTextColor(Color.WHITE);
         loadingText.setTextSize(15);
         loadingText.setGravity(Gravity.CENTER);
