@@ -1,4 +1,4 @@
-What's new in 1.4.10 (stable)
+What's new in 2.0.0 (first stable release)
 - Update notifications: Fishbowl now checks for new versions in the background and notifies you outside the app (system notification) and inside the app (pop-up).
 - Separate Stable and Beta update settings: choose for each channel whether to get a system notification and/or an in-app notice, and set the check interval.
 - In-app download, verification and installation of updates, straight from the notice or from Settings > Software Updates.

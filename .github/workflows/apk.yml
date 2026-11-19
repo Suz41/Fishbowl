@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 45
     env:
       FISHBOWL_VERSION_CODE: ${{ vars.FISHBOWL_VERSION_CODE || '101428' }}
-      FISHBOWL_VERSION_NAME: ${{ vars.FISHBOWL_VERSION_NAME || '1.4.10' }}
+      FISHBOWL_VERSION_NAME: ${{ vars.FISHBOWL_VERSION_NAME || '2.0.0' }}
 
     steps:
       - name: Checkout
