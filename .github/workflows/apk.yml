@@ -25,8 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      FISHBOWL_VERSION_CODE: ${{ vars.FISHBOWL_VERSION_CODE || '101429' }}
-      FISHBOWL_VERSION_NAME: ${{ vars.FISHBOWL_VERSION_NAME || '2.0.1' }}
+      FISHBOWL_VERSION_CODE: ${{ vars.FISHBOWL_VERSION_CODE || '101430' }}
+      FISHBOWL_VERSION_NAME: ${{ vars.FISHBOWL_VERSION_NAME || '2.0.2' }}
 
     steps:
       - name: Checkout

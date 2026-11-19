@@ -49,6 +49,12 @@ public final class UpdateManager {
     private static final String KEY_LATEST_VER_CODE = "latest_version_code";
     private static final String KEY_LATEST_VER_NAME = "latest_version_name";
     private static final String KEY_UPDATE_CHANNEL = "update_channel";
+    private static final String KEY_APK_URL = "latest_apk_url";
+    private static final String KEY_SHA_URL = "latest_sha_url";
+    private static final String KEY_READY_CODE = "ready_code";
+    private static final String KEY_READY_NAME = "ready_name";
+    private static final String KEY_AUTO_DOWNLOAD = "auto_download";
+    private static final String KEY_AUTO_WIFI_ONLY = "auto_download_wifi_only";
     public static final String CHANNEL_STABLE = "stable";
     public static final String CHANNEL_BETA = "beta";
     private static final long CACHE_DURATION_MS = 24 * 60 * 60 * 1000L; // 24 hours
@@ -106,6 +112,124 @@ public final class UpdateManager {
         this.prefs = context.getApplicationContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         this.latestVersionCode = prefs.getInt(KEY_LATEST_VER_CODE, -1);
         this.latestVersionName = prefs.getString(KEY_LATEST_VER_NAME, "");
+        this.apkUrl = prefs.getString(KEY_APK_URL, "");
+        this.sha256Url = prefs.getString(KEY_SHA_URL, "");
+    }
+
+    // ------------------------------------------------------------------ settings
+
+    public boolean isAutoDownloadEnabled() { return prefs.getBoolean(KEY_AUTO_DOWNLOAD, false); }
+    public void setAutoDownloadEnabled(boolean v) { prefs.edit().putBoolean(KEY_AUTO_DOWNLOAD, v).apply(); }
+    public boolean isAutoDownloadWifiOnly() { return prefs.getBoolean(KEY_AUTO_WIFI_ONLY, true); }
+    public void setAutoDownloadWifiOnly(boolean v) { prefs.edit().putBoolean(KEY_AUTO_WIFI_ONLY, v).apply(); }
+
+    /** True when background/auto downloads are allowed on the current network. */
+    public boolean isNetworkAllowedForAuto(Context context) {
+        if (!isAutoDownloadWifiOnly()) return true;
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager)
+                    context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            return cm != null && !cm.isActiveNetworkMetered();
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    // ------------------------------------------------------------------ stored update files
+
+    /** Persistent folder (not the cache, so Android never purges a half-downloaded update). */
+    private static File updatesDir(Context context) {
+        File d = new File(context.getFilesDir(), "updates");
+        if (!d.exists()) d.mkdirs();
+        return d;
+    }
+
+    private static File finalApk(Context context, int code) { return new File(updatesDir(context), "update-" + code + ".apk"); }
+    private static File partApk(Context context, int code) { return new File(updatesDir(context), "update-" + code + ".apk.part"); }
+
+    /** Bytes already saved for the pending version (0 if none). */
+    public long getPartialBytes(Context context) {
+        int code;
+        synchronized (this) { code = latestVersionCode; }
+        if (code <= 0) return 0;
+        File f = partApk(context, code);
+        return f.exists() ? f.length() : 0;
+    }
+
+    public synchronized boolean isDownloadInProgress() { return isDownloading; }
+
+    public boolean isReadyToInstall(int code) {
+        return code > 0 && prefs.getInt(KEY_READY_CODE, 0) == code;
+    }
+
+    private void markReady(int code) {
+        prefs.edit().putInt(KEY_READY_CODE, code).putString(KEY_READY_NAME, latestVersionName).apply();
+    }
+
+    /**
+     * Call on app start: deletes APKs of versions that are already installed, restores a
+     * previously verified download (so the user does not have to download again) and
+     * resumes an interrupted download automatically.
+     */
+    public void restoreSavedState(Context context) {
+        final Context app = context.getApplicationContext();
+        try {
+            int cur = getCurrentVersionCode(app);
+            // Legacy location
+            File legacy = new File(app.getCacheDir(), "updates");
+            if (legacy.exists()) deleteRecursive(legacy);
+            File[] files = updatesDir(app).listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("^update-(\\d+)\\.apk(\\.part)?$").matcher(f.getName());
+                    if (!m.matches()) { f.delete(); continue; }
+                    int code = Integer.parseInt(m.group(1));
+                    if (code <= cur) f.delete();   // already installed -> remove
+                }
+            }
+            int ready = prefs.getInt(KEY_READY_CODE, 0);
+            if (ready > 0 && ready <= cur) {
+                prefs.edit().remove(KEY_READY_CODE).remove(KEY_READY_NAME).apply();
+                ready = 0;
+            }
+            if (ready > cur) {
+                File f = finalApk(app, ready);
+                if (f.exists() && f.length() > 0) {
+                    synchronized (this) {
+                        downloadedApkFile = f;
+                        latestVersionCode = ready;
+                        latestVersionName = prefs.getString(KEY_READY_NAME, latestVersionName);
+                    }
+                    notifyStateChanged(State.VERIFICATION_SUCCESSFUL);
+                    return;
+                }
+                prefs.edit().remove(KEY_READY_CODE).apply();
+            }
+            // Interrupted download -> resume automatically
+            int latest;
+            String url;
+            synchronized (this) { latest = latestVersionCode; url = apkUrl; }
+            if (latest > cur && url != null && url.startsWith("https://")
+                    && partApk(app, latest).exists() && isNetworkAllowedForAuto(app)) {
+                notifyStateChanged(State.UPDATE_AVAILABLE);
+                startDownload(app);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "restoreSavedState failed", t);
+        }
+    }
+
+    /** After a check: if the newest version is already downloaded, offer install instead of download. */
+    private void notifyAvailable(Context context) {
+        int code;
+        synchronized (this) { code = latestVersionCode; }
+        File f = finalApk(context, code);
+        if (isReadyToInstall(code) && f.exists() && f.length() > 0) {
+            synchronized (this) { downloadedApkFile = f; }
+            notifyStateChanged(State.VERIFICATION_SUCCESSFUL);
+        } else {
+            notifyStateChanged(State.UPDATE_AVAILABLE);
+        }
     }
 
     public static synchronized UpdateManager getInstance(Context context) {
@@ -217,7 +341,7 @@ public final class UpdateManager {
         if (!forceCheck && (now - lastCheck < CACHE_DURATION_MS) && latestVersionCode > 0) {
             int currentCode = getCurrentVersionCode(context);
             if (latestVersionCode > currentCode) {
-                notifyStateChanged(State.UPDATE_AVAILABLE);
+                notifyAvailable(context);
             } else {
                 notifyStateChanged(State.UP_TO_DATE);
             }
@@ -354,11 +478,13 @@ public final class UpdateManager {
                             .putLong(KEY_LAST_CHECK, now)
                             .putInt(KEY_LATEST_VER_CODE, latestVersionCode)
                             .putString(KEY_LATEST_VER_NAME, latestVersionName)
+                            .putString(KEY_APK_URL, downloadUrl)
+                            .putString(KEY_SHA_URL, checksumUrl)
                             .apply();
 
                     int currentCode = getCurrentVersionCode(context);
                     if (latestVersionCode > currentCode) {
-                        notifyStateChanged(State.UPDATE_AVAILABLE);
+                        notifyAvailable(context);
                     } else {
                         notifyStateChanged(State.UP_TO_DATE);
                     }
@@ -514,78 +640,178 @@ public final class UpdateManager {
         return sb.toString().trim();
     }
 
-    public synchronized void startDownload(Context context) {
-        if (isDownloading) return;
-
-        if (apkUrl == null || !apkUrl.toLowerCase(Locale.ROOT).startsWith("https://")) {
-            Log.e(TAG, "Refusing download: non-HTTPS or invalid URL: " + apkUrl);
+    /** UI download: resumes from the saved partial file when there is one. */
+    public void startDownload(Context context) {
+        final Context app = context.getApplicationContext();
+        final String url; final String sha; final int code;
+        synchronized (this) { url = apkUrl; sha = sha256Url; code = latestVersionCode; }
+        if (url == null || !url.toLowerCase(Locale.ROOT).startsWith("https://") || code <= 0) {
+            Log.e(TAG, "Refusing download: non-HTTPS or invalid URL: " + url);
             notifyStateChanged(State.DOWNLOAD_FAILED);
             return;
         }
-
-        long usableCache = context.getCacheDir().getUsableSpace();
-        long requiredSpace = (totalApkSize > 0) ? (totalApkSize + 50 * 1024 * 1024L) : (150 * 1024 * 1024L);
-        if (usableCache < requiredSpace) {
-            Log.e(TAG, "Insufficient storage for update: " + (usableCache / (1024 * 1024)) + " MB available");
-            notifyStateChanged(State.DOWNLOAD_FAILED);
-            return;
-        }
-
-        isDownloading = true;
+        if (!beginDownload()) return;
         notifyStateChanged(State.DOWNLOADING);
-
         executor.execute(() -> {
-            HttpURLConnection conn = null;
-            FileOutputStream out = null;
-            InputStream in = null;
             try {
-                File dir = new File(context.getCacheDir(), "updates");
-                if (dir.exists()) {
-                    deleteRecursive(dir);
+                downloadCore(app, code, url, sha);
+            } finally {
+                endDownload();
+            }
+        });
+    }
+
+    /** Blocking download for background jobs (same resumable core). */
+    public boolean downloadBlocking(Context context, int code, String name, String url, String sha) {
+        final Context app = context.getApplicationContext();
+        if (url == null || !url.toLowerCase(Locale.ROOT).startsWith("https://") || code <= 0) return false;
+        if (!beginDownload()) return false;
+        try {
+            synchronized (this) {
+                latestVersionCode = code;
+                latestVersionName = name;
+                apkUrl = url;
+                sha256Url = sha == null ? "" : sha;
+            }
+            prefs.edit().putInt(KEY_LATEST_VER_CODE, code).putString(KEY_LATEST_VER_NAME, name)
+                    .putString(KEY_APK_URL, url).putString(KEY_SHA_URL, sha == null ? "" : sha).apply();
+            notifyStateChanged(State.DOWNLOADING);
+            return downloadCore(app, code, url, sha);
+        } finally {
+            endDownload();
+        }
+    }
+
+    private synchronized boolean beginDownload() {
+        if (isDownloading) return false;
+        isDownloading = true;
+        return true;
+    }
+
+    private synchronized void endDownload() { isDownloading = false; }
+
+    private static long headerLong(HttpURLConnection c, String name) {
+        try {
+            String v = c.getHeaderField(name);
+            return v == null ? -1 : Long.parseLong(v.trim());
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /** Resumable download (HTTP Range) into a persistent .part file, then verification. */
+    private boolean downloadCore(Context ctx, int code, String url, String shaUrl) {
+        File fin = finalApk(ctx, code);
+        File part = partApk(ctx, code);
+        try {
+            File[] others = updatesDir(ctx).listFiles();
+            if (others != null) {
+                for (File f : others) {
+                    if (!f.getName().startsWith("update-" + code + ".apk")) f.delete();
                 }
-                dir.mkdirs();
+            }
+            synchronized (this) { downloadedApkFile = fin; sha256Url = shaUrl == null ? "" : shaUrl; }
 
-                downloadedApkFile = new File(dir, "Fishbowl-update.apk");
+            // Already downloaded earlier? Re-verify and reuse it.
+            if (fin.exists() && fin.length() > 0) {
+                verifyAndInstall(ctx);
+                if (getCurrentState() == State.VERIFICATION_SUCCESSFUL) { markReady(code); return true; }
+                notifyStateChanged(State.DOWNLOADING);
+            }
 
-                URL url = new URL(apkUrl);
-                conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(30000);
-                conn.setRequestMethod("GET");
-                conn.connect();
+            long total = -1;
+            int attempts = 0;
+            final int maxAttempts = 8;
+            boolean complete = false;
+            while (!complete && attempts < maxAttempts) {
+                attempts++;
+                HttpURLConnection conn = null;
+                InputStream in = null;
+                FileOutputStream out = null;
+                try {
+                    long offset = part.exists() ? part.length() : 0;
+                    long need = (total > 0 ? Math.max(0, total - offset) : 200L * 1024 * 1024) + 30L * 1024 * 1024;
+                    if (ctx.getFilesDir().getUsableSpace() < need) {
+                        Log.e(TAG, "Insufficient storage for update");
+                        notifyStateChanged(State.DOWNLOAD_FAILED);
+                        return false;
+                    }
+                    conn = (HttpURLConnection) new URL(url).openConnection();
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(30000);
+                    conn.setRequestProperty("User-Agent", "Fishbowl-Updater");
+                    if (offset > 0) conn.setRequestProperty("Range", "bytes=" + offset + "-");
+                    int rc = conn.getResponseCode();
+                    boolean append = false;
+                    if (rc == 206) {
+                        append = true;
+                        String cr = conn.getHeaderField("Content-Range");
+                        if (cr != null && cr.contains("/")) {
+                            try { total = Long.parseLong(cr.substring(cr.indexOf('/') + 1).trim()); } catch (Exception ignored) {}
+                        } else {
+                            long len = headerLong(conn, "Content-Length");
+                            if (len > 0) total = offset + len;
+                        }
+                    } else if (rc == 200) {
+                        offset = 0;
+                        long len = headerLong(conn, "Content-Length");
+                        if (len > 0) total = len;
+                    } else if (rc == 416) {
+                        if (total > 0 && part.length() == total) { complete = true; continue; }
+                        part.delete();
+                        continue;
+                    } else {
+                        throw new java.io.IOException("HTTP " + rc);
+                    }
 
-                int responseCode = conn.getResponseCode();
-                if (responseCode == 200) {
-                    long totalSize = conn.getContentLength();
-                    in = new BufferedInputStream(conn.getInputStream());
-                    out = new FileOutputStream(downloadedApkFile);
-
-                    byte[] buffer = new byte[8192];
-                    int read;
-                    long downloaded = 0;
-                    while ((read = in.read(buffer)) != -1) {
-                        out.write(buffer, 0, read);
-                        downloaded += read;
-                        notifyProgress(downloaded, totalSize);
+                    in = new java.io.BufferedInputStream(conn.getInputStream(), 65536);
+                    out = new FileOutputStream(part, append);
+                    long done = append ? offset : 0;
+                    byte[] buf = new byte[65536];
+                    int n;
+                    long lastNotify = 0;
+                    notifyProgress(done, total);
+                    while ((n = in.read(buf)) != -1) {
+                        out.write(buf, 0, n);
+                        done += n;
+                        long now = android.os.SystemClock.elapsedRealtime();
+                        if (now - lastNotify > 250) { notifyProgress(done, total); lastNotify = now; }
                     }
                     out.flush();
                     out.close();
-                    in.close();
-
-                    verifyAndInstall(context);
-                } else {
-                    notifyStateChanged(State.DOWNLOAD_FAILED);
+                    out = null;
+                    notifyProgress(done, total);
+                    if (total > 0 && done < total) throw new java.io.IOException("Incomplete " + done + "/" + total);
+                    complete = true;
+                } catch (java.io.IOException e) {
+                    Log.w(TAG, "Download interrupted (attempt " + attempts + "): " + e.getMessage());
+                    if (attempts >= maxAttempts) {
+                        notifyStateChanged(State.DOWNLOAD_FAILED);   // partial file is kept for resuming
+                        return false;
+                    }
+                    try { Thread.sleep(Math.min(30000L, 2000L * attempts)); }
+                    catch (InterruptedException ie) { Thread.currentThread().interrupt(); notifyStateChanged(State.DOWNLOAD_FAILED); return false; }
+                } finally {
+                    try { if (out != null) out.close(); } catch (Exception ignored) {}
+                    try { if (in != null) in.close(); } catch (Exception ignored) {}
+                    if (conn != null) conn.disconnect();
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "Error downloading update", e);
-                notifyStateChanged(State.DOWNLOAD_FAILED);
-            } finally {
-                isDownloading = false;
-                try { if (out != null) out.close(); } catch (Exception ignored) {}
-                try { if (in != null) in.close(); } catch (Exception ignored) {}
-                if (conn != null) conn.disconnect();
             }
-        });
+            if (!complete) { notifyStateChanged(State.DOWNLOAD_FAILED); return false; }
+
+            if (fin.exists()) fin.delete();
+            if (!part.renameTo(fin)) {
+                notifyStateChanged(State.DOWNLOAD_FAILED);
+                return false;
+            }
+            verifyAndInstall(ctx);
+            if (getCurrentState() == State.VERIFICATION_SUCCESSFUL) { markReady(code); return true; }
+            return false;
+        } catch (Throwable t) {
+            Log.e(TAG, "Error downloading update", t);
+            notifyStateChanged(State.DOWNLOAD_FAILED);
+            return false;
+        }
     }
 
     private void verifyAndInstall(Context context) {
@@ -760,10 +986,11 @@ public final class UpdateManager {
     }
 
     public void cleanCachedApk(Context context) {
-        File dir = new File(context.getCacheDir(), "updates");
+        File dir = updatesDir(context);
         if (dir.exists()) {
             deleteRecursive(dir);
         }
+        prefs.edit().remove(KEY_READY_CODE).remove(KEY_READY_NAME).apply();
         notifyStateChanged(State.IDLE);
     }
 

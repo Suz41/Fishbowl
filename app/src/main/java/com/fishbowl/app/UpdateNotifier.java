@@ -41,6 +41,8 @@ public final class UpdateNotifier {
         public int code = -1;
         public String name = "";
         public String notes = "";
+        public String apkUrl = "";
+        public String shaUrl = "";
         public boolean found() { return code > 0; }
     }
 
@@ -92,13 +94,36 @@ public final class UpdateNotifier {
                 boolean pre = rel.optBoolean("prerelease", false);
                 String tag = rel.optString("tag_name", "").replaceFirst("^build-\\d+-", "");
                 String notes = cleanNotes(rel.optString("body", ""));
-                if (!pre && code > r.stable.code) fill(r.stable, code, tag, notes);
-                if (code > r.beta.code) fill(r.beta, code, tag, notes);
+                String[] asset = pickAsset(rel.optJSONArray("assets"));
+                if (!pre && code > r.stable.code) { fill(r.stable, code, tag, notes); r.stable.apkUrl = asset[0]; r.stable.shaUrl = asset[1]; }
+                if (code > r.beta.code) { fill(r.beta, code, tag, notes); r.beta.apkUrl = asset[0]; r.beta.shaUrl = asset[1]; }
             }
             return r;
         } finally {
             if (conn != null) conn.disconnect();
         }
+    }
+
+    /** [apkUrl, sha256Url] using the same preference order as UpdateManager. */
+    private static String[] pickAsset(JSONArray assets) {
+        String apk = "", apkName = "", sha = "";
+        if (assets == null) return new String[]{"", ""};
+        try {
+            for (int pass = 0; pass < 3 && apk.isEmpty(); pass++) {
+                for (int i = 0; i < assets.length(); i++) {
+                    JSONObject a = assets.getJSONObject(i);
+                    String n = a.optString("name", "");
+                    boolean ok = n.endsWith(".apk") && !n.contains("indices") && (pass == 0 ? n.contains("arm64")
+                            : pass == 1 ? n.endsWith("-universal.apk") : (n.startsWith("Fishbowl") || n.startsWith("Jellyarr")));
+                    if (ok) { apk = a.optString("browser_download_url", ""); apkName = n; break; }
+                }
+            }
+            for (int i = 0; i < assets.length(); i++) {
+                String n = assets.getJSONObject(i).optString("name", "");
+                if (n.equals(apkName + ".sha256")) { sha = assets.getJSONObject(i).optString("browser_download_url", ""); break; }
+            }
+        } catch (Exception ignored) {}
+        return new String[]{apk, sha};
     }
 
     private static void fill(Latest l, int code, String tag, String notes) {
@@ -124,6 +149,16 @@ public final class UpdateNotifier {
         try {
             Result r = fetchLatest();
             int cur = UpdateManager.getInstance(ctx).getCurrentVersionCode(ctx);
+            UpdateManager um = UpdateManager.getInstance(ctx);
+            um.restoreSavedState(ctx);   // drops installed APKs, restores a finished download
+            if (um.isAutoDownloadEnabled() && um.isNetworkAllowedForAuto(ctx)) {
+                Latest sel = r.get(um.getUpdateChannel(ctx));
+                if (sel.found() && sel.code > cur && !sel.apkUrl.isEmpty() && !um.isReadyToInstall(sel.code)) {
+                    if (um.downloadBlocking(ctx, sel.code, sel.name, sel.apkUrl, sel.shaUrl)) {
+                        notifyDownloaded(ctx, sel);
+                    }
+                }
+            }
             String[] chans = {UpdateManager.CHANNEL_STABLE, UpdateManager.CHANNEL_BETA};
             for (String ch : chans) {
                 Latest l = r.get(ch);
@@ -136,6 +171,32 @@ public final class UpdateNotifier {
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    private static void notifyDownloaded(Context ctx, Latest l) {
+        try {
+            if (Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) return;
+            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            if (Build.VERSION.SDK_INT >= 26) {
+                nm.createNotificationChannel(new NotificationChannel(NOTIF_CHANNEL_ID, "App updates", NotificationManager.IMPORTANCE_DEFAULT));
+            }
+            Intent open = new Intent(ctx, FishbowlActivity.class);
+            open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            open.putExtra(EXTRA_OPEN_UPDATE, true);
+            open.putExtra(EXTRA_CHANNEL, UpdateManager.getInstance(ctx).getUpdateChannel(ctx));
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0);
+            PendingIntent pi = PendingIntent.getActivity(ctx, 7403, open, flags);
+            Notification.Builder b = Build.VERSION.SDK_INT >= 26
+                    ? new Notification.Builder(ctx, NOTIF_CHANNEL_ID) : new Notification.Builder(ctx);
+            b.setSmallIcon(R.drawable.ic_service_notification)
+                    .setContentTitle("Update downloaded")
+                    .setContentText("v" + l.name + " is ready - tap to install")
+                    .setContentIntent(pi)
+                    .setAutoCancel(true);
+            nm.notify(7403, b.build());
+        } catch (Throwable ignored) {}
     }
 
     private static boolean notify(Context ctx, String ch, Latest l) {
@@ -177,7 +238,8 @@ public final class UpdateNotifier {
             Context app = c.getApplicationContext();
             JobScheduler js = (JobScheduler) app.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             if (js == null) return;
-            boolean any = systemNotify(app, UpdateManager.CHANNEL_STABLE) || systemNotify(app, UpdateManager.CHANNEL_BETA);
+            boolean any = systemNotify(app, UpdateManager.CHANNEL_STABLE) || systemNotify(app, UpdateManager.CHANNEL_BETA)
+                    || UpdateManager.getInstance(app).isAutoDownloadEnabled();
             if (!any) { js.cancel(JOB_ID); return; }
             long interval = Math.max(1, intervalHours(app)) * 60L * 60L * 1000L;
             JobInfo info = new JobInfo.Builder(JOB_ID, new ComponentName(app, UpdateJobService.class))

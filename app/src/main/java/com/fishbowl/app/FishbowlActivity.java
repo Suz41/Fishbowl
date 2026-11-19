@@ -609,6 +609,7 @@ public final class FishbowlActivity extends AppCompatActivity
         MediaServiceManager.getInstance(this).scheduleAutoWireDebounced(4000);
         refreshUpdateUI();
         UpdateNotifier.schedule(this);
+        UpdateManager.getInstance(this).restoreSavedState(this);
         maybeShowWhatsNewAfterUpdate();
         runStartupUpdateCheck();
         handleUpdateIntent(getIntent());
@@ -10329,6 +10330,22 @@ public final class FishbowlActivity extends AppCompatActivity
         }
         content.addView(intervalRow);
 
+        content.addView(createSettingsDivider());
+        final UpdateManager umSettings = UpdateManager.getInstance(this);
+        content.addView(updateToggleRow("Download updates automatically",
+                "Downloads new versions in the background (of the selected channel) and keeps the file until you install it. Interrupted downloads resume automatically.",
+                umSettings.isAutoDownloadEnabled(), checked -> {
+                    umSettings.setAutoDownloadEnabled(checked);
+                    UpdateNotifier.schedule(this);
+                    if (checked && Build.VERSION.SDK_INT >= 33
+                            && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 101);
+                    }
+                }));
+        content.addView(updateToggleRow("Automatic download on Wi-Fi only",
+                "Do not use mobile data for automatic update downloads.",
+                umSettings.isAutoDownloadWifiOnly(), checked -> umSettings.setAutoDownloadWifiOnly(checked)));
+
         Button btnWhatsNew = createPixelButton("WHAT'S NEW IN THIS VERSION", getSurfaceElevatedColor(), getAccentColor());
         btnWhatsNew.setTextSize(10.5f);
         btnWhatsNew.setOnClickListener(v -> showWhatsNewDialog());
@@ -13472,6 +13489,13 @@ public final class FishbowlActivity extends AppCompatActivity
                         UpdateNotifier.Latest l = r.get(ch);
                         if (st != null) st.setText(l.found() ? "Latest: v" + l.name + (l.code > cur ? "  (newer than installed)" : "  (up to date)") : "Latest: none published");
                     }
+                    final UpdateManager um = UpdateManager.getInstance(this);
+                    if (um.isAutoDownloadEnabled() && um.isNetworkAllowedForAuto(this)) {
+                        final UpdateNotifier.Latest sel = r.get(um.getUpdateChannel(this));
+                        if (sel.found() && sel.code > cur && !sel.apkUrl.isEmpty() && !um.isReadyToInstall(sel.code)) {
+                            new Thread(() -> um.downloadBlocking(this, sel.code, sel.name, sel.apkUrl, sel.shaUrl), "fishbowl-auto-dl").start();
+                        }
+                    }
                     if (isFinishing()) return;
                     for (String ch : new String[]{UpdateManager.CHANNEL_STABLE, UpdateManager.CHANNEL_BETA}) {
                         UpdateNotifier.Latest l = r.get(ch);
@@ -13490,17 +13514,23 @@ public final class FishbowlActivity extends AppCompatActivity
         String label = UpdateManager.CHANNEL_STABLE.equals(ch) ? "Stable" : "Beta";
         showOledDialog("Update available (" + label + ")", "Jellyarr v" + l.name,
                 notesView(l.notes.isEmpty() ? "No release notes." : l.notes),
-                "DOWNLOAD & INSTALL", getAccentColor(), () -> beginInAppUpdate(ch),
+                UpdateManager.getInstance(this).isReadyToInstall(l.code) ? "تثبيت التحديث" : "تنزيل التحديث",
+                getAccentColor(), () -> beginInAppUpdate(ch, l.code),
                 "LATER", () -> UpdateNotifier.setDismissed(this, ch, l.code));
     }
 
     /** Switch to the chosen channel, then download, verify and open the installer from inside the app. */
-    private void beginInAppUpdate(String ch) {
+    private void beginInAppUpdate(String ch, int code) {
         UpdateManager m = UpdateManager.getInstance(this);
         m.setUpdateChannel(ch);
         updateChannelSelectionUI();
-        updateAutoInstall = true;
         openSettingsSectionByName("Software Updates");
+        if (m.isReadyToInstall(code)) {
+            m.restoreSavedState(this);
+            m.installUpdate(this);
+            return;
+        }
+        updateAutoInstall = true;   // download once the check finds the update (no auto-install)
         m.checkForUpdates(this, true);
     }
 
@@ -13528,8 +13558,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 if (state == UpdateManager.State.UPDATE_AVAILABLE) {
                     mgr.startDownload(FishbowlActivity.this);
                 } else if (state == UpdateManager.State.VERIFICATION_SUCCESSFUL) {
-                    updateAutoInstall = false;
-                    mgr.installUpdate(FishbowlActivity.this);
+                    updateAutoInstall = false;   // download only: installing is a separate tap
                 } else if (state == UpdateManager.State.UP_TO_DATE || state == UpdateManager.State.DOWNLOAD_FAILED
                         || state == UpdateManager.State.VERIFICATION_FAILED || state == UpdateManager.State.PERMISSION_REQUIRED
                         || state == UpdateManager.State.NETWORK_UNAVAILABLE || state == UpdateManager.State.RELEASE_UNAVAILABLE) {
@@ -13623,8 +13652,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 }
                 break;
             case UPDATE_AVAILABLE:
-                updateStatusText.setText(verInfo + "Status: Update Available! (v" + manager.getLatestVersionName() + ")\n\nWhat's new:\n" + manager.getLatestReleaseNotes());
-                updateActionBtn.setText("Download update");
+                long partial = manager.getPartialBytes(this);
+                updateStatusText.setText(verInfo + "Status: Update Available! (v" + manager.getLatestVersionName() + ")"
+                        + (partial > 0 ? "\nSaved so far: " + (partial / (1024 * 1024)) + " MB - the download will resume from here." : "")
+                        + "\n\nWhat's new:\n" + manager.getLatestReleaseNotes());
+                updateActionBtn.setText("تنزيل التحديث");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.startDownload(this));
                 break;
@@ -13634,7 +13666,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 break;
             case DOWNLOAD_COMPLETE:
                 updateStatusText.setText(verInfo + "Status: Update downloaded successfully.");
-                updateActionBtn.setText("Verify and install");
+                updateActionBtn.setText("تثبيت التحديث");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.installUpdate(this));
                 break;
@@ -13643,14 +13675,14 @@ public final class FishbowlActivity extends AppCompatActivity
                 updateActionBtn.setVisibility(View.GONE);
                 break;
             case VERIFICATION_SUCCESSFUL:
-                updateStatusText.setText(verInfo + "Status: Package verified and integrity confirmed.");
-                updateActionBtn.setText("Install update");
+                updateStatusText.setText(verInfo + "Status: Update downloaded and verified. It is saved on this device - you can install it now or later without downloading again.");
+                updateActionBtn.setText("تثبيت التحديث");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.installUpdate(this));
                 break;
             case VERIFICATION_FAILED:
                 updateStatusText.setText(verInfo + "Status: Update verification failed (corrupt file).");
-                updateActionBtn.setText("Retry download");
+                updateActionBtn.setText("تنزيل التحديث");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.startDownload(this));
                 break;
@@ -13662,7 +13694,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 break;
             case DOWNLOAD_FAILED:
                 updateStatusText.setText(verInfo + "Status: Update download failed. Check network connection.");
-                updateActionBtn.setText("Retry download");
+                updateActionBtn.setText("تنزيل التحديث");
                 updateActionBtn.setVisibility(View.VISIBLE);
                 updateActionBtn.setOnClickListener(v -> manager.startDownload(this));
                 break;

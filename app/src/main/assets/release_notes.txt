@@ -1,4 +1,10 @@
-What's new in 2.0.1 (stable)
+What's new in 2.0.2 (stable)
+- Updates: the button now says "تنزيل التحديث" (download only); installing is a separate "تثبيت التحديث" button.
+- The downloaded file is kept on the device and downloads resume automatically (also after closing the app or losing the connection), so nothing is downloaded twice.
+- New setting: download updates automatically in the background (optionally Wi-Fi only), with a notification when ready.
+- Installed update files are deleted automatically after the update is installed.
+
+From 2.0.1:
 - The app is now named Jellyarr (display name, notifications and screens). Same signing key and package, so it installs over the previous version and keeps all data.
 
 From 2.0.0 (first stable release):
