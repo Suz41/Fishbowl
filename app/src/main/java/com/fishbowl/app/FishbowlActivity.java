@@ -532,6 +532,7 @@ public final class FishbowlActivity extends AppCompatActivity
         super.onNewIntent(intent);
         setIntent(intent);
         handleControlIntent(intent);
+        handleUpdateIntent(intent);
         if (intent != null && Intent.ACTION_MAIN.equals(intent.getAction()) && intent.hasCategory(Intent.CATEGORY_LAUNCHER)) {
             triggerAutoStartOnAppLaunchIfEnabled();
         }
@@ -607,6 +608,10 @@ public final class FishbowlActivity extends AppCompatActivity
         MediaServiceManager.getInstance(this).reconcileRunningServices();
         MediaServiceManager.getInstance(this).scheduleAutoWireDebounced(4000);
         refreshUpdateUI();
+        UpdateNotifier.schedule(this);
+        maybeShowWhatsNewAfterUpdate();
+        runStartupUpdateCheck();
+        handleUpdateIntent(getIntent());
         refreshHomeServicesBadge();
         healthHandler.removeCallbacks(healthPollRunnable);
         healthHandler.post(healthPollRunnable);
@@ -8608,7 +8613,19 @@ public final class FishbowlActivity extends AppCompatActivity
         return settingsRoot;
     }
 
+    private final java.util.HashMap<String, View> settingsSectionViews = new java.util.HashMap<>();
+
+    private void openSettingsSectionByName(String name) {
+        View v = settingsSectionViews.get(name);
+        if (v == null) return;
+        activeTab = 3;
+        updateBottomNavSelection();
+        renderActiveTab();
+        openSettingsSection(name, v);
+    }
+
     private void addSettingsMenuRow(final String name, String subtitle, final View sectionView) {
+        settingsSectionViews.put(name, sectionView);
         UiStyle.styleAllSwitches(this, sectionView);
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -8650,6 +8667,11 @@ public final class FishbowlActivity extends AppCompatActivity
         settingsDetailBody.addView(sectionView);
         settingsDetailTitle.setText(name);
         settingsDetailScroll.scrollTo(0, 0);
+        try {
+            if ("Permissions & Health".equals(name)) refreshPermissionsUI();
+            else if ("Security & Identity".equals(name)) refreshSecurityUsersUI();
+            else if ("Backup & Restore".equals(name)) updateBackupStatusUI();
+        } catch (Throwable ignored) {}
         settingsMenu.getParent();
         ((View) settingsMenu.getParent()).setVisibility(View.GONE);
         settingsDetail.setVisibility(View.VISIBLE);
@@ -10267,6 +10289,54 @@ public final class FishbowlActivity extends AppCompatActivity
 
         content.addView(createSettingsDivider());
 
+        // ---- Update notifications (separate Stable / Beta) ----
+        content.addView(buildUpdateNotifyBlock(UpdateManager.CHANNEL_STABLE, "STABLE RELEASES", "Official full releases"));
+        content.addView(createSettingsDivider());
+        content.addView(buildUpdateNotifyBlock(UpdateManager.CHANNEL_BETA, "BETA RELEASES", "Pre-release / preview builds"));
+        content.addView(createSettingsDivider());
+
+        TextView intervalTitle = new TextView(this);
+        intervalTitle.setText("Background check interval");
+        intervalTitle.setTextSize(13.5f);
+        intervalTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        intervalTitle.setTextColor(Color.parseColor("#F4F4F5"));
+        content.addView(intervalTitle);
+        LinearLayout intervalRow = new LinearLayout(this);
+        intervalRow.setOrientation(LinearLayout.HORIZONTAL);
+        intervalRow.setPadding(0, dp(8), 0, dp(4));
+        final int[] hoursOpts = {6, 12, 24};
+        final Button[] intervalBtns = new Button[hoursOpts.length];
+        for (int i = 0; i < hoursOpts.length; i++) {
+            final int h = hoursOpts[i];
+            intervalBtns[i] = createPixelButton(h + " H", Color.parseColor("#18191E"), Color.parseColor("#A1A1AA"));
+            intervalBtns[i].setTextSize(10.5f);
+            intervalBtns[i].setOnClickListener(v -> {
+                UpdateNotifier.setIntervalHours(this, h);
+                for (int k = 0; k < hoursOpts.length; k++) {
+                    boolean sel = hoursOpts[k] == h;
+                    intervalBtns[k].setTextColor(sel ? Color.WHITE : Color.parseColor("#A1A1AA"));
+                    intervalBtns[k].setBackground(createRoundedDrawable(sel ? getAccentColor() : Color.parseColor("#18191E"), dp(10)));
+                }
+            });
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
+            if (i < hoursOpts.length - 1) ilp.rightMargin = dp(8);
+            intervalRow.addView(intervalBtns[i], ilp);
+            boolean sel = hoursOpts[i] == UpdateNotifier.intervalHours(this);
+            if (sel) {
+                intervalBtns[i].setTextColor(Color.WHITE);
+                intervalBtns[i].setBackground(createRoundedDrawable(getAccentColor(), dp(10)));
+            }
+        }
+        content.addView(intervalRow);
+
+        Button btnWhatsNew = createPixelButton("WHAT'S NEW IN THIS VERSION", getSurfaceElevatedColor(), getAccentColor());
+        btnWhatsNew.setTextSize(10.5f);
+        btnWhatsNew.setOnClickListener(v -> showWhatsNewDialog());
+        LinearLayout.LayoutParams wnLp = new LinearLayout.LayoutParams(-1, dp(38));
+        wnLp.topMargin = dp(8);
+        content.addView(btnWhatsNew, wnLp);
+        content.addView(createSettingsDivider());
+
         // Integrated Services Matrix Header
         TextView servicesHeading = new TextView(this);
         servicesHeading.setText("COMPANION SERVICES & ENGINES");
@@ -10287,7 +10357,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 "Software Updates",
                 "Channel: " + (isBeta ? "Beta" : "Stable") + " • OTA updates",
                 content,
-                false
+                true
         );
     }
 
@@ -11453,6 +11523,7 @@ public final class FishbowlActivity extends AppCompatActivity
         return aboutContent;
     }
 
+    /** Settings sections now live on their own page: a single always-open card (no folded list inside). */
     private LinearLayout buildCollapsibleCard(String titleText, String subtitleText, View contentContainer, boolean initiallyExpanded) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -11461,80 +11532,8 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         params.bottomMargin = dp(14);
         card.setLayoutParams(params);
-
-        // Header layout (clickable)
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setClickable(true);
-        header.setFocusable(true);
-
-        LinearLayout titleCol = new LinearLayout(this);
-        titleCol.setOrientation(LinearLayout.VERTICAL);
-
-        TextView title = new TextView(this);
-        title.setText(titleText);
-        title.setTextSize(13.5f);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        title.setTextColor(getPrimaryTextColor());
-        titleCol.addView(title);
-
-        TextView sub = new TextView(this);
-        sub.setText(subtitleText);
-        sub.setTextSize(10.5f);
-        sub.setTextColor(getSecondaryTextColor());
-        sub.setPadding(0, dp(2), 0, 0);
-        titleCol.addView(sub);
-
-        header.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-        FrameLayout arrowSlot = new FrameLayout(this);
-        arrowSlot.setBackground(createRoundedDrawable(Color.parseColor("#15161A"), dp(6)));
-        ImageView arrow = new ImageView(this);
-        arrow.setImageResource(R.drawable.ic_chevron_down);
-        arrow.setColorFilter(getSecondaryTextColor());
-        arrow.setRotation(initiallyExpanded ? 180f : 0f);
-        FrameLayout.LayoutParams ivLp = new FrameLayout.LayoutParams(dp(18), dp(18));
-        ivLp.gravity = Gravity.CENTER;
-        arrowSlot.addView(arrow, ivLp);
-        header.addView(arrowSlot, new LinearLayout.LayoutParams(dp(28), dp(28)));
-
-        card.addView(header);
-
-        // Subtle divider separating header and content
-        View divider = new View(this);
-        divider.setBackgroundColor(Color.argb(12, 255, 255, 255));
-        LinearLayout.LayoutParams pDiv = new LinearLayout.LayoutParams(-1, dp(1));
-        pDiv.topMargin = dp(12);
-        pDiv.bottomMargin = dp(12);
-        divider.setLayoutParams(pDiv);
-        divider.setVisibility(initiallyExpanded ? View.VISIBLE : View.GONE);
-        card.addView(divider);
-
-        // Content
-        contentContainer.setVisibility(initiallyExpanded ? View.VISIBLE : View.GONE);
+        contentContainer.setVisibility(View.VISIBLE);
         card.addView(contentContainer);
-
-        header.setOnClickListener(v -> {
-            boolean isExpanded = (contentContainer.getVisibility() == View.VISIBLE);
-            if (isExpanded) {
-                contentContainer.setVisibility(View.GONE);
-                divider.setVisibility(View.GONE);
-                arrow.animate().rotation(0f).setDuration(220).start();
-            } else {
-                contentContainer.setVisibility(View.VISIBLE);
-                divider.setVisibility(View.VISIBLE);
-                arrow.animate().rotation(180f).setDuration(220).start();
-                if ("Permissions & Background Survival".equals(titleText)) {
-                    refreshPermissionsUI();
-                } else if ("Security & Identity".equals(titleText)) {
-                    refreshSecurityUsersUI();
-                } else if ("Backup & Restore".equals(titleText)) {
-                    updateBackupStatusUI();
-                }
-            }
-        });
-
         return card;
     }
 
@@ -13338,10 +13337,200 @@ public final class FishbowlActivity extends AppCompatActivity
         return (int) (value * getResources().getDisplayMetrics().density);
     }
 
+    // -- Update notifications -----------------------------------------------------
+
+    private View buildUpdateNotifyBlock(final String ch, String heading, String desc) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+
+        TextView h = new TextView(this);
+        h.setText(heading);
+        h.setTextSize(10.5f);
+        h.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        h.setTextColor(UpdateManager.CHANNEL_STABLE.equals(ch) ? getAccentColor() : Color.parseColor("#F59E0B"));
+        h.setLetterSpacing(0.06f);
+        box.addView(h);
+        TextView d = new TextView(this);
+        d.setText(desc);
+        d.setTextSize(11f);
+        d.setTextColor(Color.parseColor("#71717A"));
+        d.setPadding(0, dp(2), 0, dp(4));
+        box.addView(d);
+
+        box.addView(updateToggleRow("Notification outside the app", "System notification when a new version is found (checked in the background).",
+                UpdateNotifier.systemNotify(this, ch), checked -> {
+                    UpdateNotifier.setSystemNotify(this, ch, checked);
+                    if (checked && Build.VERSION.SDK_INT >= 33
+                            && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 101);
+                    }
+                }));
+        box.addView(updateToggleRow("Notice inside the app", "Pop-up with what's new when you open Fishbowl.",
+                UpdateNotifier.inAppNotify(this, ch), checked -> UpdateNotifier.setInAppNotify(this, ch, checked)));
+
+        final TextView status = new TextView(this);
+        status.setTextSize(11f);
+        status.setTextColor(Color.parseColor("#A1A1AA"));
+        status.setPadding(0, dp(4), 0, dp(2));
+        status.setText("Latest: not checked yet");
+        box.addView(status);
+        updateNotifyStatusViews.put(ch, status);
+        return box;
+    }
+
+    private final java.util.HashMap<String, TextView> updateNotifyStatusViews = new java.util.HashMap<>();
+
+    private interface BoolSink { void set(boolean v); }
+
+    private View updateToggleRow(String title, String sub, boolean on, final BoolSink sink) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(4), 0, dp(4));
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextSize(13f);
+        t.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        t.setTextColor(Color.parseColor("#F4F4F5"));
+        col.addView(t);
+        TextView st = new TextView(this);
+        st.setText(sub);
+        st.setTextSize(11f);
+        st.setTextColor(Color.parseColor("#71717A"));
+        st.setPadding(0, dp(2), dp(8), 0);
+        col.addView(st);
+        row.addView(col, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        Switch sw = new Switch(this);
+        sw.setChecked(on);
+        sw.setOnCheckedChangeListener((v, checked) -> sink.set(checked));
+        row.addView(sw);
+        return row;
+    }
+
+    private boolean updateAutoInstall = false;
+    private boolean updateStartupCheckDone = false;
+    private final android.os.Handler updateUiHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    /** Reads bundled release notes (single source, also used as the GitHub release text). */
+    private String readBundledReleaseNotes() {
+        try (java.io.InputStream in = getAssets().open("release_notes.txt");
+             java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream()) {
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+            return bo.toString("UTF-8").trim();
+        } catch (Throwable t) {
+            return "No release notes available.";
+        }
+    }
+
+    private View notesView(String text) {
+        ScrollView sv = new ScrollView(this);
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setTextSize(12f);
+        tv.setTextColor(Color.parseColor("#D4D4D8"));
+        tv.setLineSpacing(dp(2), 1.1f);
+        sv.addView(tv);
+        sv.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(260)));
+        return sv;
+    }
+
+    private void showWhatsNewDialog() {
+        showOledDialog("What's new", "Fishbowl v" + UpdateManager.getInstance(this).getCurrentVersionName(this),
+                notesView(readBundledReleaseNotes()), "OK", getAccentColor(), null, null, null);
+    }
+
+    /** Once after each update: show the summary of the new version. */
+    private void maybeShowWhatsNewAfterUpdate() {
+        try {
+            int cur = UpdateManager.getInstance(this).getCurrentVersionCode(this);
+            if (UpdateNotifier.lastSeenVersion(this) == cur) return;
+            UpdateNotifier.setLastSeenVersion(this, cur);
+            updateUiHandler.postDelayed(() -> { if (!isFinishing()) showWhatsNewDialog(); }, 600);
+        } catch (Throwable ignored) {}
+    }
+
+    /** Background lookup on app start; shows the in-app notice for enabled channels. */
+    private void runStartupUpdateCheck() {
+        if (updateStartupCheckDone) return;
+        updateStartupCheckDone = true;
+        new Thread(() -> {
+            try {
+                final UpdateNotifier.Result r = UpdateNotifier.fetchLatest();
+                final int cur = UpdateManager.getInstance(this).getCurrentVersionCode(this);
+                runOnUiThread(() -> {
+                    for (String ch : new String[]{UpdateManager.CHANNEL_STABLE, UpdateManager.CHANNEL_BETA}) {
+                        TextView st = updateNotifyStatusViews.get(ch);
+                        UpdateNotifier.Latest l = r.get(ch);
+                        if (st != null) st.setText(l.found() ? "Latest: v" + l.name + (l.code > cur ? "  (newer than installed)" : "  (up to date)") : "Latest: none published");
+                    }
+                    if (isFinishing()) return;
+                    for (String ch : new String[]{UpdateManager.CHANNEL_STABLE, UpdateManager.CHANNEL_BETA}) {
+                        UpdateNotifier.Latest l = r.get(ch);
+                        if (l.found() && l.code > cur && UpdateNotifier.inAppNotify(this, ch)
+                                && UpdateNotifier.dismissedCode(this, ch) < l.code) {
+                            showUpdateNotice(ch, l);
+                            break;
+                        }
+                    }
+                });
+            } catch (Throwable ignored) {}
+        }, "fishbowl-update-startup").start();
+    }
+
+    private void showUpdateNotice(final String ch, final UpdateNotifier.Latest l) {
+        String label = UpdateManager.CHANNEL_STABLE.equals(ch) ? "Stable" : "Beta";
+        showOledDialog("Update available (" + label + ")", "Fishbowl v" + l.name,
+                notesView(l.notes.isEmpty() ? "No release notes." : l.notes),
+                "DOWNLOAD & INSTALL", getAccentColor(), () -> beginInAppUpdate(ch),
+                "LATER", () -> UpdateNotifier.setDismissed(this, ch, l.code));
+    }
+
+    /** Switch to the chosen channel, then download, verify and open the installer from inside the app. */
+    private void beginInAppUpdate(String ch) {
+        UpdateManager m = UpdateManager.getInstance(this);
+        m.setUpdateChannel(ch);
+        updateChannelSelectionUI();
+        updateAutoInstall = true;
+        openSettingsSectionByName("Software Updates");
+        m.checkForUpdates(this, true);
+    }
+
+    private void handleUpdateIntent(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(UpdateNotifier.EXTRA_OPEN_UPDATE, false)) return;
+        intent.removeExtra(UpdateNotifier.EXTRA_OPEN_UPDATE);
+        final String ch = intent.getStringExtra(UpdateNotifier.EXTRA_CHANNEL);
+        new Thread(() -> {
+            try {
+                final UpdateNotifier.Result r = UpdateNotifier.fetchLatest();
+                final String useCh = ch == null ? UpdateManager.CHANNEL_BETA : ch;
+                final UpdateNotifier.Latest l = r.get(useCh);
+                int cur = UpdateManager.getInstance(this).getCurrentVersionCode(this);
+                runOnUiThread(() -> { if (l.found() && l.code > cur && !isFinishing()) showUpdateNotice(useCh, l); });
+            } catch (Throwable ignored) {}
+        }, "fishbowl-update-intent").start();
+    }
+
     private final UpdateManager.UpdateListener updateListener = new UpdateManager.UpdateListener() {
         @Override
         public void onUpdateStateChanged(UpdateManager.State state) {
             refreshUpdateUI();
+            if (updateAutoInstall) {
+                UpdateManager mgr = UpdateManager.getInstance(FishbowlActivity.this);
+                if (state == UpdateManager.State.UPDATE_AVAILABLE) {
+                    mgr.startDownload(FishbowlActivity.this);
+                } else if (state == UpdateManager.State.VERIFICATION_SUCCESSFUL) {
+                    updateAutoInstall = false;
+                    mgr.installUpdate(FishbowlActivity.this);
+                } else if (state == UpdateManager.State.UP_TO_DATE || state == UpdateManager.State.DOWNLOAD_FAILED
+                        || state == UpdateManager.State.VERIFICATION_FAILED || state == UpdateManager.State.PERMISSION_REQUIRED
+                        || state == UpdateManager.State.NETWORK_UNAVAILABLE || state == UpdateManager.State.RELEASE_UNAVAILABLE) {
+                    updateAutoInstall = false;
+                }
+            }
         }
 
         @Override

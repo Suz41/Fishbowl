@@ -4,6 +4,13 @@ on:
   push:
     branches: [ 'feature/**' ]
   workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel (beta = pre-release, stable = full release)'
+        required: false
+        default: 'beta'
+        type: choice
+        options: [beta, stable]
 
 permissions:
   contents: write
@@ -18,8 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      FISHBOWL_VERSION_CODE: ${{ vars.FISHBOWL_VERSION_CODE || '101426' }}
-      FISHBOWL_VERSION_NAME: ${{ vars.FISHBOWL_VERSION_NAME || '1.4.10-beta.2.8' }}
+      FISHBOWL_VERSION_CODE: ${{ vars.FISHBOWL_VERSION_CODE || '101427' }}
+      FISHBOWL_VERSION_NAME: ${{ vars.FISHBOWL_VERSION_NAME || '1.4.10-beta.2.9' }}
 
     steps:
       - name: Checkout
@@ -98,8 +105,17 @@ jobs:
           APK=$(ls -1 app/build/outputs/apk/debug/*.apk | head -n 1)
           TAG="build-${GITHUB_RUN_NUMBER}-${FISHBOWL_VERSION_NAME}"
           SHA=$(sha256sum "$APK" | cut -d' ' -f1)
-          gh release create "$TAG" "$APK" \
+          echo "${SHA}  $(basename "$APK")" > "${APK}.sha256"
+          {
+            cat app/src/main/assets/release_notes.txt
+            echo
+            echo "versionCode: ${FISHBOWL_VERSION_CODE}"
+            echo "sha256: ${SHA}"
+          } > /tmp/release_body.md
+          FLAGS="--prerelease"
+          if [ "${{ inputs.channel }}" = "stable" ]; then FLAGS="--latest"; fi
+          gh release create "$TAG" "$APK" "${APK}.sha256" \
             --target "$GITHUB_SHA" \
-            --prerelease \
+            $FLAGS \
             --title "Fishbowl ${FISHBOWL_VERSION_NAME} (build ${GITHUB_RUN_NUMBER})" \
-            --notes "Debug APK signed with the repository test key (updates over previous installs). sha256: ${SHA}"
+            --notes-file /tmp/release_body.md

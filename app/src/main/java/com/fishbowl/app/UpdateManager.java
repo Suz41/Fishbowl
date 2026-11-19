@@ -40,8 +40,8 @@ import java.util.regex.Pattern;
 public final class UpdateManager {
 
     private static final String TAG = "UpdateManager";
-    private static final String REPO_OWNER = "Suz41";
-    private static final String REPO_NAME = "Fishbowl";
+    private static final String REPO_OWNER = "MedRAM-RAM";
+    private static final String REPO_NAME = "Jellyarr";
     private static final String LATEST_RELEASE_URL = "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/releases/latest";
     private static final String ALL_RELEASES_URL = "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/releases?per_page=10";
     private static final String PREFS_NAME = "fishbowl_updates";
@@ -378,7 +378,7 @@ public final class UpdateManager {
         });
     }
 
-    private int extractVersionCode(JSONObject releaseJson) {
+    static int extractVersionCode(JSONObject releaseJson) {
         if (releaseJson == null) return -1;
         String body = releaseJson.optString("body", "");
         if (!body.isEmpty()) {
@@ -402,6 +402,8 @@ public final class UpdateManager {
     public static int parseVersionCodeFromTag(String tagName) {
         if (tagName == null) return -1;
         String lower = tagName.toLowerCase(Locale.ROOT).trim();
+        // CI tags look like "build-7-1.4.10-beta.2.8": drop the "build-N-" prefix
+        lower = lower.replaceFirst("^build-\\d+-", "");
 
         // Support git commit revision tags like v1.4.9-r1625
         int rIdx = lower.lastIndexOf("-r");

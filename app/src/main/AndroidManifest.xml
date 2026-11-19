@@ -147,6 +147,11 @@
         </receiver>
 
 
+        <service
+            android:name="com.fishbowl.app.UpdateNotifier$UpdateJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
+
         <!-- Phase 9: Foreground service for background reliability and notification -->
         <service
             android:name="com.fishbowl.app.JellyfinServerService"

@@ -1,0 +1,9 @@
+What's new in 1.4.10-beta.2.9
+- Update notifications: Fishbowl now checks for new versions in the background and notifies you outside the app (system notification) and inside the app (pop-up).
+- Separate Stable and Beta update settings: choose for each channel whether to get a system notification and/or an in-app notice, and set the check interval.
+- In-app download, verification and installation of updates, straight from the notice or from Settings > Software Updates.
+- Updates now come from the Jellyarr releases (same signing key, installs over the current version).
+- "What's new" summary shown after every update and in Settings > Software Updates.
+- Settings are split into separate pages, one per section, with all options visible directly (no folded lists inside).
+- Switches are brightly coloured when ON; SAVE buttons stay dimmed until a value changes.
+- Library tab, Transmission controls/history and automation features from earlier builds.
