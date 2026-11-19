@@ -506,6 +506,26 @@ public final class FishbowlActivity extends AppCompatActivity
         handleControlIntent(getIntent());
     }
 
+    /** Starts the whole server: Jellyfin plus every installed companion service (then auto-wires them). */
+    private void startFullServer() {
+        if (controller != null) controller.start(getApplicationContext());
+        triggerServerAction(JellyfinServerService.ACTION_START_JELLYFIN);
+        try {
+            MediaServiceManager mgr = MediaServiceManager.getInstance(this);
+            if (isMediaStackEnabled()) mgr.startCompanionServices();
+        } catch (Throwable t) { Log.w(TAG, "startFullServer companions: " + t.getMessage()); }
+        refreshHomeServicesBadge();
+    }
+
+    /** Stops the whole server: companion services first, then Jellyfin. */
+    private void stopFullServer() {
+        try { MediaServiceManager.getInstance(this).stopCompanionServices(); }
+        catch (Throwable t) { Log.w(TAG, "stopFullServer companions: " + t.getMessage()); }
+        if (controller != null) controller.stop();
+        triggerServerAction(JellyfinServerService.ACTION_STOP_JELLYFIN);
+        refreshHomeServicesBadge();
+    }
+
     private void triggerAutoStartOnAppLaunchIfEnabled() {
         if (!JellyfinBootstrapper.isInitialized(this)) return;
         SharedPreferences launchPrefs = getFishbowlPrefs();
@@ -513,11 +533,8 @@ public final class FishbowlActivity extends AppCompatActivity
         if (startOnAppLaunch) {
             JellyfinController.State state = controller != null ? controller.getState() : JellyfinController.State.UNINITIALIZED;
             if (state != JellyfinController.State.RUNNING && state != JellyfinController.State.STARTING && state != JellyfinController.State.INITIALIZING) {
-                Log.i(TAG, "Auto-start on app launch triggered: launching Jellyfin server only (current state=" + state + ")");
-                if (controller != null) {
-                    controller.start(getApplicationContext());
-                }
-                triggerServerAction(JellyfinServerService.ACTION_START_JELLYFIN);
+                Log.i(TAG, "Auto-start on app launch triggered: launching full server (current state=" + state + ")");
+                startFullServer();
                 renderCurrentState();
             }
         }
@@ -1934,8 +1951,7 @@ public final class FishbowlActivity extends AppCompatActivity
             applyButtonStyle(btnStartServer, "STARTING SERVER...", Color.parseColor("#27272A"), Color.parseColor("#F59E0B"), false);
             if (btnStopServer != null) btnStopServer.setEnabled(false);
             if (btnRestartServer != null) btnRestartServer.setEnabled(false);
-            controller.start(getApplicationContext());
-            triggerServerAction(JellyfinServerService.ACTION_START_JELLYFIN);
+            startFullServer();
         });
         applyButtonStyle(btnStartServer, "START SERVER", Color.WHITE, Color.BLACK, true);
         inner.addView(btnStartServer);
@@ -1958,12 +1974,8 @@ public final class FishbowlActivity extends AppCompatActivity
             applyDockButtonStyle(btnRestartServer, "Restarting...", Color.parseColor("#27272A"), Color.parseColor("#A1A1AA"), R.drawable.ic_restart, false);
             if (btnStartServer != null) btnStartServer.setEnabled(false);
             if (btnStopServer != null) btnStopServer.setEnabled(false);
-            controller.stop();
-            triggerServerAction(JellyfinServerService.ACTION_STOP_JELLYFIN);
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                controller.start(getApplicationContext());
-                triggerServerAction(JellyfinServerService.ACTION_START_JELLYFIN);
-            }, 1600);
+            stopFullServer();
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> startFullServer(), 3500);
         });
         applyDockButtonStyle(btnRestartServer, "Restart", Color.parseColor("#27272A"), Color.WHITE, R.drawable.ic_restart, true);
         LinearLayout.LayoutParams lpRestart = new LinearLayout.LayoutParams(0, dp(44), 1.0f);
@@ -1979,8 +1991,7 @@ public final class FishbowlActivity extends AppCompatActivity
             applyDockButtonStyle(btnStopServer, "Stopping...", Color.parseColor("#3F1D24"), Color.parseColor("#F43F5E"), R.drawable.ic_stop, false);
             if (btnStartServer != null) btnStartServer.setEnabled(false);
             if (btnRestartServer != null) btnRestartServer.setEnabled(false);
-            controller.stop();
-            triggerServerAction(JellyfinServerService.ACTION_STOP_JELLYFIN);
+            stopFullServer();
         });
         applyDockButtonStyle(btnStopServer, "Stop", Color.parseColor("#E11D48"), Color.WHITE, R.drawable.ic_stop, true);
         LinearLayout.LayoutParams lpStop = new LinearLayout.LayoutParams(0, dp(44), 1.0f);
@@ -8306,11 +8317,59 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private void syncAndAutoWireAllServices() {
-        Toast.makeText(this, "Synchronizing media stack...", Toast.LENGTH_SHORT).show();
-        MediaServiceManager.getInstance(this).autoWireStack((success, statusMessage) -> {
-            Toast.makeText(this, statusMessage, Toast.LENGTH_SHORT).show();
+        final MediaServiceManager mgr = MediaServiceManager.getInstance(this);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(4), dp(4), dp(4), dp(4));
+
+        TextView what = new TextView(this);
+        what.setText("What gets synchronized:\n"
+                + "• Download folders and media library folders (Movies / Series / Music)\n"
+                + "• Transmission as the download client in Radarr, Sonarr and Lidarr\n"
+                + "• Prowlarr/Jackett indexers pushed to Radarr, Sonarr and Lidarr\n"
+                + "• Existing media imported into Radarr / Sonarr / Lidarr\n"
+                + "• API keys, Bazarr subtitles and Seerr links\n\n"
+                + "Only services that are installed AND running are synchronized.");
+        what.setTextSize(12f);
+        what.setTextColor(Color.parseColor("#A1A1AA"));
+        content.addView(what);
+
+        TextView status = new TextView(this);
+        status.setTextSize(12.5f);
+        status.setTextColor(Color.parseColor("#F4F4F5"));
+        status.setTypeface(Typeface.MONOSPACE);
+        status.setPadding(0, dp(12), 0, 0);
+        status.setText("Starting synchronization...");
+        content.addView(status);
+
+        ScrollView sv = new ScrollView(this);
+        sv.addView(content);
+        final StringBuilder lines = new StringBuilder();
+        final Dialog[] dRef = new Dialog[1];
+        dRef[0] = showOledDialog("Sync Stack", "Live progress", sv, null, 0, null, "CLOSE", null);
+
+        String[][] known = {{"Transmission","transmission"},{"Radarr","radarr"},{"Sonarr","sonarr"},{"Lidarr","lidarr"},
+                {"Prowlarr","prowlarr"},{"Jackett","jackett"},{"Bazarr","bazarr"},{"Seerr","seerr"}};
+        for (String[] k : known) {
+            try {
+                ManagedService svc = mgr.getService(k[1]);
+                if (svc == null || !svc.isInstalled()) continue;
+                lines.append(svc.isRunning() ? "● " : "○ ").append(k[0])
+                        .append(svc.isRunning() ? " running" : " not running (will be skipped)").append("\n");
+            } catch (Throwable ignored) {}
+        }
+        if (lines.length() == 0) lines.append("No companion services are installed.\n");
+        lines.append("\n");
+        status.setText(lines.toString() + "… Working");
+
+        mgr.autoWireStack((success, statusMessage) -> {
+            lines.append("\n").append(success ? "✔ " : "✖ ").append(statusMessage);
+            status.setText(lines.toString());
             refreshServicesTabUI();
             refreshHomeServicesBadge();
+        }, line -> {
+            lines.append(line).append("\n");
+            status.setText(lines.toString());
         });
     }
 
@@ -9501,7 +9560,7 @@ public final class FishbowlActivity extends AppCompatActivity
         asAppTextCol.addView(asAppTitle);
 
         TextView asAppSub = new TextView(this);
-        asAppSub.setText("Automatically start Jellyfin server when opening Jellyarr (Jellyfin only)");
+        asAppSub.setText("Automatically start the full server (Jellyfin + Radarr, Sonarr, Prowlarr, Transmission and other installed services) when opening Jellyarr");
         asAppSub.setTextSize(11f);
         asAppSub.setTextColor(Color.parseColor("#71717A"));
         asAppSub.setPadding(0, dp(2), 0, 0);

@@ -4948,10 +4948,22 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         }
     }
 
+    public interface AutoWireProgress { void onStep(String line); }
+
+    private void wireStep(AutoWireProgress pr, String line) {
+        if (pr == null) return;
+        mainHandler.post(() -> { try { pr.onStep(line); } catch (Throwable ignored) {} });
+    }
+
     public void autoWireStack(AutoWireCallback callback) {
+        autoWireStack(callback, null);
+    }
+
+    public void autoWireStack(AutoWireCallback callback, AutoWireProgress progress) {
         serviceExecutor.execute(() -> {
             StringBuilder log = new StringBuilder();
             try {
+                wireStep(progress, "… Preparing storage folders (movies / series / downloads)");
                 MediaStorageManager sm = MediaStorageManager.getInstance(appContext);
                 sm.initializeOnLaunch(appContext);
 
@@ -4960,57 +4972,73 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 ManagedService transmission = getService("transmission");
                 if (transmission != null && transmission.isInstalled() && isPortOccupied(9091)) {
                     ensureServiceConfigSanitized("transmission");
+                    wireStep(progress, "… Syncing Transmission");
                     wireTransmission(log);
                     wiredServices.add("Transmission");
+                    wireStep(progress, "✓ Transmission synchronized");
                 }
 
                 ManagedService radarr = getService("radarr");
                 if (radarr != null && radarr.isInstalled() && isPortOccupied(7878)) {
                     ensureServiceConfigSanitized("radarr");
+                    wireStep(progress, "… Syncing Radarr");
                     wireRadarr(log);
                     wiredServices.add("Radarr");
+                    wireStep(progress, "✓ Radarr synchronized");
                 }
 
                 ManagedService sonarr = getService("sonarr");
                 if (sonarr != null && sonarr.isInstalled() && isPortOccupied(8989)) {
                     ensureServiceConfigSanitized("sonarr");
+                    wireStep(progress, "… Syncing Sonarr");
                     wireSonarr(log);
                     wiredServices.add("Sonarr");
+                    wireStep(progress, "✓ Sonarr synchronized");
                 }
 
                 ManagedService lidarr = getService("lidarr");
                 if (lidarr != null && lidarr.isInstalled() && isPortOccupied(8686)) {
                     ensureServiceConfigSanitized("lidarr");
+                    wireStep(progress, "… Syncing Lidarr");
                     wireLidarr(log);
                     wiredServices.add("Lidarr");
+                    wireStep(progress, "✓ Lidarr synchronized");
                 }
 
                 ManagedService prowlarr = getService("prowlarr");
                 if (prowlarr != null && prowlarr.isInstalled() && isPortOccupied(9696)) {
                     ensureServiceConfigSanitized("prowlarr");
+                    wireStep(progress, "… Syncing Prowlarr");
                     wireProwlarr(log);
                     wiredServices.add("Prowlarr");
+                    wireStep(progress, "✓ Prowlarr synchronized");
                 }
 
                 ManagedService jackett = getService("jackett");
                 if (jackett != null && jackett.isInstalled() && isPortOccupied(9117)) {
                     ensureServiceConfigSanitized("jackett");
+                    wireStep(progress, "… Syncing Jackett");
                     wireJackett(log);
                     wiredServices.add("Jackett");
+                    wireStep(progress, "✓ Jackett synchronized");
                 }
 
                 ManagedService bazarr = getService("bazarr");
                 if (bazarr != null && bazarr.isInstalled() && isPortOccupied(6767)) {
                     ensureServiceConfigSanitized("bazarr");
+                    wireStep(progress, "… Syncing Bazarr");
                     wireBazarr(log);
                     wiredServices.add("Bazarr");
+                    wireStep(progress, "✓ Bazarr synchronized");
                 }
 
                 ManagedService seerr = getService("seerr");
                 if (seerr != null && seerr.isInstalled() && isPortOccupied(5055)) {
                     ensureServiceConfigSanitized("seerr");
+                    wireStep(progress, "… Syncing Seerr");
                     wireSeerr(log);
                     wiredServices.add("Seerr");
+                    wireStep(progress, "✓ Seerr synchronized");
                 }
 
                 String summaryMsg = !wiredServices.isEmpty()
