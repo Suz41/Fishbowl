@@ -1,4 +1,4 @@
-What's new in 1.4.10-beta.2.9
+What's new in 1.4.10 (stable)
 - Update notifications: Fishbowl now checks for new versions in the background and notifies you outside the app (system notification) and inside the app (pop-up).
 - Separate Stable and Beta update settings: choose for each channel whether to get a system notification and/or an in-app notice, and set the check interval.
 - In-app download, verification and installation of updates, straight from the notice or from Settings > Software Updates.
@@ -6,4 +6,6 @@ What's new in 1.4.10-beta.2.9
 - "What's new" summary shown after every update and in Settings > Software Updates.
 - Settings are split into separate pages, one per section, with all options visible directly (no folded lists inside).
 - Switches are brightly coloured when ON; SAVE buttons stay dimmed until a value changes.
+- Backup & Restore: export no longer aborts when a database is busy or one file is unreadable; it also saves Transmission torrents/resume data, shows a detailed error window if it fails, and uses a safer file move.
+- First stable release: includes everything from the 2.x beta builds.
 - Library tab, Transmission controls/history and automation features from earlier builds.

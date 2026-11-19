@@ -70,7 +70,7 @@ public final class BackupRestoreManager {
     }
 
     private static final Set<String> ALLOWED_EXTENSIONS = new HashSet<>(Arrays.asList(
-            ".xml", ".json", ".yaml", ".yml", ".db", ".db-wal", ".db-shm", ".conf", ".ini"
+            ".xml", ".json", ".yaml", ".yml", ".db", ".db-wal", ".db-shm", ".conf", ".ini", ".torrent", ".resume", ".sqlite", ".sqlite3", ".txt"
     ));
 
     private static final Set<String> IGNORED_NAMES = new HashSet<>(Arrays.asList(
@@ -179,16 +179,20 @@ public final class BackupRestoreManager {
                     if (prefFiles != null) {
                         for (File pf : prefFiles) {
                             if (!stagingPrefs.exists()) stagingPrefs.mkdirs();
-                            File destFile = new File(stagingPrefs, pf.getName());
-                            copyFile(pf, destFile);
-                            totalCount++;
+                            try {
+                                File destFile = new File(stagingPrefs, pf.getName());
+                                copyFile(pf, destFile);
+                                totalCount++;
 
-                            JSONObject itemObj = new JSONObject();
-                            itemObj.put("path", "shared_prefs/" + pf.getName());
-                            itemObj.put("size", destFile.length());
-                            itemObj.put("sha256", computeSHA256(destFile));
-                            itemObj.put("component", "prefs");
-                            itemsArray.put(itemObj);
+                                JSONObject itemObj = new JSONObject();
+                                itemObj.put("path", "shared_prefs/" + pf.getName());
+                                itemObj.put("size", destFile.length());
+                                itemObj.put("sha256", computeSHA256(destFile));
+                                itemObj.put("component", "prefs");
+                                itemsArray.put(itemObj);
+                            } catch (Throwable prefEx) {
+                                Log.w(TAG, "Skipped preference file " + pf.getName() + ": " + prefEx.getMessage());
+                            }
                         }
                     }
                 }
@@ -199,7 +203,11 @@ public final class BackupRestoreManager {
                 File configDir = new File(homeDir, ".config");
                 File stagingConfig = new File(stagingDir, "config");
                 if (configDir.exists() && configDir.isDirectory()) {
-                    totalCount += stageConfigDir(configDir, stagingConfig, "config", itemsArray);
+                    try {
+                        totalCount += stageConfigDir(configDir, stagingConfig, "config", itemsArray);
+                    } catch (Throwable cfgEx) {
+                        Log.w(TAG, "Config staging problem: " + cfgEx.getMessage());
+                    }
                 }
 
                 // 2b. Collect Jellyfin Database from TermuxConstants.TERMUX_HOME_DIR/.local/share/jellyfin/data
@@ -210,10 +218,20 @@ public final class BackupRestoreManager {
                     File[] jfDbs = jfDataDir.listFiles((d, name) -> name != null && name.endsWith(".db"));
                     if (jfDbs != null) {
                         for (File db : jfDbs) {
-                            verifySqliteIntegrity(db);
+                            try {
+                                verifySqliteIntegrity(db);
+                            } catch (Throwable integrityEx) {
+                                // A busy/locked live database must not abort the whole backup.
+                                Log.w(TAG, "Integrity check skipped for " + db.getName() + ": " + integrityEx.getMessage());
+                                postProgress(callback, "Warning: could not verify " + db.getName() + " (in use), copying anyway...");
+                            }
                         }
                     }
-                    totalCount += stageConfigDir(jfDataDir, stagingJfData, "jellyfin_data", itemsArray);
+                    try {
+                        totalCount += stageConfigDir(jfDataDir, stagingJfData, "jellyfin_data", itemsArray);
+                    } catch (Throwable jfEx) {
+                        Log.w(TAG, "Jellyfin data staging problem: " + jfEx.getMessage());
+                    }
                 }
 
                 // 3. Create Metadata Manifest with dynamic application version info
@@ -255,27 +273,14 @@ public final class BackupRestoreManager {
 
                 // 6. Atomically promote the verified temporary backup to final location
                 File finalZipFile = new File(destDir, "FishBowl_Backup_Latest.zip");
-                boolean replaced = false;
-                try {
-                    java.nio.file.Files.move(
-                            tempZipFile.toPath(),
-                            finalZipFile.toPath(),
-                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                    );
-                    replaced = true;
-                } catch (Throwable moveEx) {
-                    try {
-                        java.nio.file.Files.move(
-                                tempZipFile.toPath(),
-                                finalZipFile.toPath(),
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                        );
-                        replaced = true;
-                    } catch (Throwable moveEx2) {
-                        if (finalZipFile.exists()) finalZipFile.delete();
-                        replaced = tempZipFile.renameTo(finalZipFile);
-                    }
+                boolean replaced;
+                if (finalZipFile.exists()) finalZipFile.delete();
+                replaced = tempZipFile.renameTo(finalZipFile);
+                if (!replaced) {
+                    // Different filesystems / permissions: copy then delete
+                    copyFile(tempZipFile, finalZipFile);
+                    replaced = finalZipFile.exists() && finalZipFile.length() == tempZipFile.length();
+                    if (replaced) tempZipFile.delete();
                 }
 
                 if (!replaced && !finalZipFile.exists()) {
@@ -302,7 +307,10 @@ public final class BackupRestoreManager {
 
             } catch (Throwable t) {
                 Log.e(TAG, "Export backup failed", t);
-                postOnMainThread(() -> callback.onError("Backup failed: " + t.getMessage()));
+                StackTraceElement[] st = t.getStackTrace();
+                final String detail = "Backup failed: " + t.getClass().getSimpleName() + ": " + t.getMessage()
+                        + (st.length > 0 ? "\nat " + st[0] : "") + "\nDestination: " + destDir.getAbsolutePath();
+                postOnMainThread(() -> callback.onError(detail));
             } finally {
                 if (tempZipFile != null && tempZipFile.exists()) {
                     try { tempZipFile.delete(); } catch (Throwable ignored) {}

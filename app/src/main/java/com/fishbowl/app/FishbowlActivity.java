@@ -10601,7 +10601,12 @@ public final class FishbowlActivity extends AppCompatActivity
             @Override
             public void onError(String error) {
                 progressDialog.dismiss();
-                Toast.makeText(FishbowlActivity.this, error, Toast.LENGTH_LONG).show();
+                TextView ev = new TextView(FishbowlActivity.this);
+                ev.setText(error);
+                ev.setTextSize(11.5f);
+                ev.setTextColor(Color.parseColor("#FCA5A5"));
+                ev.setTextIsSelectable(true);
+                showOledDialog("BACKUP FAILED", "Details (select to copy)", ev, "OK", getAccentColor(), null, null, null);
             }
         });
     }
