@@ -70,7 +70,7 @@ public final class BackupRestoreManager {
     }
 
     private static final Set<String> ALLOWED_EXTENSIONS = new HashSet<>(Arrays.asList(
-            ".xml", ".json", ".yaml", ".yml", ".db", ".db-wal", ".db-shm", ".conf", ".ini"
+            ".xml", ".json", ".yaml", ".yml", ".db", ".db-wal", ".db-shm", ".conf", ".ini", ".torrent", ".resume", ".sqlite", ".sqlite3", ".txt"
     ));
 
     private static final Set<String> IGNORED_NAMES = new HashSet<>(Arrays.asList(
@@ -161,7 +161,7 @@ public final class BackupRestoreManager {
                 return;
             }
 
-            postProgress(callback, "Preparing FishBowl backup staging...");
+            postProgress(callback, "Preparing Jellyarr backup staging...");
             File stagingDir = new File(context.getCacheDir(), "fishbowl_backup_staging_" + System.currentTimeMillis());
             if (!stagingDir.exists()) stagingDir.mkdirs();
             File tempZipFile = null;
@@ -171,7 +171,7 @@ public final class BackupRestoreManager {
                 org.json.JSONArray itemsArray = new org.json.JSONArray();
 
                 // 1. Collect SharedPreferences
-                postProgress(callback, "Backing up FishBowl preferences...");
+                postProgress(callback, "Backing up Jellyarr preferences...");
                 File prefsDir = new File(context.getApplicationInfo().dataDir, "shared_prefs");
                 File stagingPrefs = new File(stagingDir, "shared_prefs");
                 if (prefsDir.exists() && prefsDir.isDirectory()) {
@@ -179,16 +179,20 @@ public final class BackupRestoreManager {
                     if (prefFiles != null) {
                         for (File pf : prefFiles) {
                             if (!stagingPrefs.exists()) stagingPrefs.mkdirs();
-                            File destFile = new File(stagingPrefs, pf.getName());
-                            copyFile(pf, destFile);
-                            totalCount++;
+                            try {
+                                File destFile = new File(stagingPrefs, pf.getName());
+                                copyFile(pf, destFile);
+                                totalCount++;
 
-                            JSONObject itemObj = new JSONObject();
-                            itemObj.put("path", "shared_prefs/" + pf.getName());
-                            itemObj.put("size", destFile.length());
-                            itemObj.put("sha256", computeSHA256(destFile));
-                            itemObj.put("component", "prefs");
-                            itemsArray.put(itemObj);
+                                JSONObject itemObj = new JSONObject();
+                                itemObj.put("path", "shared_prefs/" + pf.getName());
+                                itemObj.put("size", destFile.length());
+                                itemObj.put("sha256", computeSHA256(destFile));
+                                itemObj.put("component", "prefs");
+                                itemsArray.put(itemObj);
+                            } catch (Throwable prefEx) {
+                                Log.w(TAG, "Skipped preference file " + pf.getName() + ": " + prefEx.getMessage());
+                            }
                         }
                     }
                 }
@@ -199,7 +203,11 @@ public final class BackupRestoreManager {
                 File configDir = new File(homeDir, ".config");
                 File stagingConfig = new File(stagingDir, "config");
                 if (configDir.exists() && configDir.isDirectory()) {
-                    totalCount += stageConfigDir(configDir, stagingConfig, "config", itemsArray);
+                    try {
+                        totalCount += stageConfigDir(configDir, stagingConfig, "config", itemsArray);
+                    } catch (Throwable cfgEx) {
+                        Log.w(TAG, "Config staging problem: " + cfgEx.getMessage());
+                    }
                 }
 
                 // 2b. Collect Jellyfin Database from TermuxConstants.TERMUX_HOME_DIR/.local/share/jellyfin/data
@@ -210,10 +218,20 @@ public final class BackupRestoreManager {
                     File[] jfDbs = jfDataDir.listFiles((d, name) -> name != null && name.endsWith(".db"));
                     if (jfDbs != null) {
                         for (File db : jfDbs) {
-                            verifySqliteIntegrity(db);
+                            try {
+                                verifySqliteIntegrity(db);
+                            } catch (Throwable integrityEx) {
+                                // A busy/locked live database must not abort the whole backup.
+                                Log.w(TAG, "Integrity check skipped for " + db.getName() + ": " + integrityEx.getMessage());
+                                postProgress(callback, "Warning: could not verify " + db.getName() + " (in use), copying anyway...");
+                            }
                         }
                     }
-                    totalCount += stageConfigDir(jfDataDir, stagingJfData, "jellyfin_data", itemsArray);
+                    try {
+                        totalCount += stageConfigDir(jfDataDir, stagingJfData, "jellyfin_data", itemsArray);
+                    } catch (Throwable jfEx) {
+                        Log.w(TAG, "Jellyfin data staging problem: " + jfEx.getMessage());
+                    }
                 }
 
                 // 3. Create Metadata Manifest with dynamic application version info
@@ -255,27 +273,14 @@ public final class BackupRestoreManager {
 
                 // 6. Atomically promote the verified temporary backup to final location
                 File finalZipFile = new File(destDir, "FishBowl_Backup_Latest.zip");
-                boolean replaced = false;
-                try {
-                    java.nio.file.Files.move(
-                            tempZipFile.toPath(),
-                            finalZipFile.toPath(),
-                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                    );
-                    replaced = true;
-                } catch (Throwable moveEx) {
-                    try {
-                        java.nio.file.Files.move(
-                                tempZipFile.toPath(),
-                                finalZipFile.toPath(),
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                        );
-                        replaced = true;
-                    } catch (Throwable moveEx2) {
-                        if (finalZipFile.exists()) finalZipFile.delete();
-                        replaced = tempZipFile.renameTo(finalZipFile);
-                    }
+                boolean replaced;
+                if (finalZipFile.exists()) finalZipFile.delete();
+                replaced = tempZipFile.renameTo(finalZipFile);
+                if (!replaced) {
+                    // Different filesystems / permissions: copy then delete
+                    copyFile(tempZipFile, finalZipFile);
+                    replaced = finalZipFile.exists() && finalZipFile.length() == tempZipFile.length();
+                    if (replaced) tempZipFile.delete();
                 }
 
                 if (!replaced && !finalZipFile.exists()) {
@@ -302,7 +307,10 @@ public final class BackupRestoreManager {
 
             } catch (Throwable t) {
                 Log.e(TAG, "Export backup failed", t);
-                postOnMainThread(() -> callback.onError("Backup failed: " + t.getMessage()));
+                StackTraceElement[] st = t.getStackTrace();
+                final String detail = "Backup failed: " + t.getClass().getSimpleName() + ": " + t.getMessage()
+                        + (st.length > 0 ? "\nat " + st[0] : "") + "\nDestination: " + destDir.getAbsolutePath();
+                postOnMainThread(() -> callback.onError(detail));
             } finally {
                 if (tempZipFile != null && tempZipFile.exists()) {
                     try { tempZipFile.delete(); } catch (Throwable ignored) {}
@@ -335,7 +343,7 @@ public final class BackupRestoreManager {
                     }
                     String metaContent = baos.toString(StandardCharsets.UTF_8.name());
                     if (!metaContent.toLowerCase(Locale.ROOT).contains("\"fishbowl\"")) {
-                        throw new java.io.IOException("Backup archive manifest does not identify FishBowl.");
+                        throw new java.io.IOException("Backup archive manifest does not identify Jellyarr.");
                     }
                 } else {
                     // Drain entry bytes to verify zip entry CRC32 integrity
@@ -663,10 +671,10 @@ public final class BackupRestoreManager {
             Intent shareIntent = new Intent(Intent.ACTION_SEND);
             shareIntent.setType("application/zip");
             shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
-            shareIntent.putExtra(Intent.EXTRA_SUBJECT, "FishBowl Configuration Backup");
-            shareIntent.putExtra(Intent.EXTRA_TEXT, "FishBowl System Backup: " + backupFile.getName());
+            shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Jellyarr Configuration Backup");
+            shareIntent.putExtra(Intent.EXTRA_TEXT, "Jellyarr System Backup: " + backupFile.getName());
             shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            context.startActivity(Intent.createChooser(shareIntent, "Share / Save FishBowl Backup"));
+            context.startActivity(Intent.createChooser(shareIntent, "Share / Save Jellyarr Backup"));
         } catch (Throwable t) {
             Log.e(TAG, "Share backup failed", t);
         }
@@ -768,7 +776,7 @@ public final class BackupRestoreManager {
         }
 
         if (!isFishbowl) {
-            throw new IllegalArgumentException("Incompatible backup archive (Not a FishBowl backup).");
+            throw new IllegalArgumentException("Incompatible backup archive (Not a Jellyarr backup).");
         }
 
         if (entries.isEmpty() && metaContent.contains("\"items\"")) {

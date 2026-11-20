@@ -224,7 +224,7 @@ public final class DownloadDetectionManager {
                     .setContentText(parsed.title + (parsed.year > 0 ? " (" + parsed.year + ")" : ""))
                     .setStyle(new NotificationCompat.BigTextStyle()
                             .setBigContentTitle("Movie download detected")
-                            .bigText("File: " + filename + "\nReady to organize into Fishbowl movie folder structure. Tap to review destination and import."))
+                            .bigText("File: " + filename + "\nReady to organize into Jellyarr movie folder structure. Tap to review destination and import."))
                     .setSmallIcon(R.drawable.ic_notification_jellyfin)
                     .setContentIntent(pi)
                     .setAutoCancel(true)
@@ -243,10 +243,10 @@ public final class DownloadDetectionManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
-                    "Fishbowl Movie Importer",
+                    "Jellyarr Movie Importer",
                     NotificationManager.IMPORTANCE_DEFAULT
             );
-            channel.setDescription("Notifies when new video downloads are ready to review and import into Fishbowl");
+            channel.setDescription("Notifies when new video downloads are ready to review and import into Jellyarr");
             NotificationManager nm = (NotificationManager) appContext.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
                 nm.createNotificationChannel(channel);

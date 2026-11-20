@@ -1,0 +1,121 @@
+name: Build APK (Jellyarr)
+
+on:
+  push:
+    branches: [ 'feature/**' ]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel (beta = pre-release, stable = full release)'
+        required: false
+        default: 'beta'
+        type: choice
+        options: [beta, stable]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Debug APK (arm64-v8a)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FISHBOWL_VERSION_CODE: ${{ vars.FISHBOWL_VERSION_CODE || '101432' }}
+      FISHBOWL_VERSION_NAME: ${{ vars.FISHBOWL_VERSION_NAME || '2.0.4-beta.1' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: false
+
+      - name: Install Android SDK components
+        run: |
+          SDKM="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.14206865"
+
+      - name: Fetch libMonoPosixHelper.so (Servarr fix)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq patchelf
+          BASE=https://packages.termux.dev/apt/termux-main/pool/main/m/mono
+          DEB=$(curl -fsSL "$BASE/" | grep -oE 'mono_[0-9][^"<> ]*_aarch64\.deb' | sort -uV | tail -n 1)
+          echo "Using $DEB"
+          mkdir -p "$RUNNER_TEMP/mono" && cd "$RUNNER_TEMP/mono"
+          curl -fsSL -o mono.deb "$BASE/$DEB"
+          dpkg-deb -x mono.deb x
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/assets"
+          SO="$GITHUB_WORKSPACE/app/src/main/assets/libMonoPosixHelper.so"
+          cp x/data/data/com.termux/files/usr/lib/libMonoPosixHelper.so "$SO"
+          patchelf --remove-needed libgssapi_krb5.so.2 --remove-rpath "$SO"
+          readelf -d "$SO" | grep -E 'NEEDED|RPATH|RUNPATH' || true
+          sha256sum "$SO"
+
+      - name: Download Termux bootstraps
+        run: |
+          chmod +x gradlew
+          ./gradlew downloadBootstraps
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Verify APK (signature, version, helper library)
+        run: |
+          APK=$(ls -1 app/build/outputs/apk/debug/*.apk | head -n 1)
+          BT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0"
+          echo "APK: $APK"
+          "$BT/apksigner" verify --print-certs "$APK" | grep -E 'Verifies|SHA-256'
+          "$BT/aapt2" dump badging "$APK" | grep -E '^package|native-code'
+          unzip -l "$APK" | grep libMonoPosixHelper
+          sha256sum "$APK"
+          {
+            echo "### APK"
+            echo "\`$(basename "$APK")\`"
+            echo
+            echo "sha256: \`$(sha256sum "$APK" | cut -d' ' -f1)\`"
+            echo
+            echo "cert: \`$("$BT/apksigner" verify --print-certs "$APK" | grep 'SHA-256' | head -n 1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fishbowl-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+      - name: Publish APK as a GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(ls -1 app/build/outputs/apk/debug/*.apk | head -n 1)
+          TAG="build-${GITHUB_RUN_NUMBER}-${FISHBOWL_VERSION_NAME}"
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          echo "${SHA}  $(basename "$APK")" > "${APK}.sha256"
+          {
+            cat app/src/main/assets/release_notes.txt
+            echo
+            echo "versionCode: ${FISHBOWL_VERSION_CODE}"
+            echo "sha256: ${SHA}"
+          } > /tmp/release_body.md
+          FLAGS="--prerelease"
+          if [ "${{ inputs.channel }}" = "stable" ]; then FLAGS="--latest"; fi
+          gh release create "$TAG" "$APK" "${APK}.sha256" \
+            --target "$GITHUB_SHA" \
+            $FLAGS \
+            --title "Jellyarr ${FISHBOWL_VERSION_NAME} (build ${GITHUB_RUN_NUMBER})" \
+            --notes-file /tmp/release_body.md

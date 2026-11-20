@@ -27,8 +27,9 @@ public class FishbowlApplication extends TermuxApplication {
         super.onCreate();
 
         Context context = getApplicationContext();
-        Log.i(TAG, "Initializing FishBowl standalone media server application");
+        Log.i(TAG, "Initializing Jellyarr standalone media server application");
 
+        try { UpdateNotifier.schedule(context); } catch (Throwable ignored) {}
         try {
             // Scaffold and ensure core unified external storage paths
             MediaStorageManager.getInstance(context).initializeOnLaunch(context);

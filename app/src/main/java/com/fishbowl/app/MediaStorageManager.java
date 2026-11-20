@@ -1409,7 +1409,11 @@ public final class MediaStorageManager {
 
     private String cachedTransmissionSessionId = null;
 
+    /** True when the last torrent-get call reached Transmission and returned a valid answer. */
+    public volatile boolean lastTransmissionQueryOk = false;
+
     public List<TorrentInfo> queryTransmissionTorrents() {
+        lastTransmissionQueryOk = false;
         List<TorrentInfo> result = new ArrayList<>();
         HttpURLConnection conn = null;
         try {
@@ -1478,6 +1482,7 @@ public final class MediaStorageManager {
                 }
                 JSONObject resObj = new JSONObject(sb.toString());
                 JSONObject argsObj = resObj.optJSONObject("arguments");
+                lastTransmissionQueryOk = "success".equals(resObj.optString("result")) && argsObj != null;
                 if (argsObj != null) {
                     JSONArray torrents = argsObj.optJSONArray("torrents");
                     if (torrents != null) {
@@ -1520,6 +1525,7 @@ public final class MediaStorageManager {
     }
 
     public boolean removeTransmissionTorrent(int torrentId, boolean deleteData) {
+        com.fishbowl.app.services.TransmissionHistoryTracker.noteRemoval(torrentId, deleteData, "manual");
         HttpURLConnection conn = null;
         try {
             URL url = new URL("http://127.0.0.1:9091/transmission/rpc");
@@ -1573,6 +1579,71 @@ public final class MediaStorageManager {
             if (conn != null) conn.disconnect();
         }
     }
+
+    /** Generic single-torrent Transmission RPC action (torrent-stop / -start / -start-now / -verify...). */
+    private boolean transmissionTorrentAction(String method, int torrentId) {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL("http://127.0.0.1:9091/transmission/rpc");
+            JSONObject rpcReq = new JSONObject();
+            rpcReq.put("method", method);
+            JSONObject args = new JSONObject();
+            JSONArray ids = new JSONArray();
+            ids.put(torrentId);
+            args.put("ids", ids);
+            rpcReq.put("arguments", args);
+            String payload = rpcReq.toString();
+
+            for (int attempt = 0; attempt < 2; attempt++) {
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setConnectTimeout(2500);
+                conn.setReadTimeout(5000);
+                conn.setRequestProperty("Content-Type", "application/json");
+                if (cachedTransmissionSessionId != null) {
+                    conn.setRequestProperty("X-Transmission-Session-Id", cachedTransmissionSessionId);
+                }
+                conn.setDoOutput(true);
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(payload.getBytes(StandardCharsets.UTF_8));
+                }
+                int code = conn.getResponseCode();
+                if (code == 409) {
+                    String sid = conn.getHeaderField("X-Transmission-Session-Id");
+                    conn.disconnect();
+                    conn = null;
+                    if (sid == null || sid.isEmpty()) return false;
+                    cachedTransmissionSessionId = sid;
+                    continue;
+                }
+                if (code != 200) return false;
+                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                try (java.io.InputStream in = conn.getInputStream()) {
+                    byte[] buf = new byte[2048];
+                    int n;
+                    while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
+                }
+                String body = new String(bos.toByteArray(), StandardCharsets.UTF_8);
+                return "success".equals(new JSONObject(body).optString("result"));
+            }
+            return false;
+        } catch (Throwable t) {
+            Log.d(TAG, method + " failed: " + t.getMessage());
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    public boolean pauseTransmissionTorrent(int torrentId) { return transmissionTorrentAction("torrent-stop", torrentId); }
+
+    public boolean resumeTransmissionTorrent(int torrentId) { return transmissionTorrentAction("torrent-start", torrentId); }
+
+    /** Starts immediately, bypassing the download queue. */
+    public boolean forceStartTransmissionTorrent(int torrentId) { return transmissionTorrentAction("torrent-start-now", torrentId); }
+
+    /** Re-verifies the local data of a torrent (Transmission "Verify Local Data"). */
+    public boolean recheckTransmissionTorrent(int torrentId) { return transmissionTorrentAction("torrent-verify", torrentId); }
 
     public int clearCompletedTransmissionTorrents(boolean deleteData) {
         List<TorrentInfo> torrents = queryTransmissionTorrents();

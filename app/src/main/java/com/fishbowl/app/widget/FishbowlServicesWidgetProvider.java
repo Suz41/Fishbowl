@@ -189,7 +189,7 @@ public class FishbowlServicesWidgetProvider extends AppWidgetProvider {
         // to JellyfinServerService (exported="false"). The broadcast receiver handles only
         // layout refresh and launcher lifecycle events.
         if (ACTION_PIN_WIDGET.equals(action)) {
-            Log.i(TAG, "Requesting launcher to pin Fishbowl Services widget");
+            Log.i(TAG, "Requesting launcher to pin Jellyarr Services widget");
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
                     AppWidgetManager appWidgetManager = AppWidgetManager.getInstance(context);

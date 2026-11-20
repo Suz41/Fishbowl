@@ -105,6 +105,11 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     private final ProcessExitSupervisor processExitSupervisor = new ProcessExitSupervisor();
     private final ExecutorService processExitExecutor = processExitSupervisor.getPrimaryExecutor();
     private final java.util.concurrent.ScheduledExecutorService dedupScheduler = Executors.newSingleThreadScheduledExecutor();
+    private final java.util.concurrent.ScheduledExecutorService automationScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "Fishbowl-Automation");
+        t.setDaemon(true);
+        return t;
+    });
         private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ServiceHealthMonitor healthMonitor = new ServiceHealthMonitor();
     private volatile boolean isBridgeInitialized = false;
@@ -393,6 +398,63 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         bridgeJellyfinController();
         reconcileRunningServices();
         startDeduplicationWatcher();
+        startAutomationWatchers();
+    }
+
+    /** Never lets a failure in the Wi-Fi only feature block a service from starting. */
+    private boolean wifiStartAllowedSafe(String id) {
+        try {
+            return NetworkPolicyEnforcer.isStartAllowed(appContext, id);
+        } catch (Throwable t) {
+            Log.w(TAG, "Wi-Fi only check failed, allowing start: " + t);
+            return true;
+        }
+    }
+
+    /** Built-in automations: Transmission auto-cleanup/recheck and the per-service Wi-Fi only policy. */
+    private void startAutomationWatchers() {
+        try {
+            automationScheduler.scheduleWithFixedDelay(() -> {
+                try {
+                    if (appContext == null || !AutomationPrefs.isCleanupEnabled(appContext)) return;
+                    if (!isServiceRunning("transmission")) return;
+                    TransmissionAutoCleanup.run(appContext, false);
+                } catch (Throwable t) {
+                    Log.w(TAG, "[AutoCleanup] pass failed: " + t.getMessage());
+                }
+            }, 2, 30, java.util.concurrent.TimeUnit.MINUTES);
+            automationScheduler.scheduleWithFixedDelay(() -> {
+                try {
+                    if (appContext == null || !AutomationPrefs.isAutoRecheckEnabled(appContext)) return;
+                    if (!isServiceRunning("transmission")) return;
+                    TransmissionAutoRecheck.run(appContext);
+                } catch (Throwable t) {
+                    Log.w(TAG, "[AutoRecheck] pass failed: " + t.getMessage());
+                }
+            }, 90, 60, java.util.concurrent.TimeUnit.SECONDS);
+            automationScheduler.scheduleWithFixedDelay(() -> {
+                try {
+                    if (appContext == null || !isServiceRunning("transmission")) return;
+                    TransmissionHistoryTracker.run(appContext);
+                } catch (Throwable t) {
+                    Log.w(TAG, "[DownloadHistory] pass failed: " + t.getMessage());
+                }
+            }, 45, 30, java.util.concurrent.TimeUnit.SECONDS);
+            automationScheduler.scheduleWithFixedDelay(() -> {
+                try {
+                    if (appContext == null) return;
+                    if (!LibraryPrefs.isMoviesEnabled(appContext) && !LibraryPrefs.isSeriesEnabled(appContext)) return;
+                    if (!isServiceRunning("jellyfin")) return;
+                    LibraryAutoDelete.run(appContext, false);
+                } catch (Throwable t) {
+                    Log.w(TAG, "[LibraryAutoDelete] pass failed: " + t.getMessage());
+                }
+            }, 3, 30, java.util.concurrent.TimeUnit.MINUTES);
+            NetworkPolicyEnforcer.start(appContext, this);
+            ExitDiagnostics.install(appContext, this);
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to start automation watchers: " + t.getMessage());
+        }
     }
 
     private void startDeduplicationWatcher() {
@@ -889,6 +951,17 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         if (ms == null) {
             if (callback != null) {
                 callback.onResult(new ServiceLifecycleResult.Failure(id, "Service not found in registry", null));
+            }
+            return;
+        }
+
+        // Per-service "Wi-Fi only": defer the start while the device is on mobile data
+        if (appContext != null && !wifiStartAllowedSafe(id)) {
+            recordServiceActive(id, true);
+            AutomationPrefs.addWifiPaused(appContext, id);
+            ms.appendLog("[Wi-Fi only] Mobile data active - start deferred until Wi-Fi is available.");
+            if (callback != null) {
+                callback.onResult(new ServiceLifecycleResult.Failure(id, "Wi-Fi only: waiting for Wi-Fi", null));
             }
             return;
         }
@@ -1468,6 +1541,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
 
     @Override
     public void stopService(String id, ServiceLifecycleCallback callback) {
+        try { NetworkPolicyEnforcer.onStopRequested(appContext, id); } catch (Throwable ignored) {}
         recordServiceActive(id, false);
         ManagedService ms = services.get(id);
         if (ms == null) {
@@ -2536,7 +2610,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 org.json.JSONObject root = new org.json.JSONObject();
                 org.json.JSONObject main = new org.json.JSONObject();
                 main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
-                main.put("applicationTitle", "Fishbowl Requests");
+                main.put("applicationTitle", "Jellyarr Requests");
                 main.put("applicationUrl", "http://127.0.0.1:5055");
                 main.put("trustProxy", false);
                 main.put("csrfProtection", true);
@@ -2553,7 +2627,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 org.json.JSONObject root = new org.json.JSONObject();
                 org.json.JSONObject main = new org.json.JSONObject();
                 main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
-                main.put("applicationTitle", "Fishbowl Requests");
+                main.put("applicationTitle", "Jellyarr Requests");
                 main.put("applicationUrl", "http://127.0.0.1:5055");
                 main.put("trustProxy", false);
                 main.put("csrfProtection", true);
@@ -2586,7 +2660,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             if (!main.has("apiKey") || main.optString("apiKey", "").trim().isEmpty()) {
                 main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
             }
-            main.put("applicationTitle", "Fishbowl Requests");
+            main.put("applicationTitle", "Jellyarr Requests");
             main.put("applicationUrl", "http://127.0.0.1:5055");
             main.put("trustProxy", false);
             main.put("csrfProtection", true);
@@ -4874,10 +4948,22 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         }
     }
 
+    public interface AutoWireProgress { void onStep(String line); }
+
+    private void wireStep(AutoWireProgress pr, String line) {
+        if (pr == null) return;
+        mainHandler.post(() -> { try { pr.onStep(line); } catch (Throwable ignored) {} });
+    }
+
     public void autoWireStack(AutoWireCallback callback) {
+        autoWireStack(callback, null);
+    }
+
+    public void autoWireStack(AutoWireCallback callback, AutoWireProgress progress) {
         serviceExecutor.execute(() -> {
             StringBuilder log = new StringBuilder();
             try {
+                wireStep(progress, "… Preparing storage folders (movies / series / downloads)");
                 MediaStorageManager sm = MediaStorageManager.getInstance(appContext);
                 sm.initializeOnLaunch(appContext);
 
@@ -4886,57 +4972,73 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 ManagedService transmission = getService("transmission");
                 if (transmission != null && transmission.isInstalled() && isPortOccupied(9091)) {
                     ensureServiceConfigSanitized("transmission");
+                    wireStep(progress, "… Syncing Transmission");
                     wireTransmission(log);
                     wiredServices.add("Transmission");
+                    wireStep(progress, "✓ Transmission synchronized");
                 }
 
                 ManagedService radarr = getService("radarr");
                 if (radarr != null && radarr.isInstalled() && isPortOccupied(7878)) {
                     ensureServiceConfigSanitized("radarr");
+                    wireStep(progress, "… Syncing Radarr");
                     wireRadarr(log);
                     wiredServices.add("Radarr");
+                    wireStep(progress, "✓ Radarr synchronized");
                 }
 
                 ManagedService sonarr = getService("sonarr");
                 if (sonarr != null && sonarr.isInstalled() && isPortOccupied(8989)) {
                     ensureServiceConfigSanitized("sonarr");
+                    wireStep(progress, "… Syncing Sonarr");
                     wireSonarr(log);
                     wiredServices.add("Sonarr");
+                    wireStep(progress, "✓ Sonarr synchronized");
                 }
 
                 ManagedService lidarr = getService("lidarr");
                 if (lidarr != null && lidarr.isInstalled() && isPortOccupied(8686)) {
                     ensureServiceConfigSanitized("lidarr");
+                    wireStep(progress, "… Syncing Lidarr");
                     wireLidarr(log);
                     wiredServices.add("Lidarr");
+                    wireStep(progress, "✓ Lidarr synchronized");
                 }
 
                 ManagedService prowlarr = getService("prowlarr");
                 if (prowlarr != null && prowlarr.isInstalled() && isPortOccupied(9696)) {
                     ensureServiceConfigSanitized("prowlarr");
+                    wireStep(progress, "… Syncing Prowlarr");
                     wireProwlarr(log);
                     wiredServices.add("Prowlarr");
+                    wireStep(progress, "✓ Prowlarr synchronized");
                 }
 
                 ManagedService jackett = getService("jackett");
                 if (jackett != null && jackett.isInstalled() && isPortOccupied(9117)) {
                     ensureServiceConfigSanitized("jackett");
+                    wireStep(progress, "… Syncing Jackett");
                     wireJackett(log);
                     wiredServices.add("Jackett");
+                    wireStep(progress, "✓ Jackett synchronized");
                 }
 
                 ManagedService bazarr = getService("bazarr");
                 if (bazarr != null && bazarr.isInstalled() && isPortOccupied(6767)) {
                     ensureServiceConfigSanitized("bazarr");
+                    wireStep(progress, "… Syncing Bazarr");
                     wireBazarr(log);
                     wiredServices.add("Bazarr");
+                    wireStep(progress, "✓ Bazarr synchronized");
                 }
 
                 ManagedService seerr = getService("seerr");
                 if (seerr != null && seerr.isInstalled() && isPortOccupied(5055)) {
                     ensureServiceConfigSanitized("seerr");
+                    wireStep(progress, "… Syncing Seerr");
                     wireSeerr(log);
                     wiredServices.add("Seerr");
+                    wireStep(progress, "✓ Seerr synchronized");
                 }
 
                 String summaryMsg = !wiredServices.isEmpty()

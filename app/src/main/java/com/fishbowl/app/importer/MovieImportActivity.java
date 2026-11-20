@@ -1117,11 +1117,11 @@ public final class MovieImportActivity extends AppCompatActivity {
                 try { e = Integer.parseInt(editEpisode.getText().toString().trim()); } catch (Throwable ignored) {}
                 folder = MovieFilenameParser.buildSanitizedTvFolder(t, y, s);
                 file = MovieFilenameParser.buildSanitizedTvFile(t, s, e, -1, ext);
-                lblTo.setText("TO (Fishbowl TV Shows):\n" + baseDir.getAbsolutePath() + "/" + folder + "/" + file);
+                lblTo.setText("TO (Jellyarr TV Shows):\n" + baseDir.getAbsolutePath() + "/" + folder + "/" + file);
             } else {
                 folder = MovieFilenameParser.buildSanitizedName(t, y, "");
                 file = MovieFilenameParser.buildSanitizedName(t, y, ext);
-                lblTo.setText("TO (Fishbowl Movies):\n" + baseDir.getAbsolutePath() + "/" + folder + "/" + file);
+                lblTo.setText("TO (Jellyarr Movies):\n" + baseDir.getAbsolutePath() + "/" + folder + "/" + file);
             }
 
             File destFolder = new File(baseDir, folder);
@@ -1444,7 +1444,7 @@ public final class MovieImportActivity extends AppCompatActivity {
                 refreshHistoryUI();
 
                 String msg = (isMove ? "Moved to Fishbowl:\n" : "Copied to Fishbowl:\n") + record.destinationPath;
-                if (jellyfinRefreshed) msg += "\n(Fishbowl library scan dispatched)";
+                if (jellyfinRefreshed) msg += "\n(Jellyarr library scan dispatched)";
                 Toast.makeText(MovieImportActivity.this, msg, Toast.LENGTH_LONG).show();
             }
 

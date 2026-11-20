@@ -1,0 +1,30 @@
+What's new in 2.0.4-beta.1 (beta)
+- Consistent design across ALL tabs: one card style (colour, border, corner radius) for Home, Library, Downloads, Services and Settings.
+- Unified section titles (same font, size, colour and spacing everywhere).
+- Settings cards and rows now match the rest of the app.
+
+From 2.0.3:
+- START SERVER / Restart / Stop on Home now control the WHOLE server: Jellyfin + all installed companion services (Transmission, Prowlarr, Radarr, Sonarr...).
+- "Start on app launch" now starts the full server too.
+- SYNC STACK now opens a live dialog: what is synchronized, which services are running/skipped, and each step as it happens.
+
+From 2.0.2:
+- Updates: the button now says "تنزيل التحديث" (download only); installing is a separate "تثبيت التحديث" button.
+- The downloaded file is kept on the device and downloads resume automatically (also after closing the app or losing the connection), so nothing is downloaded twice.
+- New setting: download updates automatically in the background (optionally Wi-Fi only), with a notification when ready.
+- Installed update files are deleted automatically after the update is installed.
+
+From 2.0.1:
+- The app is now named Jellyarr (display name, notifications and screens). Same signing key and package, so it installs over the previous version and keeps all data.
+
+From 2.0.0 (first stable release):
+- Update notifications: Fishbowl now checks for new versions in the background and notifies you outside the app (system notification) and inside the app (pop-up).
+- Separate Stable and Beta update settings: choose for each channel whether to get a system notification and/or an in-app notice, and set the check interval.
+- In-app download, verification and installation of updates, straight from the notice or from Settings > Software Updates.
+- Updates now come from the Jellyarr releases (same signing key, installs over the current version).
+- "What's new" summary shown after every update and in Settings > Software Updates.
+- Settings are split into separate pages, one per section, with all options visible directly (no folded lists inside).
+- Switches are brightly coloured when ON; SAVE buttons stay dimmed until a value changes.
+- Backup & Restore: export no longer aborts when a database is busy or one file is unreadable; it also saves Transmission torrents/resume data, shows a detailed error window if it fails, and uses a safer file move.
+- First stable release: includes everything from the 2.x beta builds.
+- Library tab, Transmission controls/history and automation features from earlier builds.
