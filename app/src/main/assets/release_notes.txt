@@ -1,4 +1,9 @@
-What's new in 2.0.3 (stable)
+What's new in 2.0.4-beta.1 (beta)
+- Consistent design across ALL tabs: one card style (colour, border, corner radius) for Home, Library, Downloads, Services and Settings.
+- Unified section titles (same font, size, colour and spacing everywhere).
+- Settings cards and rows now match the rest of the app.
+
+From 2.0.3:
 - START SERVER / Restart / Stop on Home now control the WHOLE server: Jellyfin + all installed companion services (Transmission, Prowlarr, Radarr, Sonarr...).
 - "Start on app launch" now starts the full server too.
 - SYNC STACK now opens a live dialog: what is synchronized, which services are running/skipped, and each step as it happens.

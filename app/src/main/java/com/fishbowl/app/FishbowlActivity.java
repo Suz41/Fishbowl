@@ -2041,6 +2041,7 @@ public final class FishbowlActivity extends AppCompatActivity
         header.setTextColor(getSecondaryTextColor());
         header.setPadding(0, 0, 0, dp(10));
         card.addView(header);
+        styleSectionLabel(header);
 
         // Row 1: Client Playback & Direct Stream Status
         LinearLayout rowStatus = new LinearLayout(this);
@@ -2583,6 +2584,7 @@ public final class FishbowlActivity extends AppCompatActivity
         title.setLetterSpacing(0.08f);
         title.setTextColor(Color.parseColor("#71717A"));
         headerRow.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        styleSectionLabel(title);
 
         homeServicesCountBadge = new TextView(this);
         homeServicesCountBadge.setText("7 / 7 Active");
@@ -3192,6 +3194,7 @@ public final class FishbowlActivity extends AppCompatActivity
         title.setTextColor(Color.parseColor("#71717A"));
         title.setLetterSpacing(0.08f);
         headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        styleSectionLabel(title);
 
         downloadSummaryBadge = new TextView(this);
         downloadSummaryBadge.setText("0 Active");
@@ -4536,6 +4539,7 @@ public final class FishbowlActivity extends AppCompatActivity
         cardsTitle.setLetterSpacing(0.08f);
         cardsTitle.setTextColor(Color.parseColor("#71717A"));
         cardsHeader.addView(cardsTitle, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        styleSectionLabel(cardsTitle);
 
         Button btnInstallBatch = createOutlinePixelButton("+ INSTALL", Color.parseColor("#38BDF8"), Color.parseColor("#38BDF8"));
         btnInstallBatch.setTextSize(9f);
@@ -8691,7 +8695,7 @@ public final class FishbowlActivity extends AppCompatActivity
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(16), dp(14), dp(14), dp(14));
-        row.setBackground(createRoundedDrawable(Color.parseColor("#0C0D10"), dp(12)));
+        row.setBackground(createCardDrawable(UiTheme.CARD, dp(14)));
         row.setClickable(true);
         row.setFocusable(true);
         LinearLayout col = new LinearLayout(this);
@@ -8750,7 +8754,7 @@ public final class FishbowlActivity extends AppCompatActivity
     private LinearLayout createSettingsSectionCard() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(createRoundedDrawable(Color.parseColor("#0C0D10"), dp(12)));
+        card.setBackground(createCardDrawable(UiTheme.CARD, dp(14)));
         card.setPadding(dp(16), dp(12), dp(16), dp(12));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.bottomMargin = dp(14);
@@ -8761,10 +8765,7 @@ public final class FishbowlActivity extends AppCompatActivity
     private TextView createSettingsSectionHeader(String title) {
         TextView tv = new TextView(this);
         tv.setText(title);
-        tv.setTextSize(10.5f);
-        tv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        tv.setTextColor(Color.parseColor("#71717A"));
-        tv.setLetterSpacing(0.08f);
+        styleSectionLabel(tv);
         tv.setPadding(dp(4), dp(6), 0, dp(6));
         return tv;
     }
@@ -10422,6 +10423,7 @@ public final class FishbowlActivity extends AppCompatActivity
         servicesHeading.setLetterSpacing(0.06f);
         servicesHeading.setPadding(0, dp(10), 0, dp(4));
         content.addView(servicesHeading);
+        styleSectionLabel(servicesHeading);
 
         for (UpdateManager.ServiceVersionInfo svc : UpdateManager.getInstance(this).getUniversalServiceVersionMatrix()) {
             content.addView(buildServiceUpdateRow(svc));
@@ -11300,6 +11302,7 @@ public final class FishbowlActivity extends AppCompatActivity
         archHeading.setLetterSpacing(0.06f);
         archHeading.setPadding(0, dp(6), 0, dp(6));
         content.addView(archHeading);
+        styleSectionLabel(archHeading);
 
         content.addView(buildSpecRow("Jellyfin Server Core", "v12.4.0 (.NET 10 ARM64)"));
         content.addView(createSettingsDivider());
@@ -13397,17 +13400,25 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private GradientDrawable createRoundedDrawable(int color, int radiusDp) {
         GradientDrawable gd = new GradientDrawable();
-        gd.setColor(color);
-        gd.setCornerRadius(radiusDp);
+        gd.setColor(UiTheme.normalizeFill(color));
+        gd.setCornerRadius(UiTheme.normalizeRadius(radiusDp, getResources().getDisplayMetrics().density));
         return gd;
     }
 
     private GradientDrawable createBorderedRoundedDrawable(int bgColor, int borderColor, int strokeWidthPx, int radiusDp) {
         GradientDrawable gd = new GradientDrawable();
-        gd.setColor(bgColor);
-        gd.setStroke(strokeWidthPx, borderColor);
-        gd.setCornerRadius(radiusDp);
+        gd.setColor(UiTheme.normalizeFill(bgColor));
+        gd.setStroke(strokeWidthPx, UiTheme.normalizeBorder(borderColor));
+        gd.setCornerRadius(UiTheme.normalizeRadius(radiusDp, getResources().getDisplayMetrics().density));
         return gd;
+    }
+
+    /** One look for every section label in every tab. */
+    private void styleSectionLabel(TextView tv) {
+        tv.setTextSize(11f);
+        tv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        tv.setLetterSpacing(0.08f);
+        tv.setTextColor(Color.parseColor("#71717A"));
     }
 
     private int colorWithAlpha(int color, int alpha) {
