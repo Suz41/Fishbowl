@@ -43,6 +43,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import com.fishbowl.app.AppTheme;
 import com.fishbowl.app.MediaStorageManager;
 import com.termux.R;
 import com.fishbowl.app.StorageDriveHelper;
@@ -71,16 +72,6 @@ public final class MovieImportActivity extends AppCompatActivity {
     private static final String TAG = "MovieImportActivity";
 
     // Design Tokens (Harmonized with FishbowlActivity)
-    private static final int COLOR_BG = Color.parseColor("#000000");
-    private static final int COLOR_SURFACE = Color.parseColor("#0C0C0E");
-    private static final int COLOR_ELEVATED = Color.parseColor("#15161A");
-    private static final int COLOR_BORDER = Color.argb(20, 255, 255, 255);
-    private static final int COLOR_TEXT_PRIMARY = Color.parseColor("#F4F4F5");
-    private static final int COLOR_TEXT_MUTED = Color.parseColor("#71717A");
-    private static final int COLOR_ACCENT = Color.parseColor("#38BDF8");
-    private static final int COLOR_SUCCESS = Color.parseColor("#34D399");
-    private static final int COLOR_WARNING = Color.parseColor("#FFD51E");
-    private static final int COLOR_DANGER = Color.parseColor("#EF4444");
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService backgroundExecutor = Executors.newCachedThreadPool();
@@ -105,6 +96,8 @@ public final class MovieImportActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        AppTheme.init(this);
+        AppTheme.applyNightMode();
         super.onCreate(savedInstanceState);
 
         journal = MovieImportJournal.getInstance(this);
@@ -139,19 +132,19 @@ public final class MovieImportActivity extends AppCompatActivity {
 
     private void configureSystemBars() {
         Window window = getWindow();
-        window.setStatusBarColor(COLOR_BG);
-        window.setNavigationBarColor(COLOR_BG);
+        window.setStatusBarColor(AppTheme.bg());
+        window.setNavigationBarColor(AppTheme.bg());
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
         if (controller != null) {
-            controller.setAppearanceLightStatusBars(false);
-            controller.setAppearanceLightNavigationBars(false);
+            controller.setAppearanceLightStatusBars(!AppTheme.isDark());
+            controller.setAppearanceLightNavigationBars(!AppTheme.isDark());
         }
     }
 
     private View buildRootLayout() {
         LinearLayout outerRoot = new LinearLayout(this);
         outerRoot.setOrientation(LinearLayout.VERTICAL);
-        outerRoot.setBackgroundColor(COLOR_BG);
+        outerRoot.setBackgroundColor(AppTheme.bg());
 
         // Apply status bar padding to outer container
         ViewCompat.setOnApplyWindowInsetsListener(outerRoot, (v, insets) -> {
@@ -171,7 +164,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setSmoothScrollingEnabled(true);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(COLOR_BG);
+        scroll.setBackgroundColor(AppTheme.bg());
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -198,7 +191,7 @@ public final class MovieImportActivity extends AppCompatActivity {
     private View buildHeaderBar() {
         LinearLayout rootHeader = new LinearLayout(this);
         rootHeader.setOrientation(LinearLayout.VERTICAL);
-        rootHeader.setBackgroundColor(COLOR_BG);
+        rootHeader.setBackgroundColor(AppTheme.bg());
         rootHeader.setPadding(dp(16), dp(8), dp(16), dp(8));
 
         LinearLayout header = new LinearLayout(this);
@@ -208,12 +201,12 @@ public final class MovieImportActivity extends AppCompatActivity {
         // Back Button with touch target & ripple
         ImageView btnBack = new ImageView(this);
         btnBack.setImageResource(R.drawable.ic_back);
-        btnBack.setColorFilter(COLOR_TEXT_PRIMARY);
+        btnBack.setColorFilter(AppTheme.text());
         btnBack.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         btnBack.setPadding(dp(8), dp(8), dp(8), dp(8));
         btnBack.setClickable(true);
         btnBack.setFocusable(true);
-        btnBack.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(18), COLOR_ACCENT));
+        btnBack.setBackground(createButtonRippleDrawable(AppTheme.inner(), dp(18), AppTheme.accent()));
         LinearLayout.LayoutParams pBack = new LinearLayout.LayoutParams(dp(38), dp(38));
         pBack.rightMargin = dp(12);
         btnBack.setLayoutParams(pBack);
@@ -223,7 +216,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         // Fishbowl Logo Mark
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.ic_fishbowl_logo);
-        logo.setColorFilter(Color.WHITE);
+        logo.setColorFilter(AppTheme.text());
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(24), dp(24));
         logoParams.rightMargin = dp(10);
@@ -238,14 +231,14 @@ public final class MovieImportActivity extends AppCompatActivity {
         title.setTextSize(13.5f);
         title.setLetterSpacing(0.12f);
         title.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        title.setTextColor(COLOR_TEXT_PRIMARY);
+        title.setTextColor(AppTheme.text());
         titleCol.addView(title);
 
         TextView sub = new TextView(this);
         sub.setText("MOVIES & TV SERIES");
         sub.setTextSize(9.5f);
         sub.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
-        sub.setTextColor(COLOR_TEXT_MUTED);
+        sub.setTextColor(AppTheme.textMuted());
         titleCol.addView(sub);
 
         header.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
@@ -254,14 +247,14 @@ public final class MovieImportActivity extends AppCompatActivity {
         tag.setText("FISHBOWL AUTO-ORG");
         tag.setTextSize(9.5f);
         tag.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        tag.setTextColor(COLOR_ACCENT);
+        tag.setTextColor(AppTheme.accent());
         header.addView(tag);
 
         rootHeader.addView(header);
 
         // Hairline divider
         View border = new View(this);
-        border.setBackgroundColor(Color.argb(12, 255, 255, 255));
+        border.setBackgroundColor(AppTheme.outline());
         LinearLayout.LayoutParams pDiv = new LinearLayout.LayoutParams(-1, dp(1));
         pDiv.topMargin = dp(8);
         rootHeader.addView(border, pDiv);
@@ -277,12 +270,12 @@ public final class MovieImportActivity extends AppCompatActivity {
         heading.setTextSize(11f);
         heading.setLetterSpacing(0.08f);
         heading.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        heading.setTextColor(COLOR_TEXT_MUTED);
+        heading.setTextColor(AppTheme.textMuted());
         heading.setPadding(0, 0, 0, dp(12));
         card.addView(heading);
 
         // Mode A: Manual Video File Picker
-        Button btnChoose = createButton("CHOOSE VIDEO (MANUAL PICKER)", Color.WHITE, Color.BLACK);
+        Button btnChoose = createButton("CHOOSE VIDEO (MANUAL PICKER)", AppTheme.accent(), AppTheme.onAccent());
         btnChoose.setOnClickListener(v -> {
             String[] mimeTypes = {"video/*", "application/x-matroska", "application/octet-stream"};
             videoFilePickerLauncher.launch(mimeTypes);
@@ -293,7 +286,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         card.addView(spacer, new LinearLayout.LayoutParams(-1, dp(10)));
 
         // Mode B: Scan Downloads Folder
-        Button btnScan = createOutlineButton("SCAN DOWNLOADS FOR MEDIA", COLOR_ACCENT);
+        Button btnScan = createOutlineButton("SCAN DOWNLOADS FOR MEDIA", AppTheme.accent());
         btnScan.setOnClickListener(v -> scanDownloadsDirectory());
         card.addView(btnScan, new LinearLayout.LayoutParams(-1, dp(44)));
 
@@ -306,20 +299,20 @@ public final class MovieImportActivity extends AppCompatActivity {
         lblRoots.setText("Library Destinations:");
         lblRoots.setTextSize(10.5f);
         lblRoots.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        lblRoots.setTextColor(COLOR_TEXT_MUTED);
+        lblRoots.setTextColor(AppTheme.textMuted());
         rootsCol.addView(lblRoots);
 
         TextView lblMovies = new TextView(this);
         lblMovies.setText("• Movies: " + MediaStorageManager.getInstance(this).getMoviesDir().getAbsolutePath());
         lblMovies.setTextSize(10f);
-        lblMovies.setTextColor(COLOR_TEXT_MUTED);
+        lblMovies.setTextColor(AppTheme.textMuted());
         lblMovies.setPadding(0, dp(2), 0, 0);
         rootsCol.addView(lblMovies);
 
         TextView lblTv = new TextView(this);
         lblTv.setText("• TV Series: " + MediaStorageManager.getInstance(this).getTvDir().getAbsolutePath());
         lblTv.setTextSize(10f);
-        lblTv.setTextColor(COLOR_TEXT_MUTED);
+        lblTv.setTextColor(AppTheme.textMuted());
         lblTv.setPadding(0, dp(2), 0, 0);
         rootsCol.addView(lblTv);
 
@@ -345,13 +338,13 @@ public final class MovieImportActivity extends AppCompatActivity {
         label.setTextSize(11.5f);
         label.setLetterSpacing(0.06f);
         label.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        label.setTextColor(COLOR_TEXT_PRIMARY);
+        label.setTextColor(AppTheme.text());
         textCol.addView(label);
 
         TextView desc = new TextView(this);
         desc.setText("Notifies when a browser download completes. Never auto-moves files.");
         desc.setTextSize(10.5f);
-        desc.setTextColor(COLOR_TEXT_MUTED);
+        desc.setTextColor(AppTheme.textMuted());
         desc.setPadding(0, dp(2), 0, 0);
         textCol.addView(desc);
 
@@ -368,7 +361,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         card.addView(row);
 
         View div = new View(this);
-        div.setBackgroundColor(COLOR_BORDER);
+        div.setBackgroundColor(AppTheme.outline());
         LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(-1, dp(1));
         divLp.topMargin = dp(10);
         divLp.bottomMargin = dp(10);
@@ -386,13 +379,13 @@ public final class MovieImportActivity extends AppCompatActivity {
         screenLabel.setTextSize(11.5f);
         screenLabel.setLetterSpacing(0.06f);
         screenLabel.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        screenLabel.setTextColor(COLOR_TEXT_PRIMARY);
+        screenLabel.setTextColor(AppTheme.text());
         screenTextCol.addView(screenLabel);
 
         TextView screenDesc = new TextView(this);
         screenDesc.setText("Prevents device from sleeping or pausing long media transfers.");
         screenDesc.setTextSize(10.5f);
-        screenDesc.setTextColor(COLOR_TEXT_MUTED);
+        screenDesc.setTextColor(AppTheme.textMuted());
         screenDesc.setPadding(0, dp(2), 0, 0);
         screenTextCol.addView(screenDesc);
 
@@ -413,7 +406,7 @@ public final class MovieImportActivity extends AppCompatActivity {
     private void updateDetectionStatusBadge(boolean enabled) {
         if (detectionStatusBadge != null) {
             detectionStatusBadge.setText(enabled ? "ACTIVE" : "DISABLED");
-            detectionStatusBadge.setTextColor(enabled ? COLOR_SUCCESS : COLOR_TEXT_MUTED);
+            detectionStatusBadge.setTextColor(enabled ? AppTheme.success() : AppTheme.textMuted());
         }
     }
 
@@ -429,7 +422,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         header.setTextSize(11f);
         header.setLetterSpacing(0.08f);
         header.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        header.setTextColor(COLOR_TEXT_MUTED);
+        header.setTextColor(AppTheme.textMuted());
         header.setPadding(0, 0, 0, dp(8));
         container.addView(header);
 
@@ -439,9 +432,9 @@ public final class MovieImportActivity extends AppCompatActivity {
         TextView empty = new TextView(this);
         empty.setText("Tap 'Scan Downloads For Media' above to search for downloaded videos.");
         empty.setTextSize(11);
-        empty.setTextColor(COLOR_TEXT_MUTED);
+        empty.setTextColor(AppTheme.textMuted());
         empty.setPadding(dp(14), dp(16), dp(14), dp(16));
-        empty.setBackground(createRoundedBackground(COLOR_SURFACE, COLOR_BORDER, dp(12)));
+        empty.setBackground(createRoundedBackground(AppTheme.card(), AppTheme.outline(), dp(12)));
         scannedFilesContainer.addView(empty);
 
         container.addView(scannedFilesContainer);
@@ -465,13 +458,13 @@ public final class MovieImportActivity extends AppCompatActivity {
         header.setTextSize(11f);
         header.setLetterSpacing(0.08f);
         header.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        header.setTextColor(COLOR_TEXT_MUTED);
+        header.setTextColor(AppTheme.textMuted());
         headerRow.addView(header, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         Button btnClear = new Button(this);
         btnClear.setText("CLEAR");
         btnClear.setTextSize(10f);
-        btnClear.setTextColor(COLOR_TEXT_MUTED);
+        btnClear.setTextColor(AppTheme.textMuted());
         btnClear.setBackground(null);
         btnClear.setOnClickListener(v -> {
             journal.clearHistory();
@@ -497,9 +490,9 @@ public final class MovieImportActivity extends AppCompatActivity {
             TextView empty = new TextView(this);
             empty.setText("No import operations recorded yet.");
             empty.setTextSize(11);
-            empty.setTextColor(COLOR_TEXT_MUTED);
+            empty.setTextColor(AppTheme.textMuted());
             empty.setPadding(dp(14), dp(16), dp(14), dp(16));
-            empty.setBackground(createRoundedBackground(COLOR_SURFACE, COLOR_BORDER, dp(12)));
+            empty.setBackground(createRoundedBackground(AppTheme.card(), AppTheme.outline(), dp(12)));
             historyContainer.addView(empty);
             return;
         }
@@ -527,14 +520,14 @@ public final class MovieImportActivity extends AppCompatActivity {
         title.setText(label);
         title.setTextSize(12.5f);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        title.setTextColor(COLOR_TEXT_PRIMARY);
+        title.setTextColor(AppTheme.text());
         top.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         TextView opBadge = new TextView(this);
         opBadge.setText(r.operation != null ? r.operation : "MOVE");
         opBadge.setTextSize(9.5f);
         opBadge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        opBadge.setTextColor(COLOR_ACCENT);
+        opBadge.setTextColor(AppTheme.accent());
         opBadge.setPadding(0, 0, dp(8), 0);
         top.addView(opBadge);
 
@@ -542,8 +535,8 @@ public final class MovieImportActivity extends AppCompatActivity {
         statusBadge.setText(r.status);
         statusBadge.setTextSize(9.5f);
         statusBadge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        int badgeColor = "COMPLETED".equals(r.status) ? COLOR_SUCCESS
-                : "SKIPPED".equals(r.status) ? COLOR_WARNING : COLOR_DANGER;
+        int badgeColor = "COMPLETED".equals(r.status) ? AppTheme.success()
+                : "SKIPPED".equals(r.status) ? AppTheme.warning() : AppTheme.danger();
         statusBadge.setTextColor(badgeColor);
         top.addView(statusBadge);
         row.addView(top);
@@ -554,7 +547,7 @@ public final class MovieImportActivity extends AppCompatActivity {
             fromView.setText("From: " + r.sourcePath);
             fromView.setTextSize(9.5f);
             fromView.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
-            fromView.setTextColor(COLOR_TEXT_MUTED);
+            fromView.setTextColor(AppTheme.textMuted());
             fromView.setPadding(0, dp(4), 0, 0);
             row.addView(fromView);
         }
@@ -563,7 +556,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         toView.setText("To:   " + r.destinationPath);
         toView.setTextSize(9.5f);
         toView.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
-        toView.setTextColor(COLOR_ACCENT);
+        toView.setTextColor(AppTheme.accent());
         toView.setPadding(0, dp(2), 0, 0);
         row.addView(toView);
 
@@ -571,7 +564,7 @@ public final class MovieImportActivity extends AppCompatActivity {
             TextView err = new TextView(this);
             err.setText("Error: " + r.errorMessage);
             err.setTextSize(9.5f);
-            err.setTextColor(COLOR_DANGER);
+            err.setTextColor(AppTheme.danger());
             err.setPadding(0, dp(4), 0, 0);
             row.addView(err);
         }
@@ -620,7 +613,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         TextView scanning = new TextView(this);
         scanning.setText("Scanning Downloads folder for video files...");
         scanning.setTextSize(11);
-        scanning.setTextColor(COLOR_TEXT_MUTED);
+        scanning.setTextColor(AppTheme.textMuted());
         scanning.setPadding(dp(14), dp(16), dp(14), dp(16));
         scannedFilesContainer.addView(scanning);
 
@@ -818,9 +811,9 @@ public final class MovieImportActivity extends AppCompatActivity {
             TextView empty = new TextView(this);
             empty.setText("All downloaded video files have already been imported!");
             empty.setTextSize(11);
-            empty.setTextColor(COLOR_TEXT_MUTED);
+            empty.setTextColor(AppTheme.textMuted());
             empty.setPadding(dp(14), dp(16), dp(14), dp(16));
-            empty.setBackground(createRoundedBackground(COLOR_SURFACE, COLOR_BORDER, dp(12)));
+            empty.setBackground(createRoundedBackground(AppTheme.card(), AppTheme.outline(), dp(12)));
             scannedFilesContainer.addView(empty);
             return;
         }
@@ -848,7 +841,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         name.setText(item.filename);
         name.setTextSize(12f);
         name.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        name.setTextColor(COLOR_TEXT_PRIMARY);
+        name.setTextColor(AppTheme.text());
         headerRow.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         TextView typeBadge = new TextView(this);
@@ -856,8 +849,8 @@ public final class MovieImportActivity extends AppCompatActivity {
         typeBadge.setText(isTv ? "TV SERIES" : "MOVIE");
         typeBadge.setTextSize(9.5f);
         typeBadge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        typeBadge.setTextColor(isTv ? COLOR_ACCENT : COLOR_SUCCESS);
-        typeBadge.setBackground(createRoundedBackground(COLOR_ELEVATED, COLOR_BORDER, dp(4)));
+        typeBadge.setTextColor(isTv ? AppTheme.accent() : AppTheme.success());
+        typeBadge.setBackground(createRoundedBackground(AppTheme.inner(), AppTheme.outline(), dp(4)));
         typeBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
         headerRow.addView(typeBadge);
         row.addView(headerRow);
@@ -874,7 +867,7 @@ public final class MovieImportActivity extends AppCompatActivity {
 
         details.setText(sizeStr + (dateStr.isEmpty() ? "" : " | " + dateStr) + " | " + titleInfo);
         details.setTextSize(10f);
-        details.setTextColor(COLOR_TEXT_MUTED);
+        details.setTextColor(AppTheme.textMuted());
         details.setPadding(0, dp(4), 0, dp(6));
         row.addView(details);
 
@@ -893,19 +886,19 @@ public final class MovieImportActivity extends AppCompatActivity {
         fromView.setText("From: " + sourceDisplay);
         fromView.setTextSize(9.5f);
         fromView.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
-        fromView.setTextColor(COLOR_TEXT_MUTED);
+        fromView.setTextColor(AppTheme.textMuted());
         row.addView(fromView);
 
         TextView toView = new TextView(this);
         toView.setText("To:   " + destDisplay);
         toView.setTextSize(9.5f);
         toView.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
-        toView.setTextColor(COLOR_ACCENT);
+        toView.setTextColor(AppTheme.accent());
         toView.setPadding(0, dp(2), 0, dp(8));
         row.addView(toView);
 
         // Action Button: IMPORT (MOVE)
-        Button btnReview = createButton("SELECT & REVIEW IMPORT (MOVE)", Color.WHITE, Color.BLACK);
+        Button btnReview = createButton("SELECT & REVIEW IMPORT (MOVE)", AppTheme.accent(), AppTheme.onAccent());
         btnReview.setOnClickListener(v -> {
             MovieMetadata metadata = MovieMetadata.fromParsed(parsed);
             showConfirmationDialog(item.uri, item.filename, metadata, row);
@@ -927,25 +920,25 @@ public final class MovieImportActivity extends AppCompatActivity {
 
         ScrollView scroll = new ScrollView(this);
         scroll.setVerticalScrollBarEnabled(false);
-        scroll.setBackgroundColor(COLOR_BG);
+        scroll.setBackgroundColor(AppTheme.bg());
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(20), dp(20), dp(24));
-        content.setBackground(createRoundedBackground(COLOR_SURFACE, COLOR_BORDER, dp(14)));
+        content.setBackground(createRoundedBackground(AppTheme.card(), AppTheme.outline(), dp(14)));
 
         TextView title = new TextView(this);
         title.setText("CONFIRM MEDIA IMPORT");
         title.setTextSize(13.5f);
         title.setLetterSpacing(0.1f);
         title.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        title.setTextColor(COLOR_TEXT_PRIMARY);
+        title.setTextColor(AppTheme.text());
         content.addView(title);
 
         TextView rawFile = new TextView(this);
         rawFile.setText("Source: " + sourceFilename);
         rawFile.setTextSize(10.5f);
-        rawFile.setTextColor(COLOR_TEXT_MUTED);
+        rawFile.setTextColor(AppTheme.textMuted());
         rawFile.setPadding(0, dp(4), 0, dp(14));
         content.addView(rawFile);
 
@@ -955,8 +948,8 @@ public final class MovieImportActivity extends AppCompatActivity {
         typeSwitchRow.setOrientation(LinearLayout.HORIZONTAL);
         typeSwitchRow.setPadding(0, 0, 0, dp(14));
 
-        Button btnMovieTab = createButton("MOVIE", isTvShow[0] ? COLOR_ELEVATED : Color.WHITE, isTvShow[0] ? COLOR_TEXT_MUTED : Color.BLACK);
-        Button btnTvTab = createButton("TV SERIES", isTvShow[0] ? Color.WHITE : COLOR_ELEVATED, isTvShow[0] ? Color.BLACK : COLOR_TEXT_MUTED);
+        Button btnMovieTab = createButton("MOVIE", isTvShow[0] ? AppTheme.inner() : AppTheme.accent(), isTvShow[0] ? AppTheme.textMuted() : AppTheme.onAccent());
+        Button btnTvTab = createButton("TV SERIES", isTvShow[0] ? AppTheme.accent() : AppTheme.inner(), isTvShow[0] ? AppTheme.onAccent() : AppTheme.textMuted());
 
         LinearLayout.LayoutParams pTab1 = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
         pTab1.rightMargin = dp(6);
@@ -972,14 +965,14 @@ public final class MovieImportActivity extends AppCompatActivity {
         lblName.setText("Title / Series Name:");
         lblName.setTextSize(11);
         lblName.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        lblName.setTextColor(COLOR_TEXT_MUTED);
+        lblName.setTextColor(AppTheme.textMuted());
         content.addView(lblName);
 
         EditText editTitle = new EditText(this);
         editTitle.setText(initialMetadata.title);
         editTitle.setTextSize(13);
-        editTitle.setTextColor(COLOR_TEXT_PRIMARY);
-        editTitle.setBackground(createRoundedBackground(COLOR_ELEVATED, COLOR_BORDER, dp(8)));
+        editTitle.setTextColor(AppTheme.text());
+        editTitle.setBackground(createRoundedBackground(AppTheme.inner(), AppTheme.outline(), dp(8)));
         editTitle.setPadding(dp(12), dp(10), dp(12), dp(10));
         content.addView(editTitle);
 
@@ -988,7 +981,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         lblYear.setText("Release Year (Optional):");
         lblYear.setTextSize(11);
         lblYear.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        lblYear.setTextColor(COLOR_TEXT_MUTED);
+        lblYear.setTextColor(AppTheme.textMuted());
         lblYear.setPadding(0, dp(10), 0, 0);
         content.addView(lblYear);
 
@@ -996,8 +989,8 @@ public final class MovieImportActivity extends AppCompatActivity {
         editYear.setText(initialMetadata.year > 0 ? String.valueOf(initialMetadata.year) : "");
         editYear.setTextSize(13);
         editYear.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        editYear.setTextColor(COLOR_TEXT_PRIMARY);
-        editYear.setBackground(createRoundedBackground(COLOR_ELEVATED, COLOR_BORDER, dp(8)));
+        editYear.setTextColor(AppTheme.text());
+        editYear.setBackground(createRoundedBackground(AppTheme.inner(), AppTheme.outline(), dp(8)));
         editYear.setPadding(dp(12), dp(10), dp(12), dp(10));
         content.addView(editYear);
 
@@ -1013,15 +1006,15 @@ public final class MovieImportActivity extends AppCompatActivity {
         lblSeason.setText("Season #:");
         lblSeason.setTextSize(11);
         lblSeason.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        lblSeason.setTextColor(COLOR_TEXT_MUTED);
+        lblSeason.setTextColor(AppTheme.textMuted());
         colSeason.addView(lblSeason);
 
         EditText editSeason = new EditText(this);
         editSeason.setText(String.valueOf(initialMetadata.seasonNumber > 0 ? initialMetadata.seasonNumber : 1));
         editSeason.setTextSize(13);
         editSeason.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        editSeason.setTextColor(COLOR_TEXT_PRIMARY);
-        editSeason.setBackground(createRoundedBackground(COLOR_ELEVATED, COLOR_BORDER, dp(8)));
+        editSeason.setTextColor(AppTheme.text());
+        editSeason.setBackground(createRoundedBackground(AppTheme.inner(), AppTheme.outline(), dp(8)));
         editSeason.setPadding(dp(12), dp(10), dp(12), dp(10));
         colSeason.addView(editSeason);
 
@@ -1035,15 +1028,15 @@ public final class MovieImportActivity extends AppCompatActivity {
         lblEpisode.setText("Episode #:");
         lblEpisode.setTextSize(11);
         lblEpisode.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        lblEpisode.setTextColor(COLOR_TEXT_MUTED);
+        lblEpisode.setTextColor(AppTheme.textMuted());
         colEpisode.addView(lblEpisode);
 
         EditText editEpisode = new EditText(this);
         editEpisode.setText(String.valueOf(initialMetadata.episodeNumber > 0 ? initialMetadata.episodeNumber : 1));
         editEpisode.setTextSize(13);
         editEpisode.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        editEpisode.setTextColor(COLOR_TEXT_PRIMARY);
-        editEpisode.setBackground(createRoundedBackground(COLOR_ELEVATED, COLOR_BORDER, dp(8)));
+        editEpisode.setTextColor(AppTheme.text());
+        editEpisode.setBackground(createRoundedBackground(AppTheme.inner(), AppTheme.outline(), dp(8)));
         editEpisode.setPadding(dp(12), dp(10), dp(12), dp(10));
         colEpisode.addView(editEpisode);
 
@@ -1065,11 +1058,11 @@ public final class MovieImportActivity extends AppCompatActivity {
         lblFrom.setText("FROM (Source):\n" + resolvedSrc);
         lblFrom.setTextSize(10f);
         lblFrom.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
-        lblFrom.setTextColor(COLOR_TEXT_MUTED);
+        lblFrom.setTextColor(AppTheme.textMuted());
         pathBox.addView(lblFrom);
 
         View sep = new View(this);
-        sep.setBackgroundColor(COLOR_BORDER);
+        sep.setBackgroundColor(AppTheme.outline());
         LinearLayout.LayoutParams pSep = new LinearLayout.LayoutParams(-1, dp(1));
         pSep.topMargin = dp(6);
         pSep.bottomMargin = dp(6);
@@ -1078,13 +1071,13 @@ public final class MovieImportActivity extends AppCompatActivity {
         TextView lblTo = new TextView(this);
         lblTo.setTextSize(10.5f);
         lblTo.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        lblTo.setTextColor(COLOR_ACCENT);
+        lblTo.setTextColor(AppTheme.accent());
         pathBox.addView(lblTo);
 
         TextView lblExistsWarning = new TextView(this);
         lblExistsWarning.setTextSize(10.5f);
         lblExistsWarning.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        lblExistsWarning.setTextColor(Color.parseColor("#F59E0B"));
+        lblExistsWarning.setTextColor(AppTheme.warning());
         lblExistsWarning.setPadding(0, dp(6), 0, 0);
         lblExistsWarning.setVisibility(View.GONE);
         pathBox.addView(lblExistsWarning);
@@ -1103,7 +1096,7 @@ public final class MovieImportActivity extends AppCompatActivity {
             String ext = getFileExtension(sourceFilename);
             if (!MovieFilenameParser.isSupportedMediaExtension(ext)) {
                 lblExistsWarning.setVisibility(View.GONE);
-                lblTo.setTextColor(COLOR_ACCENT);
+                lblTo.setTextColor(AppTheme.accent());
                 return;
             }
 
@@ -1142,10 +1135,10 @@ public final class MovieImportActivity extends AppCompatActivity {
             if (isContained && destFileCheck.exists()) {
                 lblExistsWarning.setVisibility(View.VISIBLE);
                 lblExistsWarning.setText("⚠️ ALREADY IN LIBRARY: File exists (" + MediaStorageManager.formatBytes(destFileCheck.length()) + ")! Handled per conflict setting.");
-                lblTo.setTextColor(Color.parseColor("#F59E0B"));
+                lblTo.setTextColor(AppTheme.warning());
             } else {
                 lblExistsWarning.setVisibility(View.GONE);
-                lblTo.setTextColor(COLOR_ACCENT);
+                lblTo.setTextColor(AppTheme.accent());
             }
         };
 
@@ -1161,20 +1154,20 @@ public final class MovieImportActivity extends AppCompatActivity {
 
         btnMovieTab.setOnClickListener(v -> {
             isTvShow[0] = false;
-            btnMovieTab.setBackground(createRoundedBackground(Color.WHITE, 0, dp(8)));
-            btnMovieTab.setTextColor(Color.BLACK);
-            btnTvTab.setBackground(createRoundedBackground(COLOR_ELEVATED, 0, dp(8)));
-            btnTvTab.setTextColor(COLOR_TEXT_MUTED);
+            btnMovieTab.setBackground(createRoundedBackground(AppTheme.accent(), 0, dp(8)));
+            btnMovieTab.setTextColor(AppTheme.onAccent());
+            btnTvTab.setBackground(createRoundedBackground(AppTheme.inner(), 0, dp(8)));
+            btnTvTab.setTextColor(AppTheme.textMuted());
             tvFieldsContainer.setVisibility(View.GONE);
             updateDestLabel.run();
         });
 
         btnTvTab.setOnClickListener(v -> {
             isTvShow[0] = true;
-            btnTvTab.setBackground(createRoundedBackground(Color.WHITE, 0, dp(8)));
-            btnTvTab.setTextColor(Color.BLACK);
-            btnMovieTab.setBackground(createRoundedBackground(COLOR_ELEVATED, 0, dp(8)));
-            btnMovieTab.setTextColor(COLOR_TEXT_MUTED);
+            btnTvTab.setBackground(createRoundedBackground(AppTheme.accent(), 0, dp(8)));
+            btnTvTab.setTextColor(AppTheme.onAccent());
+            btnMovieTab.setBackground(createRoundedBackground(AppTheme.inner(), 0, dp(8)));
+            btnMovieTab.setTextColor(AppTheme.textMuted());
             tvFieldsContainer.setVisibility(View.VISIBLE);
             updateDestLabel.run();
         });
@@ -1189,8 +1182,8 @@ public final class MovieImportActivity extends AppCompatActivity {
         pOp.topMargin = dp(14);
         opRow.setLayoutParams(pOp);
 
-        Button btnMove = createButton("MOVE (CUT & DELETE ORIGINAL)", Color.WHITE, Color.BLACK);
-        Button btnCopy = createButton("COPY (DUPLICATE)", COLOR_ELEVATED, COLOR_TEXT_MUTED);
+        Button btnMove = createButton("MOVE (CUT & DELETE ORIGINAL)", AppTheme.accent(), AppTheme.onAccent());
+        Button btnCopy = createButton("COPY (DUPLICATE)", AppTheme.inner(), AppTheme.textMuted());
 
         LinearLayout.LayoutParams pOp1 = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
         pOp1.rightMargin = dp(6);
@@ -1203,31 +1196,31 @@ public final class MovieImportActivity extends AppCompatActivity {
 
         btnMove.setOnClickListener(v -> {
             isMoveSelected[0] = true;
-            btnMove.setBackground(createRoundedBackground(Color.WHITE, 0, dp(8)));
-            btnMove.setTextColor(Color.BLACK);
-            btnCopy.setBackground(createRoundedBackground(COLOR_ELEVATED, 0, dp(8)));
-            btnCopy.setTextColor(COLOR_TEXT_MUTED);
+            btnMove.setBackground(createRoundedBackground(AppTheme.accent(), 0, dp(8)));
+            btnMove.setTextColor(AppTheme.onAccent());
+            btnCopy.setBackground(createRoundedBackground(AppTheme.inner(), 0, dp(8)));
+            btnCopy.setTextColor(AppTheme.textMuted());
         });
 
         btnCopy.setOnClickListener(v -> {
             isMoveSelected[0] = false;
-            btnCopy.setBackground(createRoundedBackground(Color.WHITE, 0, dp(8)));
-            btnCopy.setTextColor(Color.BLACK);
-            btnMove.setBackground(createRoundedBackground(COLOR_ELEVATED, 0, dp(8)));
-            btnMove.setTextColor(COLOR_TEXT_MUTED);
+            btnCopy.setBackground(createRoundedBackground(AppTheme.accent(), 0, dp(8)));
+            btnCopy.setTextColor(AppTheme.onAccent());
+            btnMove.setBackground(createRoundedBackground(AppTheme.inner(), 0, dp(8)));
+            btnMove.setTextColor(AppTheme.textMuted());
         });
 
         // Conflict Choice
         TextView lblConflict = new TextView(this);
         lblConflict.setText("If destination file already exists:");
         lblConflict.setTextSize(10.5f);
-        lblConflict.setTextColor(COLOR_TEXT_MUTED);
+        lblConflict.setTextColor(AppTheme.textMuted());
         lblConflict.setPadding(0, dp(12), 0, dp(4));
         content.addView(lblConflict);
 
         String[] conflictOptions = {"Keep Both (append number)", "Skip if exists", "Replace destination"};
         final int[] selectedConflict = {0};
-        Button btnConflict = createOutlineButton(conflictOptions[0], COLOR_TEXT_PRIMARY);
+        Button btnConflict = createOutlineButton(conflictOptions[0], AppTheme.text());
         btnConflict.setOnClickListener(v -> {
             selectedConflict[0] = (selectedConflict[0] + 1) % conflictOptions.length;
             btnConflict.setText(conflictOptions[selectedConflict[0]]);
@@ -1247,13 +1240,13 @@ public final class MovieImportActivity extends AppCompatActivity {
         dlgScreenTitle.setText("Keep Screen Awake");
         dlgScreenTitle.setTextSize(12f);
         dlgScreenTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        dlgScreenTitle.setTextColor(COLOR_TEXT_PRIMARY);
+        dlgScreenTitle.setTextColor(AppTheme.text());
         dlgScreenTextCol.addView(dlgScreenTitle);
 
         TextView dlgScreenSub = new TextView(this);
         dlgScreenSub.setText("Prevent screen sleep while copying or moving files");
         dlgScreenSub.setTextSize(10.5f);
-        dlgScreenSub.setTextColor(COLOR_TEXT_MUTED);
+        dlgScreenSub.setTextColor(AppTheme.textMuted());
         dlgScreenTextCol.addView(dlgScreenSub);
         dlgScreenRow.addView(dlgScreenTextCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
@@ -1270,14 +1263,14 @@ public final class MovieImportActivity extends AppCompatActivity {
         dlgActionRow.setOrientation(LinearLayout.HORIZONTAL);
         dlgActionRow.setPadding(0, dp(14), 0, 0);
 
-        Button btnCancelDialog = createOutlineButton("CANCEL", COLOR_TEXT_MUTED);
+        Button btnCancelDialog = createOutlineButton("CANCEL", AppTheme.textMuted());
         btnCancelDialog.setOnClickListener(v -> dialog.dismiss());
         dlgActionRow.addView(btnCancelDialog, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
 
         View dlgBtnGap = new View(this);
         dlgActionRow.addView(dlgBtnGap, new LinearLayout.LayoutParams(dp(8), 1));
 
-        Button btnExecute = createButton("CONFIRM & START IMPORT", COLOR_ACCENT, Color.BLACK);
+        Button btnExecute = createButton("CONFIRM & START IMPORT", AppTheme.accent(), AppTheme.onAccent());
         dlgActionRow.addView(btnExecute, new LinearLayout.LayoutParams(0, dp(40), 1.6f));
 
         content.addView(dlgActionRow);
@@ -1353,7 +1346,7 @@ public final class MovieImportActivity extends AppCompatActivity {
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setBackgroundColor(COLOR_SURFACE);
+        layout.setBackgroundColor(AppTheme.card());
         layout.setPadding(dp(22), dp(22), dp(22), dp(22));
 
         TextView title = new TextView(this);
@@ -1362,13 +1355,13 @@ public final class MovieImportActivity extends AppCompatActivity {
         title.setTextSize(13.5f);
         title.setLetterSpacing(0.08f);
         title.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        title.setTextColor(COLOR_TEXT_PRIMARY);
+        title.setTextColor(AppTheme.text());
         layout.addView(title);
 
         TextView filenameText = new TextView(this);
         filenameText.setText(sourceFilename);
         filenameText.setTextSize(11);
-        filenameText.setTextColor(COLOR_TEXT_MUTED);
+        filenameText.setTextColor(AppTheme.textMuted());
         filenameText.setPadding(0, dp(4), 0, dp(14));
         layout.addView(filenameText);
 
@@ -1380,11 +1373,11 @@ public final class MovieImportActivity extends AppCompatActivity {
         TextView statsText = new TextView(this);
         statsText.setText("Preparing transfer...");
         statsText.setTextSize(11);
-        statsText.setTextColor(COLOR_TEXT_MUTED);
+        statsText.setTextColor(AppTheme.textMuted());
         statsText.setPadding(0, dp(10), 0, dp(14));
         layout.addView(statsText);
 
-        Button btnCancel = createOutlineButton("CANCEL MOVE", COLOR_DANGER);
+        Button btnCancel = createOutlineButton("CANCEL MOVE", AppTheme.danger());
         btnCancel.setOnClickListener(v -> {
             importManager.cancelCurrentImport();
             statsText.setText("Cancelling move & safely reverting...");
@@ -1433,9 +1426,9 @@ public final class MovieImportActivity extends AppCompatActivity {
                         TextView empty = new TextView(MovieImportActivity.this);
                         empty.setText("All downloaded video files have already been imported!");
                         empty.setTextSize(11);
-                        empty.setTextColor(COLOR_TEXT_MUTED);
+                        empty.setTextColor(AppTheme.textMuted());
                         empty.setPadding(dp(14), dp(16), dp(14), dp(16));
-                        empty.setBackground(createRoundedBackground(COLOR_SURFACE, COLOR_BORDER, dp(12)));
+                        empty.setBackground(createRoundedBackground(AppTheme.card(), AppTheme.outline(), dp(12)));
                         scannedFilesContainer.addView(empty);
                     }
                 }
@@ -1483,7 +1476,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(paddingDp, paddingDp, paddingDp, paddingDp);
-        card.setBackground(createRoundedBackground(COLOR_SURFACE, COLOR_BORDER, dp(14)));
+        card.setBackground(createRoundedBackground(AppTheme.card(), AppTheme.outline(), dp(14)));
         return card;
     }
 
@@ -1513,7 +1506,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         b.setTextSize(11.5f);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         b.setTextColor(textColor);
-        b.setBackground(createRoundedBackground(bgColor, 0, dp(10)));
+        b.setBackground(createRoundedBackground(bgColor, 0, dp(100)));
         return b;
     }
 
@@ -1523,7 +1516,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         b.setTextSize(11f);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         b.setTextColor(strokeColor);
-        b.setBackground(createRoundedBackground(Color.TRANSPARENT, strokeColor, dp(10)));
+        b.setBackground(createRoundedBackground(Color.TRANSPARENT, strokeColor, dp(100)));
         return b;
     }
 

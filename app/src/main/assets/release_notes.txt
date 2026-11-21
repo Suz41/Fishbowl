@@ -1,4 +1,12 @@
-What's new in 2.0.4-beta.1 (beta)
+What's new in 2.0.4-beta.2 (beta)
+- Material 3 redesign: new colour system, pill-shaped buttons (filled / tonal / outlined) with press animation, and a new bottom navigation bar with labels and an active indicator.
+- Settings > Appearance: choose System, Light, Dark or AMOLED black, pick an accent colour (8 presets), or use Dynamic colours from your wallpaper (Material You, Android 12+). Includes a live preview and "Reset to default".
+- Settings are now grouped by task: Personalize, Server, Device & Security, Maintenance.
+- Navigation is ordered by what you do: Home, Library, Media, Activity, Settings.
+- Home: startup progress and error cards now appear right under the server status.
+- Dialogs, switches, chips and all screens follow the selected theme (default stays AMOLED black with the blue accent).
+
+From 2.0.4-beta.1:
 - Consistent design across ALL tabs: one card style (colour, border, corner radius) for Home, Library, Downloads, Services and Settings.
 - Unified section titles (same font, size, colour and spacing everywhere).
 - Settings cards and rows now match the rest of the app.
