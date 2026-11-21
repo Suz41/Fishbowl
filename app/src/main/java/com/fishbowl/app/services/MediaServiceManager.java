@@ -450,6 +450,19 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     Log.w(TAG, "[LibraryAutoDelete] pass failed: " + t.getMessage());
                 }
             }, 3, 30, java.util.concurrent.TimeUnit.MINUTES);
+            // Sonarr missing-episode auto-search: polls every 5 min, runs when the chosen interval has elapsed.
+            automationScheduler.scheduleWithFixedDelay(() -> {
+                try {
+                    if (appContext == null || !AutomationPrefs.isSonarrMissingEnabled(appContext)) return;
+                    if (!isServiceRunning("sonarr")) return;
+                    long last = AutomationPrefs.getSonarrMissingLastRun(appContext);
+                    long intervalMs = AutomationPrefs.getSonarrMissingMinutes(appContext) * 60_000L;
+                    if (last > 0 && System.currentTimeMillis() - last < intervalMs) return;
+                    SonarrMissingSearch.run(appContext, false);
+                } catch (Throwable t) {
+                    Log.w(TAG, "[SonarrMissing] pass failed: " + t.getMessage());
+                }
+            }, 4, 5, java.util.concurrent.TimeUnit.MINUTES);
             NetworkPolicyEnforcer.start(appContext, this);
             ExitDiagnostics.install(appContext, this);
         } catch (Throwable t) {

@@ -81,6 +81,50 @@ public final class AutomationPrefs {
         prefs(ctx).edit().putBoolean(KEY_AUTO_RECHECK, enabled).apply();
     }
 
+    // ---- Sonarr automatic missing-episode search -----------------------------------------------
+
+    private static final String KEY_SONARR_ENABLED = "sonarr_missing_enabled";
+    private static final String KEY_SONARR_MINUTES = "sonarr_missing_minutes";
+    private static final String KEY_SONARR_LAST_RUN = "sonarr_missing_last_run";
+    private static final String KEY_SONARR_LAST_SUMMARY = "sonarr_missing_last_summary";
+
+    public static final int DEFAULT_SONARR_MINUTES = 360;
+    public static final int MIN_SONARR_MINUTES = 15;
+    public static final int MAX_SONARR_MINUTES = 60 * 24 * 30;
+
+    public static boolean isSonarrMissingEnabled(Context ctx) {
+        return prefs(ctx).getBoolean(KEY_SONARR_ENABLED, false);
+    }
+
+    public static void setSonarrMissingEnabled(Context ctx, boolean enabled) {
+        prefs(ctx).edit().putBoolean(KEY_SONARR_ENABLED, enabled).apply();
+    }
+
+    public static int getSonarrMissingMinutes(Context ctx) {
+        int m = prefs(ctx).getInt(KEY_SONARR_MINUTES, DEFAULT_SONARR_MINUTES);
+        return Math.max(MIN_SONARR_MINUTES, Math.min(MAX_SONARR_MINUTES, m));
+    }
+
+    public static void setSonarrMissingMinutes(Context ctx, int minutes) {
+        int m = Math.max(MIN_SONARR_MINUTES, Math.min(MAX_SONARR_MINUTES, minutes));
+        prefs(ctx).edit().putInt(KEY_SONARR_MINUTES, m).apply();
+    }
+
+    public static long getSonarrMissingLastRun(Context ctx) {
+        return prefs(ctx).getLong(KEY_SONARR_LAST_RUN, 0L);
+    }
+
+    public static String getSonarrMissingLastSummary(Context ctx) {
+        return prefs(ctx).getString(KEY_SONARR_LAST_SUMMARY, "");
+    }
+
+    public static void recordSonarrMissingRun(Context ctx, String summary) {
+        prefs(ctx).edit()
+                .putLong(KEY_SONARR_LAST_RUN, System.currentTimeMillis())
+                .putString(KEY_SONARR_LAST_SUMMARY, summary == null ? "" : summary)
+                .apply();
+    }
+
     // ---- Per-service Wi-Fi only ---------------------------------------------------------------
 
     public static boolean isWifiOnly(Context ctx, String serviceId) {

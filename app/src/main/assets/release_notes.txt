@@ -1,4 +1,5 @@
 What's new in 2.0.4-beta.1 (beta)
+- New Sonarr tab: lists monitored missing episodes (with a SEARCH button each) and an AUTO-SEARCH option that asks Sonarr to search all missing episodes every N minutes (replaces the old Termux missing-fix.sh job).
 - Consistent design across ALL tabs: one card style (colour, border, corner radius) for Home, Library, Downloads, Services and Settings.
 - Unified section titles (same font, size, colour and spacing everywhere).
 - Settings cards and rows now match the rest of the app.

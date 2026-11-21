@@ -148,6 +148,8 @@ public final class FishbowlActivity extends AppCompatActivity
     private int activeTab = 0;
     private View cachedLibraryView;
     private LibraryTabView libraryTabView;
+    private View cachedSonarrView;
+    private SonarrTabView sonarrTabView;
 
     // Containers
     private LinearLayout rootLayout;
@@ -708,6 +710,9 @@ public final class FishbowlActivity extends AppCompatActivity
         if (activeTab == 5 && libraryTabView != null && libraryTabView.onBack()) {
             return;
         }
+        if (activeTab == 6 && sonarrTabView != null && sonarrTabView.onBack()) {
+            return;
+        }
         if (activeTab == 3 && closeSettingsSection()) {
             return;
         }
@@ -873,6 +878,12 @@ public final class FishbowlActivity extends AppCompatActivity
         contentContainer.addView(cachedLibraryView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        sonarrTabView = new SonarrTabView(this);
+        cachedSonarrView = sonarrTabView.getView();
+        cachedSonarrView.setVisibility(View.GONE);
+        contentContainer.addView(cachedSonarrView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
         // Dedicated Full-Screen Setup / Loading Overlay (placed on top of tabs)
         setupOverlayView = buildSetupOverlay();
         contentContainer.addView(setupOverlayView, new FrameLayout.LayoutParams(
@@ -951,6 +962,9 @@ public final class FishbowlActivity extends AppCompatActivity
         }
         addNavTab(nav, 2, R.drawable.ic_activity);
         addNavTab(nav, 5, R.drawable.ic_service_jellyfin);
+        if (isMediaStackEnabled()) {
+            addNavTab(nav, 6, R.drawable.ic_service_sonarr);
+        }
         addNavTab(nav, 3, R.drawable.ic_settings);
 
         return nav;
@@ -1035,6 +1049,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (cachedSettingsView != null) cachedSettingsView.setVisibility(activeTab == 3 ? View.VISIBLE : View.GONE);
         if (cachedLogsView != null) cachedLogsView.setVisibility(activeTab == 4 ? View.VISIBLE : View.GONE);
         if (cachedLibraryView != null) cachedLibraryView.setVisibility(activeTab == 5 ? View.VISIBLE : View.GONE);
+        if (cachedSonarrView != null) cachedSonarrView.setVisibility(activeTab == 6 ? View.VISIBLE : View.GONE);
 
         if (activeTab == 0) {
             refreshLanAddress();
@@ -1062,6 +1077,8 @@ public final class FishbowlActivity extends AppCompatActivity
             refreshKillTrackerUI();
         } else if (activeTab == 5) {
             if (libraryTabView != null) libraryTabView.refresh();
+        } else if (activeTab == 6) {
+            if (sonarrTabView != null) sonarrTabView.refresh();
         } else if (activeTab == 4) {
             refreshUnifiedLogsDisplay();
             if (autoScrollEnabled && logsScrollView != null) {
