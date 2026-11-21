@@ -42,6 +42,11 @@ import java.net.InetAddress;
  * Also supports generic in-app service Web UI loading (Radarr, Sonarr, Prowlarr, Transmission, Seerr).
  */
 public final class JellyfinWebActivity extends AppCompatActivity implements JellyfinController.Listener {
+
+    @Override
+    protected void attachBaseContext(android.content.Context newBase) {
+        super.attachBaseContext(I18n.wrap(newBase));
+    }
     private static final String TAG = "JellyfinWebActivity";
 
     public static final String EXTRA_URL = "extra_url";
@@ -63,12 +68,6 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
     private final Handler handler = new Handler(Looper.getMainLooper());
     private volatile boolean isDestroyed = false;
 
-    private static final int COLOR_BG = Color.BLACK;
-    private static final int COLOR_SURFACE = Color.BLACK;
-    private static final int COLOR_BORDER = Color.argb(20, 255, 255, 255);
-    private static final int COLOR_TEXT_PRIMARY = Color.parseColor("#F8FAFC");
-    private static final int COLOR_TEXT_MUTED = Color.parseColor("#8A9198");
-    private static final int COLOR_ACCENT = Color.parseColor("#10B981");
 
     @Override
     protected void onNewIntent(Intent intent) {
@@ -85,6 +84,8 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
     @SuppressLint("SetJavaScriptEnabled") 
     @Override 
     public void onCreate(Bundle state) {
+        AppTheme.init(this);
+        AppTheme.applyNightMode();
         super.onCreate(state);
         if (getSupportActionBar() != null) {
             getSupportActionBar().hide();
@@ -95,7 +96,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         customTitle = getIntent() != null ? getIntent().getStringExtra(EXTRA_TITLE) : null;
 
         rootLayout = new FrameLayout(this);
-        rootLayout.setBackgroundColor(COLOR_BG);
+        rootLayout.setBackgroundColor(AppTheme.bg());
 
         // Create WebView (invisible initially until server is RUNNING)
         web = new WebView(this);
@@ -165,7 +166,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                 }
                 customView = view;
                 customViewCallback = callback;
-                customView.setBackgroundColor(Color.BLACK);
+                customView.setBackgroundColor(AppTheme.bg());
                 rootLayout.addView(customView, new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT));
@@ -355,13 +356,13 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
 
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
-        container.setBackgroundColor(COLOR_BG);
+        container.setBackgroundColor(AppTheme.bg());
 
         View header = createHeaderBar(customUrl);
         container.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, -2));
         container.addView(rootLayout, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
-        setContentView(container);
+        setContentView(I18n.attach(container));
 
         if (customUrl != null && !customUrl.isEmpty()) {
             connectToCustomService();
@@ -385,7 +386,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
 
     private View createLoadingView() {
         FrameLayout layout = new FrameLayout(this);
-        layout.setBackgroundColor(COLOR_BG);
+        layout.setBackgroundColor(AppTheme.bg());
 
         LinearLayout centerBox = new LinearLayout(this);
         centerBox.setOrientation(LinearLayout.VERTICAL);
@@ -396,7 +397,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
 
         loadingText = new TextView(this);
         loadingText.setText(customTitle != null ? "Starting " + customTitle + "..." : "Starting Jellyarr...");
-        loadingText.setTextColor(Color.WHITE);
+        loadingText.setTextColor(AppTheme.text());
         loadingText.setTextSize(15);
         loadingText.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams txtParams = new LinearLayout.LayoutParams(
@@ -472,18 +473,18 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                         Button retryBtn = new Button(JellyfinWebActivity.this);
                         retryBtn.setText("RETRY");
                         retryBtn.setTextSize(12f);
-                        retryBtn.setTextColor(Color.BLACK);
-                        retryBtn.setBackgroundColor(COLOR_ACCENT);
+                        retryBtn.setTextColor(AppTheme.contrastOn(AppTheme.success()));
+                        retryBtn.setBackgroundColor(AppTheme.success());
                         retryBtn.setOnClickListener(v -> connectToCustomService());
                         loadingActionBox.addView(retryBtn);
 
                         Button forceBtn = new Button(JellyfinWebActivity.this);
                         forceBtn.setText("LOAD ANYWAY");
                         forceBtn.setTextSize(12f);
-                        forceBtn.setTextColor(Color.WHITE);
-                        forceBtn.setBackgroundColor(Color.parseColor("#27272A"));
+                        forceBtn.setTextColor(AppTheme.text());
+                        forceBtn.setBackgroundColor(AppTheme.outline());
                         LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(-2, -2);
-                        fp.leftMargin = dp(10);
+                        fp.setMarginStart(dp(10));
                         forceBtn.setLayoutParams(fp);
                         forceBtn.setOnClickListener(v -> {
                             loaded = true;
@@ -496,10 +497,10 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                         Button browserBtn = new Button(JellyfinWebActivity.this);
                         browserBtn.setText("BROWSER");
                         browserBtn.setTextSize(12f);
-                        browserBtn.setTextColor(Color.WHITE);
-                        browserBtn.setBackgroundColor(Color.parseColor("#27272A"));
+                        browserBtn.setTextColor(AppTheme.text());
+                        browserBtn.setBackgroundColor(AppTheme.outline());
                         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2);
-                        bp.leftMargin = dp(10);
+                        bp.setMarginStart(dp(10));
                         browserBtn.setLayoutParams(bp);
                         browserBtn.setOnClickListener(v -> {
                             try {
@@ -549,13 +550,13 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setBackgroundColor(Color.BLACK);
+        bar.setBackgroundColor(AppTheme.bg());
         bar.setPadding(dp(8), 0, dp(8), 0);
 
         // 1. Back button (Icon only, no text)
         ImageView btnBack = new ImageView(this);
         btnBack.setImageResource(R.drawable.ic_back);
-        btnBack.setColorFilter(Color.WHITE);
+        btnBack.setColorFilter(AppTheme.text());
         btnBack.setContentDescription("Back");
         btnBack.setPadding(dp(10), dp(10), dp(10), dp(10));
         btnBack.setClickable(true);
@@ -576,7 +577,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         // 2. Reload / Refresh button (Icon only, no text)
         ImageView btnReload = new ImageView(this);
         btnReload.setImageResource(R.drawable.ic_restart);
-        btnReload.setColorFilter(Color.WHITE);
+        btnReload.setColorFilter(AppTheme.text());
         btnReload.setContentDescription("Refresh");
         btnReload.setPadding(dp(11), dp(11), dp(11), dp(11));
         btnReload.setClickable(true);
@@ -589,7 +590,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         // 3. Open in external browser button (Icon only, no text)
         ImageView btnExternal = new ImageView(this);
         btnExternal.setImageResource(R.drawable.ic_open_in_browser);
-        btnExternal.setColorFilter(Color.WHITE);
+        btnExternal.setColorFilter(AppTheme.text());
         btnExternal.setContentDescription("Open in Browser");
         btnExternal.setPadding(dp(10), dp(10), dp(10), dp(10));
         btnExternal.setClickable(true);
@@ -608,7 +609,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         // 4. Dedicated Exit / Close button (Icon only, no text, instant finish())
         ImageView btnExit = new ImageView(this);
         btnExit.setImageResource(R.drawable.ic_close);
-        btnExit.setColorFilter(Color.WHITE);
+        btnExit.setColorFilter(AppTheme.text());
         btnExit.setContentDescription("Close");
         btnExit.setPadding(dp(10), dp(10), dp(10), dp(10));
         btnExit.setClickable(true);
@@ -620,7 +621,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
 
         // Hairline bottom border
         View hairline = new View(this);
-        hairline.setBackgroundColor(COLOR_BORDER);
+        hairline.setBackgroundColor(AppTheme.outline());
         wrapper.addView(hairline, new LinearLayout.LayoutParams(-1, dp(1)));
 
         return wrapper;

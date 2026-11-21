@@ -51,17 +51,12 @@ import java.util.Set;
 
 public final class JellyfinStorageActivity extends AppCompatActivity {
 
+    @Override
+    protected void attachBaseContext(android.content.Context newBase) {
+        super.attachBaseContext(I18n.wrap(newBase));
+    }
+
     // Color tokens synchronized with FishbowlActivity design tokens
-    private static final int COLOR_BG = Color.parseColor("#000000");
-    private static final int COLOR_SURFACE = Color.parseColor("#0C0C0E");
-    private static final int COLOR_ELEVATED = Color.parseColor("#16171B");
-    private static final int COLOR_BORDER = Color.argb(20, 255, 255, 255);
-    private static final int COLOR_ACCENT = Color.parseColor("#38BDF8");
-    private static final int COLOR_TEXT_PRIMARY = Color.parseColor("#F4F4F5");
-    private static final int COLOR_TEXT_MUTED = Color.parseColor("#A1A1AA");
-    private static final int COLOR_SUCCESS = Color.parseColor("#34D399");
-    private static final int COLOR_WARNING = Color.parseColor("#FFD51E");
-    private static final int COLOR_DANGER = Color.parseColor("#FF1744");
 
     private SharedPreferences prefs;
     private String activeSelectedPath = "/storage/emulated/0/FishbowlMedia/Movies";
@@ -93,24 +88,24 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                             StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, resolved);
                             if (ver.isUsbStorage && !ver.posixAccessible) {
                                 new AlertDialog.Builder(this)
-                                        .setTitle("External USB Storage Notice")
-                                        .setMessage("Storage Access Framework (SAF) permission granted for:\n\n" + resolved +
-                                                "\n\nImportant: On standard Android 11+ devices, Android's security sandbox (SELinux/Scoped Storage) allows Java apps to view external USB drives via SAF, but blocks native Linux processes like Jellyfin and FFmpeg from accessing USB paths directly via POSIX.\n\nRecommended: For seamless playback, store media in Internal Storage (/storage/emulated/0/FishbowlMedia/Movies).")
-                                        .setPositiveButton("SWITCH TO INTERNAL", (d, w) -> {
+                                        .setTitle(I18n.tr("External USB Storage Notice"))
+                                        .setMessage(I18n.tr("Storage Access Framework (SAF) permission granted for:\n\n" + resolved +
+                                                "\n\nImportant: On standard Android 11+ devices, Android's security sandbox (SELinux/Scoped Storage) allows Java apps to view external USB drives via SAF, but blocks native Linux processes like Jellyfin and FFmpeg from accessing USB paths directly via POSIX.\n\nRecommended: For seamless playback, store media in Internal Storage (/storage/emulated/0/FishbowlMedia/Movies)."))
+                                        .setPositiveButton(I18n.tr("SWITCH TO INTERNAL"), (d, w) -> {
                                             String internalPath = "/storage/emulated/0/FishbowlMedia/Movies";
                                             setActivePath(internalPath, true);
                                             refreshUI();
                                         })
-                                        .setNegativeButton("KEEP USB PATH", null)
+                                        .setNegativeButton(I18n.tr("KEEP USB PATH"), null)
                                         .show();
                             } else {
-                                Toast.makeText(this, "SAF Granted: " + resolved, Toast.LENGTH_SHORT).show();
+                                Toast.makeText(this, I18n.tr("SAF Granted: " + resolved), Toast.LENGTH_SHORT).show();
                             }
                         } else {
                             new AlertDialog.Builder(this)
-                                    .setTitle("Virtual Cloud Storage (On Hold)")
-                                    .setMessage("The selected location (" + treeUri.getLastPathSegment() + ") is hosted by a virtual DocumentProvider (e.g. Google Drive, Nextcloud, or RSAF). Jellyfin requires direct POSIX filesystem paths. Cloud and drive root mapping are currently in beta testing mode and on hold.")
-                                    .setPositiveButton("OK", null)
+                                    .setTitle(I18n.tr("Virtual Cloud Storage (On Hold)"))
+                                    .setMessage(I18n.tr("The selected location (" + treeUri.getLastPathSegment() + ") is hosted by a virtual DocumentProvider (e.g. Google Drive, Nextcloud, or RSAF). Jellyfin requires direct POSIX filesystem paths. Cloud and drive root mapping are currently in beta testing mode and on hold."))
+                                    .setPositiveButton(I18n.tr("OK"), null)
                                     .show();
                         }
                     }
@@ -119,7 +114,8 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
+        AppTheme.init(this);
+        AppTheme.applyNightMode();
         super.onCreate(savedInstanceState);
         setupSystemBars();
 
@@ -134,7 +130,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             activeSelectedPath = "/storage/emulated/0/FishbowlMedia/Movies";
         }
 
-        setContentView(buildView());
+        setContentView(I18n.attach(buildView()));
     }
 
     @Override
@@ -146,16 +142,16 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     private void setupSystemBars() {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         WindowInsetsControllerCompat controllerCompat = new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
-        controllerCompat.setAppearanceLightStatusBars(false);
-        controllerCompat.setAppearanceLightNavigationBars(false);
-        getWindow().setStatusBarColor(COLOR_BG);
-        getWindow().setNavigationBarColor(COLOR_BG);
+        controllerCompat.setAppearanceLightStatusBars(!AppTheme.isDark());
+        controllerCompat.setAppearanceLightNavigationBars(!AppTheme.isDark());
+        getWindow().setStatusBarColor(AppTheme.bg());
+        getWindow().setNavigationBarColor(AppTheme.bg());
     }
 
     private View buildView() {
         LinearLayout outerRoot = new LinearLayout(this);
         outerRoot.setOrientation(LinearLayout.VERTICAL);
-        outerRoot.setBackgroundColor(COLOR_BG);
+        outerRoot.setBackgroundColor(AppTheme.bg());
 
         // Apply system bar insets
         ViewCompat.setOnApplyWindowInsetsListener(outerRoot, (v, insets) -> {
@@ -170,7 +166,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
         // 2. Scrollable Body
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(COLOR_BG);
+        scroll.setBackgroundColor(AppTheme.bg());
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setHorizontalScrollBarEnabled(false);
@@ -193,7 +189,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         drivesHeader.setText("CONNECTED STORAGE DRIVES");
         drivesHeader.setTextSize(11);
         drivesHeader.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        drivesHeader.setTextColor(COLOR_TEXT_MUTED);
+        drivesHeader.setTextColor(AppTheme.textSecondary());
         drivesHeader.setLetterSpacing(0.08f);
         drivesHeader.setPadding(0, dp(16), 0, dp(8));
         root.addView(drivesHeader);
@@ -207,7 +203,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         savedHeader.setText("SAVED MEDIA PATHS");
         savedHeader.setTextSize(11);
         savedHeader.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        savedHeader.setTextColor(COLOR_TEXT_MUTED);
+        savedHeader.setTextColor(AppTheme.textSecondary());
         savedHeader.setLetterSpacing(0.08f);
         savedHeader.setPadding(0, dp(16), 0, dp(8));
         root.addView(savedHeader);
@@ -227,7 +223,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     private View buildHeaderBar() {
         LinearLayout rootHeader = new LinearLayout(this);
         rootHeader.setOrientation(LinearLayout.VERTICAL);
-        rootHeader.setBackgroundColor(COLOR_BG);
+        rootHeader.setBackgroundColor(AppTheme.bg());
         rootHeader.setPadding(dp(16), dp(8), dp(16), dp(8));
 
         LinearLayout header = new LinearLayout(this);
@@ -237,14 +233,14 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         // Back Button
         ImageView btnBack = new ImageView(this);
         btnBack.setImageResource(R.drawable.ic_back);
-        btnBack.setColorFilter(COLOR_TEXT_PRIMARY);
+        btnBack.setColorFilter(AppTheme.text());
         btnBack.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         btnBack.setPadding(dp(8), dp(8), dp(8), dp(8));
         btnBack.setClickable(true);
         btnBack.setFocusable(true);
-        btnBack.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(18), COLOR_ACCENT));
+        btnBack.setBackground(createButtonRippleDrawable(AppTheme.inner(), dp(18), AppTheme.accent()));
         LinearLayout.LayoutParams pBack = new LinearLayout.LayoutParams(dp(38), dp(38));
-        pBack.rightMargin = dp(12);
+        pBack.setMarginEnd(dp(12));
         btnBack.setLayoutParams(pBack);
         btnBack.setOnClickListener(v -> finish());
         header.addView(btnBack);
@@ -252,10 +248,10 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         // Fishbowl Logo Mark
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.ic_fishbowl_logo);
-        logo.setColorFilter(Color.WHITE);
+        logo.setColorFilter(AppTheme.text());
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(24), dp(24));
-        logoParams.rightMargin = dp(10);
+        logoParams.setMarginEnd(dp(10));
         header.addView(logo, logoParams);
 
         // Title Column
@@ -267,14 +263,14 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         title.setTextSize(13.5f);
         title.setLetterSpacing(0.12f);
         title.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        title.setTextColor(COLOR_TEXT_PRIMARY);
+        title.setTextColor(AppTheme.text());
         titleCol.addView(title);
 
         TextView sub = new TextView(this);
         sub.setText("DRIVES & LIBRARY PATHS");
         sub.setTextSize(9.5f);
         sub.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
-        sub.setTextColor(COLOR_TEXT_MUTED);
+        sub.setTextColor(AppTheme.textSecondary());
         titleCol.addView(sub);
 
         header.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
@@ -283,14 +279,14 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         tag.setText("STORAGE HUB");
         tag.setTextSize(9.5f);
         tag.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        tag.setTextColor(COLOR_ACCENT);
+        tag.setTextColor(AppTheme.accent());
         header.addView(tag);
 
         rootHeader.addView(header);
 
         // Hairline divider
         View border = new View(this);
-        border.setBackgroundColor(COLOR_BORDER);
+        border.setBackgroundColor(AppTheme.outline());
         LinearLayout.LayoutParams pDiv = new LinearLayout.LayoutParams(-1, dp(1));
         pDiv.topMargin = dp(8);
         rootHeader.addView(border, pDiv);
@@ -302,7 +298,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         LinearLayout banner = new LinearLayout(this);
         banner.setOrientation(LinearLayout.VERTICAL);
         banner.setPadding(dp(14), dp(12), dp(14), dp(12));
-        banner.setBackground(createCardDrawable(COLOR_SURFACE, dp(14)));
+        banner.setBackground(createCardDrawable(AppTheme.card(), dp(14)));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
         p.bottomMargin = dp(14);
         banner.setLayoutParams(p);
@@ -314,13 +310,13 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
 
-            TextView statusPill = createBadge("ALL-FILES ACCESS", COLOR_ELEVATED, COLOR_SUCCESS);
+            TextView statusPill = createBadge("ALL-FILES ACCESS", AppTheme.inner(), AppTheme.success());
             row.addView(statusPill);
 
             TextView lbl = new TextView(this);
             lbl.setText(" Full storage access granted for media indexing");
             lbl.setTextSize(12);
-            lbl.setTextColor(COLOR_TEXT_MUTED);
+            lbl.setTextColor(AppTheme.textSecondary());
             lbl.setPadding(dp(8), 0, 0, 0);
             row.addView(lbl, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
@@ -330,17 +326,17 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             warnTitle.setText("Storage Access Restricted");
             warnTitle.setTextSize(14);
             warnTitle.setTypeface(Typeface.DEFAULT_BOLD);
-            warnTitle.setTextColor(COLOR_WARNING);
+            warnTitle.setTextColor(AppTheme.warning());
             banner.addView(warnTitle);
 
             TextView warnDesc = new TextView(this);
             warnDesc.setText("Grant All-Files Storage Access so Jellyfin can index movies and music on internal and external drives.");
             warnDesc.setTextSize(12);
-            warnDesc.setTextColor(COLOR_TEXT_MUTED);
+            warnDesc.setTextColor(AppTheme.textSecondary());
             warnDesc.setPadding(0, dp(4), 0, dp(10));
             banner.addView(warnDesc);
 
-            Button grantBtn = createPillButton("GRANT ALL-FILES ACCESS", COLOR_ACCENT, Color.WHITE);
+            Button grantBtn = createPillButton("GRANT ALL-FILES ACCESS", AppTheme.accent(), AppTheme.onAccent());
             grantBtn.setOnClickListener(v -> requestStoragePermission());
             banner.addView(grantBtn);
         }
@@ -352,7 +348,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        card.setBackground(createCardDrawable(COLOR_SURFACE, dp(12)));
+        card.setBackground(createCardDrawable(AppTheme.card(), dp(12)));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.bottomMargin = dp(14);
         card.setLayoutParams(lp);
@@ -365,11 +361,11 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         header.setText("ACTIVE JELLYFIN MEDIA PATH");
         header.setTextSize(10.5f);
         header.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        header.setTextColor(COLOR_TEXT_MUTED);
+        header.setTextColor(AppTheme.textSecondary());
         header.setLetterSpacing(0.08f);
         activeHeaderRow.addView(header, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
-        Button btnEnterPath = createPillSmallButton("ENTER PATH", COLOR_ELEVATED, COLOR_TEXT_PRIMARY);
+        Button btnEnterPath = createPillSmallButton("ENTER PATH", AppTheme.inner(), AppTheme.text());
         btnEnterPath.setOnClickListener(v -> showCustomPathDialog(activeSelectedPath));
         activeHeaderRow.addView(btnEnterPath);
         card.addView(activeHeaderRow);
@@ -378,14 +374,14 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         activePathText.setText(activeSelectedPath);
         activePathText.setTextSize(13f);
         activePathText.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        activePathText.setTextColor(COLOR_TEXT_PRIMARY);
+        activePathText.setTextColor(AppTheme.text());
         activePathText.setPadding(0, dp(10), 0, dp(2));
         activePathText.setTextIsSelectable(true);
         card.addView(activePathText);
 
         activePathStatus = new TextView(this);
         activePathStatus.setTextSize(11f);
-        activePathStatus.setTextColor(COLOR_SUCCESS);
+        activePathStatus.setTextColor(AppTheme.success());
         activePathStatus.setPadding(0, dp(2), 0, dp(12));
         card.addView(activePathStatus);
 
@@ -396,9 +392,9 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         btnCopyActivePath.setText("COPY PATH FOR JELLYFIN");
         btnCopyActivePath.setTextSize(12);
         btnCopyActivePath.setAllCaps(false);
-        btnCopyActivePath.setTextColor(Color.WHITE);
+        btnCopyActivePath.setTextColor(AppTheme.onAccent());
         btnCopyActivePath.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        btnCopyActivePath.setBackground(createButtonRippleDrawable(COLOR_ACCENT, dp(8), Color.WHITE));
+        btnCopyActivePath.setBackground(createButtonRippleDrawable(AppTheme.accent(), dp(100), AppTheme.onAccent()));
         btnCopyActivePath.setOnClickListener(v -> copyPathToClipboard(activeSelectedPath));
         actionRow.addView(btnCopyActivePath, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
 
@@ -409,9 +405,9 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         btnOpenJellyfin.setText("OPEN WEB UI");
         btnOpenJellyfin.setTextSize(12);
         btnOpenJellyfin.setAllCaps(false);
-        btnOpenJellyfin.setTextColor(COLOR_TEXT_PRIMARY);
+        btnOpenJellyfin.setTextColor(AppTheme.text());
         btnOpenJellyfin.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        btnOpenJellyfin.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(8), COLOR_TEXT_PRIMARY));
+        btnOpenJellyfin.setBackground(createButtonRippleDrawable(AppTheme.inner(), dp(100), AppTheme.text()));
         btnOpenJellyfin.setOnClickListener(v -> startActivity(new Intent(this, JellyfinWebActivity.class)));
         actionRow.addView(btnOpenJellyfin, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
 
@@ -426,11 +422,11 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         btnCleanOrphans.setText("PURGE ORPHAN MOVIE FOLDERS");
         btnCleanOrphans.setTextSize(11);
         btnCleanOrphans.setAllCaps(false);
-        btnCleanOrphans.setTextColor(COLOR_TEXT_PRIMARY);
+        btnCleanOrphans.setTextColor(AppTheme.text());
         btnCleanOrphans.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        btnCleanOrphans.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(8), COLOR_ACCENT));
+        btnCleanOrphans.setBackground(createButtonRippleDrawable(AppTheme.inner(), dp(100), AppTheme.accent()));
         btnCleanOrphans.setOnClickListener(v -> {
-            Toast.makeText(this, "Scanning and purging orphan folders...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Scanning and purging orphan folders..."), Toast.LENGTH_SHORT).show();
             new Thread(() -> {
                 MediaStorageManager.OrphanFolderReport rep = MediaStorageManager.getInstance(this).cleanupOrphanMediaFolders();
                 runOnUiThread(() -> {
@@ -450,7 +446,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        card.setBackground(createCardDrawable(COLOR_SURFACE, dp(12)));
+        card.setBackground(createCardDrawable(AppTheme.card(), dp(12)));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
         p.topMargin = dp(16);
         card.setLayoutParams(p);
@@ -459,7 +455,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         guideTitle.setText("How to Add in Jellyfin (3 Steps)");
         guideTitle.setTextSize(13);
         guideTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        guideTitle.setTextColor(COLOR_TEXT_PRIMARY);
+        guideTitle.setTextColor(AppTheme.text());
         guideTitle.setPadding(0, 0, 0, dp(8));
         card.addView(guideTitle);
 
@@ -470,7 +466,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 "3. Paste the path into the Folder field and tap Ok."
         );
         steps.setTextSize(12);
-        steps.setTextColor(COLOR_TEXT_MUTED);
+        steps.setTextColor(AppTheme.textSecondary());
         steps.setLineSpacing(dp(4), 1.15f);
         card.addView(steps);
 
@@ -504,25 +500,25 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             if (ver.isSafVerified && !ver.posixAccessible) {
                 activePathStatus.setText("SAF GRANTED BUT POSIX BLOCKED (" + ver.mediaFileCount + " media files detected via SAF)\n" +
                         "Warning: Android Scoped Storage blocks native Jellyfin from reading external USB paths directly. Media library will fail to scan.");
-                activePathStatus.setTextColor(COLOR_DANGER);
+                activePathStatus.setTextColor(AppTheme.danger());
             } else if (ver.isAppSpecific && ver.posixAccessible) {
                 activePathStatus.setText("VERIFIED APP DATA STORAGE (" + ver.mediaFileCount + " media files, " + ver.itemCount + " items) - 100% Native Jellyfin Access");
-                activePathStatus.setTextColor(COLOR_SUCCESS);
+                activePathStatus.setTextColor(AppTheme.success());
             } else if (!ver.exists) {
                 activePathStatus.setText("FOLDER NOT DETECTED (Directory not found on disk. Grant access via BROWSE SAF or use Internal Storage)");
-                activePathStatus.setTextColor(COLOR_WARNING);
+                activePathStatus.setTextColor(AppTheme.warning());
             } else if (ver.hasPermissionError || !ver.canRead || !ver.posixAccessible) {
                 activePathStatus.setText("SELINUX PERMISSION BLOCKED (Android blocks native Jellyfin from reading this path. Use Internal Storage /storage/emulated/0/FishbowlMedia/)");
-                activePathStatus.setTextColor(COLOR_DANGER);
+                activePathStatus.setTextColor(AppTheme.danger());
             } else if (ver.mediaFileCount == 0 && ver.itemCount == 0) {
                 activePathStatus.setText("EMPTY FOLDER DETECTED (0 media files found - Jellyfin library will be empty)");
-                activePathStatus.setTextColor(COLOR_WARNING);
+                activePathStatus.setTextColor(AppTheme.warning());
             } else if (ver.mediaFileCount == 0) {
                 activePathStatus.setText("NO MEDIA FILES DETECTED (" + ver.itemCount + " items inside, but no video/audio files found)");
-                activePathStatus.setTextColor(COLOR_WARNING);
+                activePathStatus.setTextColor(AppTheme.warning());
             } else {
                 activePathStatus.setText("VERIFIED FOR JELLYFIN (" + ver.mediaFileCount + " media files detected, " + ver.itemCount + " items - Native POSIX Ready)");
-                activePathStatus.setTextColor(COLOR_SUCCESS);
+                activePathStatus.setTextColor(AppTheme.success());
             }
         }
     }
@@ -537,7 +533,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             LinearLayout driveCard = new LinearLayout(this);
             driveCard.setOrientation(LinearLayout.VERTICAL);
             driveCard.setPadding(dp(16), dp(14), dp(16), dp(14));
-            driveCard.setBackground(createCardDrawable(COLOR_SURFACE, dp(14)));
+            driveCard.setBackground(createCardDrawable(AppTheme.card(), dp(14)));
             LinearLayout.LayoutParams pCard = new LinearLayout.LayoutParams(-1, -2);
             pCard.bottomMargin = dp(12);
             driveCard.setLayoutParams(pCard);
@@ -551,20 +547,20 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             driveName.setText(drive.name);
             driveName.setTextSize(14.5f);
             driveName.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-            driveName.setTextColor(COLOR_TEXT_PRIMARY);
+            driveName.setTextColor(AppTheme.text());
             topRow.addView(driveName, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
             String typeStr = drive.isPrimary ? "INTERNAL" : (drive.isRemovable ? "USB / OTG" : "STORAGE");
-            topRow.addView(createBadge(typeStr, COLOR_ELEVATED, COLOR_ACCENT));
+            topRow.addView(createBadge(typeStr, AppTheme.inner(), AppTheme.accent()));
 
             View spacer = new View(this);
             topRow.addView(spacer, new LinearLayout.LayoutParams(dp(6), 1));
 
             boolean isInUse = activeSelectedPath != null && activeSelectedPath.startsWith(drive.rootPath);
             if (isInUse) {
-                topRow.addView(createBadge("IN USE", COLOR_ELEVATED, COLOR_SUCCESS));
+                topRow.addView(createBadge("IN USE", AppTheme.inner(), AppTheme.success()));
             } else {
-                topRow.addView(createBadge("MOUNTED", COLOR_ELEVATED, COLOR_TEXT_MUTED));
+                topRow.addView(createBadge("MOUNTED", AppTheme.inner(), AppTheme.textSecondary()));
             }
             driveCard.addView(topRow);
 
@@ -573,7 +569,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             pathView.setText(drive.rootPath);
             pathView.setTextSize(11.5f);
             pathView.setTypeface(Typeface.MONOSPACE);
-            pathView.setTextColor(COLOR_TEXT_MUTED);
+            pathView.setTextColor(AppTheme.textSecondary());
             pathView.setPadding(0, dp(4), 0, dp(4));
             driveCard.addView(pathView);
 
@@ -583,7 +579,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 TextView capView = new TextView(this);
                 capView.setText(capText);
                 capView.setTextSize(11);
-                capView.setTextColor(COLOR_TEXT_MUTED);
+                capView.setTextColor(AppTheme.textSecondary());
                 driveCard.addView(capView);
 
                 View progressBar = createStorageProgressBar(drive.freeBytes, drive.totalBytes);
@@ -596,7 +592,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 chipHeader.setText("Quick Media Folders:");
                 chipHeader.setTextSize(11);
                 chipHeader.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-                chipHeader.setTextColor(COLOR_TEXT_MUTED);
+                chipHeader.setTextColor(AppTheme.textSecondary());
                 chipHeader.setPadding(0, dp(10), 0, dp(6));
                 driveCard.addView(chipHeader);
 
@@ -656,7 +652,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             TextView emptyText = new TextView(this);
             emptyText.setText("No custom folders saved yet. Tap a folder chip or browse above.");
             emptyText.setTextSize(12);
-            emptyText.setTextColor(COLOR_TEXT_MUTED);
+            emptyText.setTextColor(AppTheme.textSecondary());
             emptyText.setPadding(0, dp(4), 0, dp(8));
             savedListContainer.addView(emptyText);
             return;
@@ -681,7 +677,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(dp(12), dp(10), dp(12), dp(10));
-            row.setBackground(createCardDrawable(COLOR_SURFACE, dp(10)));
+            row.setBackground(createCardDrawable(AppTheme.card(), dp(10)));
             LinearLayout.LayoutParams pRow = new LinearLayout.LayoutParams(-1, -2);
             pRow.bottomMargin = dp(8);
             row.setLayoutParams(pRow);
@@ -693,7 +689,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             pathTv.setText(path);
             pathTv.setTextSize(12);
             pathTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-            pathTv.setTextColor(COLOR_TEXT_PRIMARY);
+            pathTv.setTextColor(AppTheme.text());
             infoCol.addView(pathTv);
 
             StorageDriveHelper.PathVerification vCheck = StorageDriveHelper.verifyPath(this, path);
@@ -701,35 +697,35 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             statusTv.setTextSize(10);
             if (vCheck.isSafVerified && !vCheck.posixAccessible) {
                 statusTv.setText(vCheck.mediaFileCount + " media files (SAF only - POSIX blocked for Jellyfin)");
-                statusTv.setTextColor(COLOR_WARNING);
+                statusTv.setTextColor(AppTheme.warning());
             } else if (vCheck.isAppSpecific && vCheck.posixAccessible) {
                 statusTv.setText(vCheck.mediaFileCount + " media files (App Data - Native Access)");
-                statusTv.setTextColor(COLOR_SUCCESS);
+                statusTv.setTextColor(AppTheme.success());
             } else if (!vCheck.exists) {
                 statusTv.setText("Not detected on disk (Grant SAF or verify path)");
-                statusTv.setTextColor(COLOR_WARNING);
+                statusTv.setTextColor(AppTheme.warning());
             } else if (vCheck.hasPermissionError || !vCheck.canRead || !vCheck.posixAccessible) {
                 statusTv.setText("Permission blocked by SELinux / Scoped Storage");
-                statusTv.setTextColor(COLOR_DANGER);
+                statusTv.setTextColor(AppTheme.danger());
             } else if (vCheck.mediaFileCount == 0) {
                 statusTv.setText("0 media files detected");
-                statusTv.setTextColor(COLOR_WARNING);
+                statusTv.setTextColor(AppTheme.warning());
             } else {
                 statusTv.setText(vCheck.mediaFileCount + " media files verified (" + vCheck.itemCount + " items)");
-                statusTv.setTextColor(COLOR_SUCCESS);
+                statusTv.setTextColor(AppTheme.success());
             }
             infoCol.addView(statusTv);
 
             row.addView(infoCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
-            Button btnUse = createPillSmallButton("USE", COLOR_ACCENT, Color.WHITE);
+            Button btnUse = createPillSmallButton("USE", AppTheme.accent(), AppTheme.onAccent());
             btnUse.setOnClickListener(v -> setActivePath(path, true));
             row.addView(btnUse);
 
             View s1 = new View(this);
             row.addView(s1, new LinearLayout.LayoutParams(dp(6), 1));
 
-            Button btnDel = createPillSmallButton("X", COLOR_ELEVATED, COLOR_DANGER);
+            Button btnDel = createPillSmallButton("X", AppTheme.inner(), AppTheme.danger());
             btnDel.setOnClickListener(v -> removeSavedFolder(path));
             row.addView(btnDel);
 
@@ -755,7 +751,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         updateActivePathVerification();
         renderDrives();
         renderSavedFolders();
-        Toast.makeText(this, "Active path updated", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, I18n.tr("Active path updated"), Toast.LENGTH_SHORT).show();
     }
 
     private void removeSavedFolder(String path) {
@@ -778,53 +774,53 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
 
         if (!ver.exists) {
             new AlertDialog.Builder(this)
-                    .setTitle("Folder Not Found")
-                    .setMessage("The directory:\n" + normalizedPath + "\ndoes not exist on disk. If you add this path to Jellyfin, library indexing will fail.\n\nDo you still want to copy this path?")
-                    .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath))
-                    .setNegativeButton("CANCEL", null)
+                    .setTitle(I18n.tr("Folder Not Found"))
+                    .setMessage(I18n.tr("The directory:\n" + normalizedPath + "\ndoes not exist on disk. If you add this path to Jellyfin, library indexing will fail.\n\nDo you still want to copy this path?"))
+                    .setPositiveButton(I18n.tr("COPY ANYWAY"), (d, w) -> doCopy(normalizedPath))
+                    .setNegativeButton(I18n.tr("CANCEL"), null)
                     .show();
             return;
         }
 
         if (ver.isSafVerified && !ver.posixAccessible) {
             new AlertDialog.Builder(this)
-                    .setTitle("External USB Storage - POSIX Blocked")
-                    .setMessage("This folder is verified via Android Storage Access Framework (SAF), but Android Scoped Storage blocks native Linux processes like Jellyfin from reading files directly at:\n\n" + normalizedPath +
-                            "\n\nIf you paste this path into Jellyfin, Jellyfin will report:\n'Could not find a part of the path'.\n\nRecommended: Use Internal Storage (/storage/emulated/0/FishbowlMedia/Movies) for full native POSIX compatibility.")
-                    .setNeutralButton("SWITCH TO INTERNAL", (d, w) -> {
+                    .setTitle(I18n.tr("External USB Storage - POSIX Blocked"))
+                    .setMessage(I18n.tr("This folder is verified via Android Storage Access Framework (SAF), but Android Scoped Storage blocks native Linux processes like Jellyfin from reading files directly at:\n\n" + normalizedPath +
+                            "\n\nIf you paste this path into Jellyfin, Jellyfin will report:\n'Could not find a part of the path'.\n\nRecommended: Use Internal Storage (/storage/emulated/0/FishbowlMedia/Movies) for full native POSIX compatibility."))
+                    .setNeutralButton(I18n.tr("SWITCH TO INTERNAL"), (d, w) -> {
                         String internalPath = "/storage/emulated/0/FishbowlMedia/Movies";
                         setActivePath(internalPath, true);
                         doCopy(internalPath);
                         refreshUI();
                     })
-                    .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath))
-                    .setNegativeButton("CANCEL", null)
+                    .setPositiveButton(I18n.tr("COPY ANYWAY"), (d, w) -> doCopy(normalizedPath))
+                    .setNegativeButton(I18n.tr("CANCEL"), null)
                     .show();
             return;
         }
 
         if (ver.hasPermissionError || !ver.canRead || !ver.posixAccessible) {
             new AlertDialog.Builder(this)
-                    .setTitle("SELinux Permission Warning")
-                    .setMessage("Android security (SELinux / Scoped Storage) blocks native processes like Jellyfin from reading files at this path:\n\n" + normalizedPath + "\n\nIf you add this path to Jellyfin, your library will be EMPTY.\n\nRecommended: Use Internal Storage (/storage/emulated/0/FishbowlMedia/Movies).")
-                    .setNeutralButton("SWITCH TO INTERNAL", (d, w) -> {
+                    .setTitle(I18n.tr("SELinux Permission Warning"))
+                    .setMessage(I18n.tr("Android security (SELinux / Scoped Storage) blocks native processes like Jellyfin from reading files at this path:\n\n" + normalizedPath + "\n\nIf you add this path to Jellyfin, your library will be EMPTY.\n\nRecommended: Use Internal Storage (/storage/emulated/0/FishbowlMedia/Movies)."))
+                    .setNeutralButton(I18n.tr("SWITCH TO INTERNAL"), (d, w) -> {
                         String internalPath = "/storage/emulated/0/FishbowlMedia/Movies";
                         setActivePath(internalPath, true);
                         doCopy(internalPath);
                         refreshUI();
                     })
-                    .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath))
-                    .setNegativeButton("CANCEL", null)
+                    .setPositiveButton(I18n.tr("COPY ANYWAY"), (d, w) -> doCopy(normalizedPath))
+                    .setNegativeButton(I18n.tr("CANCEL"), null)
                     .show();
             return;
         }
 
         if (ver.mediaFileCount == 0) {
             new AlertDialog.Builder(this)
-                    .setTitle("Empty Folder Warning")
-                    .setMessage("No video or audio files (.mp4, .mkv, .mp3, etc.) were detected in:\n\n" + normalizedPath + "\n\nIf you add this folder to Jellyfin now, the library will be EMPTY.\n\nPlease place your media files inside this folder before scanning in Jellyfin.\n\nDo you want to copy the path anyway?")
-                    .setPositiveButton("COPY ANYWAY", (d, w) -> doCopy(normalizedPath))
-                    .setNegativeButton("CANCEL", null)
+                    .setTitle(I18n.tr("Empty Folder Warning"))
+                    .setMessage(I18n.tr("No video or audio files (.mp4, .mkv, .mp3, etc.) were detected in:\n\n" + normalizedPath + "\n\nIf you add this folder to Jellyfin now, the library will be EMPTY.\n\nPlease place your media files inside this folder before scanning in Jellyfin.\n\nDo you want to copy the path anyway?"))
+                    .setPositiveButton(I18n.tr("COPY ANYWAY"), (d, w) -> doCopy(normalizedPath))
+                    .setNegativeButton(I18n.tr("CANCEL"), null)
                     .show();
             return;
         }
@@ -849,12 +845,12 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
             }, 2000);
         }
 
-        Toast.makeText(this, "Copied for Jellyfin: " + path, Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, I18n.tr("Copied for Jellyfin: " + path), Toast.LENGTH_SHORT).show();
     }
 
     private void showCustomPathDialog(String initialPath) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Enter Media Path");
+        builder.setTitle(I18n.tr("Enter Media Path"));
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -863,7 +859,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         TextView hint = new TextView(this);
         hint.setText("Enter or paste any internal or external storage directory path for Jellyfin:");
         hint.setTextSize(12);
-        hint.setTextColor(COLOR_TEXT_MUTED);
+        hint.setTextColor(AppTheme.textSecondary());
         hint.setPadding(0, 0, 0, dp(10));
         layout.addView(hint);
 
@@ -872,9 +868,9 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         String prefilled = initialPath != null ? StorageDriveHelper.normalizeStoragePath(initialPath) : "/storage/emulated/0/";
         input.setText(prefilled);
         input.setSelection(input.getText().length());
-        input.setTextColor(COLOR_TEXT_PRIMARY);
-        input.setHintTextColor(COLOR_TEXT_MUTED);
-        input.setBackground(createCardDrawable(COLOR_ELEVATED, dp(8)));
+        input.setTextColor(AppTheme.text());
+        input.setHintTextColor(AppTheme.textSecondary());
+        input.setBackground(createCardDrawable(AppTheme.inner(), dp(8)));
         input.setPadding(dp(12), dp(10), dp(12), dp(10));
         input.setTypeface(Typeface.MONOSPACE);
         input.setTextSize(13);
@@ -883,18 +879,18 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         TextView tip = new TextView(this);
         tip.setText("Tip: Example internal media path:\n/storage/emulated/0/FishbowlMedia/Movies");
         tip.setTextSize(11);
-        tip.setTextColor(COLOR_TEXT_MUTED);
+        tip.setTextColor(AppTheme.textSecondary());
         tip.setPadding(0, dp(10), 0, 0);
         layout.addView(tip);
 
         builder.setView(layout);
 
-        builder.setPositiveButton("SELECT PATH", (dialog, which) -> {
+        builder.setPositiveButton(I18n.tr("SELECT PATH"), (dialog, which) -> {
             String entered = input.getText().toString().trim();
             if (!entered.isEmpty()) {
                 String path = StorageDriveHelper.normalizeStoragePath(entered);
                 if (path.contains("..") || path.contains("\0") || !path.startsWith("/")) {
-                    Toast.makeText(this, "Invalid storage path. Must be an absolute path under /storage/ without '..'", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Invalid storage path. Must be an absolute path under /storage/ without '..'"), Toast.LENGTH_SHORT).show();
                     return;
                 }
                 File rawDir = new File(path);
@@ -904,7 +900,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                     dir = rawDir.getCanonicalFile();
                     canonicalPath = dir.getCanonicalPath();
                 } catch (Throwable t) {
-                    Toast.makeText(this, "Invalid storage path resolution", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Invalid storage path resolution"), Toast.LENGTH_SHORT).show();
                     return;
                 }
                 boolean isAllowedCanonical = canonicalPath.startsWith("/storage/") ||
@@ -912,7 +908,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                         canonicalPath.startsWith("/data/data/com.fishbowl.app") ||
                         canonicalPath.startsWith("/data/user/0/com.fishbowl.app");
                 if (!isAllowedCanonical || canonicalPath.contains("\0") || path.contains("..")) {
-                    Toast.makeText(this, "Invalid storage path. Must be an absolute path under /storage/ without '..'", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Invalid storage path. Must be an absolute path under /storage/ without '..'"), Toast.LENGTH_SHORT).show();
                     return;
                 }
                 if (!dir.exists()) {
@@ -924,20 +920,20 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
                 refreshUI();
                 StorageDriveHelper.PathVerification ver = StorageDriveHelper.verifyPath(this, canonicalPath);
                 if (!ver.exists) {
-                    Toast.makeText(this, "Notice: Directory does not exist on disk.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Notice: Directory does not exist on disk."), Toast.LENGTH_SHORT).show();
                 } else if (ver.isSafVerified && !ver.posixAccessible) {
-                    Toast.makeText(this, "Notice: SAF granted, but Android Scoped Storage blocks native Jellyfin from reading external USB paths.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, I18n.tr("Notice: SAF granted, but Android Scoped Storage blocks native Jellyfin from reading external USB paths."), Toast.LENGTH_LONG).show();
                 } else if (ver.hasPermissionError || !ver.canRead || !ver.posixAccessible) {
-                    Toast.makeText(this, "Notice: Android SELinux blocks native Jellyfin from reading this path.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, I18n.tr("Notice: Android SELinux blocks native Jellyfin from reading this path."), Toast.LENGTH_LONG).show();
                 } else if (ver.mediaFileCount == 0) {
-                    Toast.makeText(this, "Path selected: 0 media files detected in this folder.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Path selected: 0 media files detected in this folder."), Toast.LENGTH_SHORT).show();
                 } else {
-                    Toast.makeText(this, "Path selected (" + ver.mediaFileCount + " media files detected - Native POSIX Ready)", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Path selected (" + ver.mediaFileCount + " media files detected - Native POSIX Ready)"), Toast.LENGTH_SHORT).show();
                 }
             }
         });
 
-        builder.setNegativeButton("CANCEL", null);
+        builder.setNegativeButton(I18n.tr("CANCEL"), null);
         builder.show();
     }
 
@@ -981,7 +977,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         GradientDrawable gd = new GradientDrawable();
         gd.setColor(bgColor);
         gd.setCornerRadius(radiusPx > 0 ? radiusPx : dp(8));
-        gd.setStroke(dp(1), COLOR_BORDER);
+        gd.setStroke(dp(1), AppTheme.outline());
         return gd;
     }
 
@@ -1020,13 +1016,13 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         chip.setText(folderName);
         chip.setTextSize(12);
         chip.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        int bg = isSelected ? COLOR_ACCENT : COLOR_ELEVATED;
-        int txt = isSelected ? Color.WHITE : COLOR_TEXT_PRIMARY;
+        int bg = isSelected ? AppTheme.accent() : AppTheme.inner();
+        int txt = isSelected ? AppTheme.onAccent() : AppTheme.text();
         chip.setBackground(createCardDrawable(bg, dp(8)));
         chip.setTextColor(txt);
         chip.setPadding(dp(12), dp(6), dp(12), dp(6));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2);
-        p.rightMargin = dp(8);
+        p.setMarginEnd(dp(8));
         chip.setLayoutParams(p);
         return chip;
     }
@@ -1034,7 +1030,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
     private View createStorageProgressBar(long freeBytes, long totalBytes) {
         LinearLayout track = new LinearLayout(this);
         track.setOrientation(LinearLayout.HORIZONTAL);
-        track.setBackground(createRoundedFillDrawable(COLOR_ELEVATED, dp(3)));
+        track.setBackground(createRoundedFillDrawable(AppTheme.inner(), dp(3)));
         LinearLayout.LayoutParams pTrack = new LinearLayout.LayoutParams(-1, dp(6));
         pTrack.topMargin = dp(6);
         pTrack.bottomMargin = dp(4);
@@ -1045,7 +1041,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         usedRatio = Math.max(0.02f, Math.min(1.0f, usedRatio));
 
         View fill = new View(this);
-        fill.setBackground(createRoundedFillDrawable(COLOR_ACCENT, dp(3)));
+        fill.setBackground(createRoundedFillDrawable(AppTheme.accent(), dp(3)));
         LinearLayout.LayoutParams pFill = new LinearLayout.LayoutParams(0, -1, usedRatio);
         fill.setLayoutParams(pFill);
         track.addView(fill);
@@ -1064,8 +1060,8 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         b.setTextSize(11);
         b.setAllCaps(false);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        b.setTextColor(COLOR_TEXT_PRIMARY);
-        b.setBackground(createButtonRippleDrawable(COLOR_ELEVATED, dp(8), COLOR_ACCENT));
+        b.setTextColor(AppTheme.text());
+        b.setBackground(createButtonRippleDrawable(AppTheme.inner(), dp(100), AppTheme.accent()));
         return b;
     }
 
@@ -1076,7 +1072,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         b.setAllCaps(false);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         b.setTextColor(textColor);
-        b.setBackground(createButtonRippleDrawable(bgColor, dp(8), Color.WHITE));
+        b.setBackground(createButtonRippleDrawable(bgColor, dp(100), textColor));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, dp(40));
         p.topMargin = dp(6);
         b.setLayoutParams(p);
@@ -1090,7 +1086,7 @@ public final class JellyfinStorageActivity extends AppCompatActivity {
         b.setAllCaps(false);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         b.setTextColor(textColor);
-        b.setBackground(createButtonRippleDrawable(bgColor, dp(8), textColor));
+        b.setBackground(createButtonRippleDrawable(bgColor, dp(100), textColor));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, dp(32));
         b.setLayoutParams(p);
         return b;

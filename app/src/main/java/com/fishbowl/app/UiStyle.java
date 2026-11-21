@@ -11,13 +11,11 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Switch;
 
-/** Vivid ON colour for switches and dirty-aware SAVE buttons. */
+/** Theme-aware ON colour for switches and dirty-aware SAVE buttons. */
 public final class UiStyle {
     private UiStyle() {}
 
     public interface StringSource { String get(); }
-
-    private static final int ON = 0xFF38BDF8;
 
     private static ColorStateList states(int checked, int unchecked) {
         return new ColorStateList(
@@ -28,8 +26,9 @@ public final class UiStyle {
     public static void styleSwitch(Context c, Switch s) {
         if (Build.VERSION.SDK_INT < 23) return;
         try {
-            s.setThumbTintList(states(0xFFFFFFFF, 0xFF9CA3AF));
-            s.setTrackTintList(states(ON, 0xFF3F3F46));
+            // Material 3 switch: on = accent track + on-accent thumb; off = outlined muted track.
+            s.setThumbTintList(states(AppTheme.onAccent(), AppTheme.textMuted()));
+            s.setTrackTintList(states(AppTheme.accent(), AppTheme.inner()));
         } catch (Throwable ignored) {}
     }
 
@@ -49,7 +48,7 @@ public final class UiStyle {
                 try { dirty = !input.getText().toString().trim().equals(String.valueOf(saved.get()).trim()); }
                 catch (Throwable t) { dirty = true; }
                 save.setEnabled(dirty);
-                save.setAlpha(dirty ? 1f : 0.35f);
+                save.setAlpha(dirty ? 1f : 0.38f);
             }
         };
         input.addTextChangedListener(new TextWatcher() {
