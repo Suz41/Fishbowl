@@ -953,8 +953,13 @@ public final class FishbowlActivity extends AppCompatActivity
         nav.setBackgroundColor(AppTheme.card());
         nav.setPadding(dp(8), dp(8), dp(8), dp(8));
 
-        // Material 3 navigation bar, ordered by what you do: control the server (Home), watch
-        // (Library), acquire (Media: services + downloads), inspect (Activity), configure (Settings).
+        populateNavTabs(nav);
+        return nav;
+    }
+
+    /** Material 3 navigation bar, ordered by what you do: control the server (Home), watch
+     *  (Library), acquire (Media: services + downloads), inspect (Activity), configure (Settings). */
+    private void populateNavTabs(LinearLayout nav) {
         addNavTab(nav, 0, R.drawable.ic_home, "Home");
         addNavTab(nav, 5, R.drawable.ic_service_jellyfin, "Library");
         if (isMediaStackEnabled()) {
@@ -962,8 +967,6 @@ public final class FishbowlActivity extends AppCompatActivity
         }
         addNavTab(nav, 2, R.drawable.ic_activity, "Activity");
         addNavTab(nav, 3, R.drawable.ic_settings, "Settings");
-
-        return nav;
     }
 
     private void addNavTab(LinearLayout parent, int tabIndex, int iconRes, String label) {
@@ -4178,12 +4181,7 @@ public final class FishbowlActivity extends AppCompatActivity
     private void refreshBottomNavBar() {
         if (bottomNavLayout == null) return;
         bottomNavLayout.removeAllViews();
-        addNavTab(bottomNavLayout, 0, R.drawable.ic_home);
-        if (isMediaStackEnabled()) {
-            addNavTab(bottomNavLayout, 1, R.drawable.ic_services);
-        }
-        addNavTab(bottomNavLayout, 2, R.drawable.ic_activity);
-        addNavTab(bottomNavLayout, 3, R.drawable.ic_settings);
+        populateNavTabs(bottomNavLayout);
         updateBottomNavSelection();
     }
 
