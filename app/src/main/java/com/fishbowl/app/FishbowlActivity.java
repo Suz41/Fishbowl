@@ -140,6 +140,11 @@ import org.json.JSONArray;
 public final class FishbowlActivity extends AppCompatActivity
         implements JellyfinController.Listener, JellyfinController.LogListener {
 
+    @Override
+    protected void attachBaseContext(android.content.Context newBase) {
+        super.attachBaseContext(I18n.wrap(newBase));
+    }
+
     private static final String TAG = "FishbowlActivity";
     private JellyfinController controller;
     private SharedPreferences settingsPrefs;
@@ -482,7 +487,7 @@ public final class FishbowlActivity extends AppCompatActivity
         passwordResetListener = info -> runOnUiThread(() -> updatePasswordResetBanner(info));
         PasswordResetManager.registerListener(passwordResetListener);
 
-        setContentView(buildMainPixelShell());
+        setContentView(I18n.attach(buildMainPixelShell()));
         // Initialize native Chromium in-app Cloudflare solver (headless WebView on port 8191)
         com.fishbowl.app.services.NativeFlareSolver.getInstance().init(this);
         setupSystemBarsAndInsets();
@@ -735,7 +740,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 renderActiveTab();
                 return;
             }
-            Toast.makeText(this, "Setup in progress. Please keep Jellyarr open.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Setup in progress. Please keep Jellyarr open."), Toast.LENGTH_SHORT).show();
             moveTaskToBack(true);
             return;
         }
@@ -918,7 +923,7 @@ public final class FishbowlActivity extends AppCompatActivity
         logo.setColorFilter(AppTheme.text());
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(28), dp(28));
-        logoParams.rightMargin = dp(10);
+        logoParams.setMarginEnd(dp(10));
         header.addView(logo, logoParams);
 
         // App Branding Name: FISHBOWL (Uppercase, tracking-widest)
@@ -2009,7 +2014,7 @@ public final class FishbowlActivity extends AppCompatActivity
         });
         applyDockButtonStyle(btnRestartServer, "Restart", AppTheme.outline(), Color.WHITE, R.drawable.ic_restart, true);
         LinearLayout.LayoutParams lpRestart = new LinearLayout.LayoutParams(0, dp(44), 1.0f);
-        lpRestart.rightMargin = dp(4);
+        lpRestart.setMarginEnd(dp(4));
         subControls.addView(btnRestartServer, lpRestart);
 
         btnStopServer = createPixelButton("Stop", Color.TRANSPARENT, Color.WHITE);
@@ -2025,7 +2030,7 @@ public final class FishbowlActivity extends AppCompatActivity
         });
         applyDockButtonStyle(btnStopServer, "Stop", AppTheme.danger(), Color.WHITE, R.drawable.ic_stop, true);
         LinearLayout.LayoutParams lpStop = new LinearLayout.LayoutParams(0, dp(44), 1.0f);
-        lpStop.leftMargin = dp(4);
+        lpStop.setMarginStart(dp(4));
         subControls.addView(btnStopServer, lpStop);
 
         inner.addView(subControls);
@@ -2428,7 +2433,7 @@ public final class FishbowlActivity extends AppCompatActivity
         dot.setTag("dot_" + tag);
         dot.setBackground(createCircleDrawable(AppTheme.textMuted()));
         LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(6), dp(6));
-        dotParams.rightMargin = dp(12);
+        dotParams.setMarginEnd(dp(12));
         row.addView(dot, dotParams);
 
         TextView lbl = new TextView(this);
@@ -2446,7 +2451,7 @@ public final class FishbowlActivity extends AppCompatActivity
         valueView.setSingleLine(true);
         valueView.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams valParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        valParams.rightMargin = dp(8);
+        valParams.setMarginEnd(dp(8));
         row.addView(valueView, valParams);
 
         copyBtn.setImageResource(R.drawable.ic_copy);
@@ -2521,7 +2526,7 @@ public final class FishbowlActivity extends AppCompatActivity
         ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         if (cm != null) {
             cm.setPrimaryClip(ClipData.newPlainText(label, url));
-            Toast.makeText(this, "Copied " + label + " to clipboard", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Copied " + label + " to clipboard"), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -2737,11 +2742,11 @@ public final class FishbowlActivity extends AppCompatActivity
         tile.setOnClickListener(v -> {
             if ("jellyfin".equalsIgnoreCase(id)) {
                 if (controller != null && controller.getState() == JellyfinController.State.RUNNING) {
-                    Toast.makeText(this, "Stopping Jellyarr Server...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Stopping Jellyarr Server..."), Toast.LENGTH_SHORT).show();
                     controller.stop();
                     triggerServerAction(JellyfinServerService.ACTION_STOP);
                 } else {
-                    Toast.makeText(this, "Starting Jellyarr Server...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Starting Jellyarr Server..."), Toast.LENGTH_SHORT).show();
                     triggerServerAction(JellyfinServerService.ACTION_START);
                 }
             } else {
@@ -2749,14 +2754,14 @@ public final class FishbowlActivity extends AppCompatActivity
                 ManagedService svc = mgr.getService(id);
                 if (svc != null) {
                     if (svc.isBlocked()) {
-                        Toast.makeText(this, name + " is blocked: " + (svc.getBlockedReason() != null ? svc.getBlockedReason() : "Incompatible"), Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, I18n.tr(name + " is blocked: " + (svc.getBlockedReason() != null ? svc.getBlockedReason() : "Incompatible")), Toast.LENGTH_LONG).show();
                         return;
                     }
                     if (svc.isRunning()) {
-                        Toast.makeText(this, "Stopping " + name + "...", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, I18n.tr("Stopping " + name + "..."), Toast.LENGTH_SHORT).show();
                         mgr.stopService(id);
                     } else {
-                        Toast.makeText(this, "Starting " + name + "...", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, I18n.tr("Starting " + name + "..."), Toast.LENGTH_SHORT).show();
                         mgr.startService(id);
                     }
                 }
@@ -3082,7 +3087,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 refreshUnifiedLogsDisplay();
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(26));
-            lp.rightMargin = dp(4);
+            lp.setMarginEnd(dp(4));
             logLevelChipsContainer.addView(lvlChip, lp);
         }
         controlsRow.addView(logLevelChipsContainer);
@@ -3109,7 +3114,7 @@ public final class FishbowlActivity extends AppCompatActivity
             }
         });
         LinearLayout.LayoutParams pAuto = new LinearLayout.LayoutParams(-2, dp(26));
-        pAuto.rightMargin = dp(4);
+        pAuto.setMarginEnd(dp(4));
         controlsRow.addView(btnToggleAutoScroll, pAuto);
 
         // Copy Button
@@ -3122,12 +3127,12 @@ public final class FishbowlActivity extends AppCompatActivity
                 ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                 if (cm != null) {
                     cm.setPrimaryClip(ClipData.newPlainText("Jellyarr Console Logs", content));
-                    Toast.makeText(this, "Logs copied (" + selectedLogService + ")", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Logs copied (" + selectedLogService + ")"), Toast.LENGTH_SHORT).show();
                 }
             }
         });
         LinearLayout.LayoutParams pCopy = new LinearLayout.LayoutParams(-2, dp(26));
-        pCopy.rightMargin = dp(4);
+        pCopy.setMarginEnd(dp(4));
         controlsRow.addView(btnCopy, pCopy);
 
         // Clear Button
@@ -3150,7 +3155,7 @@ public final class FishbowlActivity extends AppCompatActivity
             }
             if (logsOutputText != null) logsOutputText.setText("--- No logs recorded for [" + selectedLogService + "] ---");
             refreshUnifiedLogsDisplay();
-            Toast.makeText(this, "Cleared " + selectedLogService + " logs", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Cleared " + selectedLogService + " logs"), Toast.LENGTH_SHORT).show();
         });
         controlsRow.addView(btnClear, new LinearLayout.LayoutParams(-2, dp(26)));
 
@@ -3262,7 +3267,7 @@ public final class FishbowlActivity extends AppCompatActivity
         btnRefreshDl.setClickable(true);
         btnRefreshDl.setFocusable(true);
         btnRefreshDl.setOnClickListener(v -> {
-            Toast.makeText(this, "Refreshing downloads...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Refreshing downloads..."), Toast.LENGTH_SHORT).show();
             refreshDownloadCenter();
         });
         headerRow.addView(btnRefreshDl, new LinearLayout.LayoutParams(-2, -2));
@@ -3578,10 +3583,10 @@ public final class FishbowlActivity extends AppCompatActivity
                     });
 
                     LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(0, -2, 1.0f);
-                    alp.rightMargin = dp(6);
+                    alp.setMarginEnd(dp(6));
                     actionRow.addView(btnToggle, alp);
                     LinearLayout.LayoutParams alp2 = new LinearLayout.LayoutParams(0, -2, 1.3f);
-                    alp2.rightMargin = dp(6);
+                    alp2.setMarginEnd(dp(6));
                     actionRow.addView(btnForce, alp2);
                     actionRow.addView(btnRecheck, new LinearLayout.LayoutParams(0, -2, 1.0f));
                     item.addView(actionRow);
@@ -3639,11 +3644,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 AppTheme.success(),
                 () -> {
                     if (dRef[0] != null) dRef[0].dismiss();
-                    Toast.makeText(this, "Clearing completed downloads...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Clearing completed downloads..."), Toast.LENGTH_SHORT).show();
                     new Thread(() -> {
                         int count = MediaStorageManager.getInstance(this).clearCompletedTransmissionTorrents(false);
                         runOnUiThread(() -> {
-                            Toast.makeText(this, "Cleared " + count + " item(s).", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, I18n.tr("Cleared " + count + " item(s)."), Toast.LENGTH_SHORT).show();
                             refreshDownloadCenter();
                         });
                     }).start();
@@ -3657,11 +3662,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 AppTheme.accent(),
                 () -> {
                     if (dRef[0] != null) dRef[0].dismiss();
-                    Toast.makeText(this, "Clearing queue items...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Clearing queue items..."), Toast.LENGTH_SHORT).show();
                     new Thread(() -> {
                         int count = MediaStorageManager.getInstance(this).clearAllTransmissionTorrents(false);
                         runOnUiThread(() -> {
-                            Toast.makeText(this, "Cleared " + count + " item(s).", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, I18n.tr("Cleared " + count + " item(s)."), Toast.LENGTH_SHORT).show();
                             refreshDownloadCenter();
                         });
                     }).start();
@@ -3675,11 +3680,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 AppTheme.danger(),
                 () -> {
                     if (dRef[0] != null) dRef[0].dismiss();
-                    Toast.makeText(this, "Purging downloads and disk storage...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Purging downloads and disk storage..."), Toast.LENGTH_SHORT).show();
                     new Thread(() -> {
                         int count = MediaStorageManager.getInstance(this).clearAllTransmissionTorrents(true);
                         runOnUiThread(() -> {
-                            Toast.makeText(this, "Purged " + count + " download(s).", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, I18n.tr("Purged " + count + " download(s)."), Toast.LENGTH_SHORT).show();
                             refreshDownloadCenter();
                         });
                     }).start();
@@ -3713,7 +3718,7 @@ public final class FishbowlActivity extends AppCompatActivity
             }
             final boolean result = ok;
             runOnUiThread(() -> {
-                Toast.makeText(this, result ? okMessage : "Transmission did not accept the command.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, I18n.tr(result ? okMessage : "Transmission did not accept the command."), Toast.LENGTH_SHORT).show();
                 refreshDownloadCenter();
             });
         }, "Fishbowl-TorrentAction").start();
@@ -3764,7 +3769,7 @@ public final class FishbowlActivity extends AppCompatActivity
         showOledDialog("Download History", entries.size() + " event(s), newest first", sv,
                 "CLEAR LOG", getDangerColor(), () -> {
                     com.fishbowl.app.services.TransmissionHistory.clear(this);
-                    Toast.makeText(this, "History cleared.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("History cleared."), Toast.LENGTH_SHORT).show();
                 }, "CLOSE", null);
     }
 
@@ -3781,11 +3786,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 AppTheme.accent(),
                 () -> {
                     if (dRef[0] != null) dRef[0].dismiss();
-                    Toast.makeText(this, "Removing...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Removing..."), Toast.LENGTH_SHORT).show();
                     new Thread(() -> {
                         boolean ok = MediaStorageManager.getInstance(this).removeTransmissionTorrent(torrent.id, false);
                         runOnUiThread(() -> {
-                            Toast.makeText(this, ok ? "Removed from queue." : "Failed to remove.", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, I18n.tr(ok ? "Removed from queue." : "Failed to remove."), Toast.LENGTH_SHORT).show();
                             refreshDownloadCenter();
                         });
                     }).start();
@@ -3798,11 +3803,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 AppTheme.danger(),
                 () -> {
                     if (dRef[0] != null) dRef[0].dismiss();
-                    Toast.makeText(this, "Deleting files...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Deleting files..."), Toast.LENGTH_SHORT).show();
                     new Thread(() -> {
                         boolean ok = MediaStorageManager.getInstance(this).removeTransmissionTorrent(torrent.id, true);
                         runOnUiThread(() -> {
-                            Toast.makeText(this, ok ? "Deleted files and task." : "Failed to delete.", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, I18n.tr(ok ? "Deleted files and task." : "Failed to delete."), Toast.LENGTH_SHORT).show();
                             refreshDownloadCenter();
                         });
                     }).start();
@@ -3865,7 +3870,7 @@ public final class FishbowlActivity extends AppCompatActivity
             });
 
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(28));
-            lp.rightMargin = dp(6);
+            lp.setMarginEnd(dp(6));
             logServiceChipsContainer.addView(chip, lp);
         }
         updateLogServiceChips();
@@ -4449,13 +4454,13 @@ public final class FishbowlActivity extends AppCompatActivity
 
         btnPurgeCache.setOnClickListener(v -> {
             long freed = com.fishbowl.app.diagnostics.DiagnosticsOptimizer.purgeTemporaryCache(this);
-            Toast.makeText(this, "Purged temporary cache: " + MediaStorageManager.formatBytes(freed) + " reclaimed.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Purged temporary cache: " + MediaStorageManager.formatBytes(freed) + " reclaimed."), Toast.LENGTH_SHORT).show();
             runAudit.run();
         });
 
         btnKillZombies.setOnClickListener(v -> {
             int reclaimed = com.fishbowl.app.security.FishbowlSecurityManager.reclaimAllZombiePorts(this);
-            Toast.makeText(this, "Terminated zombie processes and released socket locks.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Terminated zombie processes and released socket locks."), Toast.LENGTH_SHORT).show();
             runAudit.run();
         });
 
@@ -4468,7 +4473,7 @@ public final class FishbowlActivity extends AppCompatActivity
         content.addView(btnRefresh, prParams);
 
         scroll.addView(content);
-        dialog.setContentView(scroll);
+        dialog.setContentView(I18n.attach(scroll));
         dialog.show();
         runAudit.run();
     }
@@ -4833,7 +4838,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 masterStackToggleBtn.setText("STOP ALL");
                 applyOutlineButtonStyle(masterStackToggleBtn, AppTheme.danger(), AppTheme.danger());
                 masterStackToggleBtn.setOnClickListener(v -> {
-                    Toast.makeText(this, "Stopping companion media stack...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Stopping companion media stack..."), Toast.LENGTH_SHORT).show();
                     MediaServiceManager.getInstance(this).stopCompanionServices();
                     mainHandler.postDelayed(() -> {
                         MediaServiceManager.getInstance(this).reconcileRunningServices();
@@ -4845,7 +4850,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 masterStackToggleBtn.setText("START ALL");
                 applyOutlineButtonStyle(masterStackToggleBtn, Color.WHITE, Color.WHITE);
                 masterStackToggleBtn.setOnClickListener(v -> {
-                    Toast.makeText(this, "Starting companion media stack...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Starting companion media stack..."), Toast.LENGTH_SHORT).show();
                     for (ManagedService is : installedServices) {
                         if (!is.isRunning() && !is.isStarting()) {
                             mgr.startService(is.getId());
@@ -5298,7 +5303,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 lblBadge.setPadding(dp(4), dp(2), dp(4), dp(2));
                 lblBadge.setBackground(createBorderedRoundedDrawable(AppTheme.accentContainer(), AppTheme.accent(), dp(1), dp(3)));
                 LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(-2, -2);
-                badgeLp.rightMargin = dp(6);
+                badgeLp.setMarginEnd(dp(6));
                 urlRow.addView(lblBadge, badgeLp);
 
                 TextView valUrl = new TextView(this);
@@ -5339,7 +5344,7 @@ public final class FishbowlActivity extends AppCompatActivity
         lblLocal.setPadding(dp(4), dp(2), dp(4), dp(2));
         lblLocal.setBackground(createBorderedRoundedDrawable(AppTheme.accentContainer(), AppTheme.textMuted(), dp(1), dp(3)));
         LinearLayout.LayoutParams localBadgeLp = new LinearLayout.LayoutParams(-2, -2);
-        localBadgeLp.rightMargin = dp(6);
+        localBadgeLp.setMarginEnd(dp(6));
         localRow.addView(lblLocal, localBadgeLp);
 
         TextView valLocalUrl = new TextView(this);
@@ -5586,7 +5591,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         root.addView(actionRow);
 
-        d.setContentView(scroll);
+        d.setContentView(I18n.attach(scroll));
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(AppTheme.isDark() ? 0.85f : 0.5f);
@@ -5601,7 +5606,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private void openServiceWeb(ManagedService svc) {
         if (svc.isBlocked()) {
-            Toast.makeText(this, svc.getDisplayName() + " is blocked: " + svc.getBlockedReason(), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, I18n.tr(svc.getDisplayName() + " is blocked: " + svc.getBlockedReason()), Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -5610,7 +5615,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         if ("jellyfin".equalsIgnoreCase(svc.getId())) {
             if (controller == null || controller.getState() != JellyfinController.State.RUNNING) {
-                Toast.makeText(this, "Starting Jellyarr...", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, I18n.tr("Starting Jellyarr..."), Toast.LENGTH_SHORT).show();
                 triggerServerAction(JellyfinServerService.ACTION_START);
                 refreshServicesTabUI();
                 refreshHomeServicesBadge();
@@ -5620,7 +5625,7 @@ public final class FishbowlActivity extends AppCompatActivity
         }
 
         if (!svc.isRunning()) {
-            Toast.makeText(this, "Starting " + svc.getDisplayName() + "...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Starting " + svc.getDisplayName() + "..."), Toast.LENGTH_SHORT).show();
             MediaServiceManager.getInstance(this).startService(svc.getId());
             refreshServicesTabUI();
             refreshHomeServicesBadge();
@@ -5637,7 +5642,7 @@ public final class FishbowlActivity extends AppCompatActivity
         try {
             startActivity(intent);
         } catch (Exception e) {
-            Toast.makeText(this, "Could not open " + svc.getDisplayName() + " in-app webview", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Could not open " + svc.getDisplayName() + " in-app webview"), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -5792,7 +5797,7 @@ public final class FishbowlActivity extends AppCompatActivity
             if (cm != null) {
                 String copyText = currentLogHolder[0] != null ? currentLogHolder[0] : "";
                 cm.setPrimaryClip(ClipData.newPlainText("fishbowl_logs", copyText));
-                Toast.makeText(this, "Copied logs to clipboard", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, I18n.tr("Copied logs to clipboard"), Toast.LENGTH_SHORT).show();
             }
         });
         actionsRow.addView(btnCopy, new LinearLayout.LayoutParams(0, dp(34), 1.0f));
@@ -5824,7 +5829,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         root.addView(actionsRow);
 
-        d.setContentView(root);
+        d.setContentView(I18n.attach(root));
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(AppTheme.isDark() ? 0.85f : 0.5f);
@@ -5863,7 +5868,7 @@ public final class FishbowlActivity extends AppCompatActivity
             startActivity(Intent.createChooser(shareIntent, "Save or Share Diagnostic Report"));
         } catch (Throwable t) {
             Log.e(TAG, "Failed to export report as txt: " + t.getMessage(), t);
-            Toast.makeText(this, "Failed to create .txt file: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Failed to create .txt file: " + t.getMessage()), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -6157,7 +6162,7 @@ public final class FishbowlActivity extends AppCompatActivity
         }
 
         root.addView(btnRow);
-        d.setContentView(root);
+        d.setContentView(I18n.attach(root));
 
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
@@ -6367,7 +6372,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         root.addView(footer);
 
-        d.setContentView(root);
+        d.setContentView(I18n.attach(root));
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(AppTheme.isDark() ? 0.85f : 0.5f);
@@ -6433,7 +6438,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private void confirmUninstallService(ManagedService svc) {
         if ("jellyfin".equalsIgnoreCase(svc.getId())) {
-            Toast.makeText(this, "Jellyfin is the core media server and cannot be uninstalled.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Jellyfin is the core media server and cannot be uninstalled."), Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -6502,7 +6507,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 progress.dismiss();
                 refreshServicesTabUI();
                 refreshHomeServicesBadge();
-                Toast.makeText(this, svc.getDisplayName() + " binaries removed. Database & config preserved!", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, I18n.tr(svc.getDisplayName() + " binaries removed. Database & config preserved!"), Toast.LENGTH_LONG).show();
             });
         });
         root.addView(btnKeepDb);
@@ -6528,7 +6533,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 progress.dismiss();
                 refreshServicesTabUI();
                 refreshHomeServicesBadge();
-                Toast.makeText(this, svc.getDisplayName() + " completely purged. " + MediaStorageManager.formatBytes(totalBytes) + " reclaimed!", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, I18n.tr(svc.getDisplayName() + " completely purged. " + MediaStorageManager.formatBytes(totalBytes) + " reclaimed!"), Toast.LENGTH_LONG).show();
             });
         });
         root.addView(btnPurge);
@@ -6547,7 +6552,7 @@ public final class FishbowlActivity extends AppCompatActivity
         btnCancel.setOnClickListener(v -> d.dismiss());
         root.addView(btnCancel, new LinearLayout.LayoutParams(-1, dp(34)));
 
-        d.setContentView(root);
+        d.setContentView(I18n.attach(root));
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(AppTheme.isDark() ? 0.85f : 0.5f);
@@ -7402,7 +7407,7 @@ public final class FishbowlActivity extends AppCompatActivity
             }
 
             runOnUiThread(() -> {
-                if (progress != null) progress.setMessage("Deploying Seerr Request Engine...");
+                if (progress != null) progress.setMessage(I18n.tr("Deploying Seerr Request Engine..."));
             });
             MediaServiceManager.getInstance(this).deploySeerrService(true);
             MediaServiceManager.getInstance(this).autoWireStack(null);
@@ -7450,7 +7455,7 @@ public final class FishbowlActivity extends AppCompatActivity
             }
 
             runOnUiThread(() -> {
-                if (progress != null) progress.setMessage("Downloading Bazarr release...");
+                if (progress != null) progress.setMessage(I18n.tr("Downloading Bazarr release..."));
             });
             File cacheZip = new File(getCacheDir(), "bazarr.zip");
             String bzUrl = "https://github.com/morpheus65535/bazarr/releases/latest/download/bazarr.zip";
@@ -7476,7 +7481,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 if (fallbackUrl != null && !fallbackUrl.isEmpty()) {
                     Log.i(TAG, "Direct Bazarr download failed, falling back to GitHub API stream: " + fallbackUrl);
                     runOnUiThread(() -> {
-                        if (progress != null) progress.setMessage("Resolving direct asset stream for Bazarr...");
+                        if (progress != null) progress.setMessage(I18n.tr("Resolving direct asset stream for Bazarr..."));
                     });
                     downloadWithRedirects(fallbackUrl, cacheZip, bzCallback);
                 } else {
@@ -7549,7 +7554,7 @@ public final class FishbowlActivity extends AppCompatActivity
         }
 
         runOnUiThread(() -> {
-            if (progress != null) progress.setMessage("Downloading " + svc.getDisplayName() + "...");
+            if (progress != null) progress.setMessage(I18n.tr("Downloading " + svc.getDisplayName() + "..."));
         });
         File cacheTar = new File(getCacheDir(), id + ".tar.gz");
         final String svStep = "Downloading " + svc.getDisplayName() + "...";
@@ -7574,7 +7579,7 @@ public final class FishbowlActivity extends AppCompatActivity
             if (fallbackUrl != null && !fallbackUrl.isEmpty() && !fallbackUrl.equals(downloadUrl)) {
                 Log.i(TAG, "Direct download failed for " + id + ", falling back to GitHub API stream: " + fallbackUrl);
                 runOnUiThread(() -> {
-                    if (progress != null) progress.setMessage("Resolving direct asset stream for " + svc.getDisplayName() + "...");
+                    if (progress != null) progress.setMessage(I18n.tr("Resolving direct asset stream for " + svc.getDisplayName() + "..."));
                 });
                 downloadWithRedirects(fallbackUrl, cacheTar, svCallback);
             } else {
@@ -7789,7 +7794,7 @@ public final class FishbowlActivity extends AppCompatActivity
                     svc.reconcileInstalledState();
                     refreshServicesTabUI();
                     refreshHomeServicesBadge();
-                    Toast.makeText(this, svc.getDisplayName() + " installed successfully!", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, I18n.tr(svc.getDisplayName() + " installed successfully!"), Toast.LENGTH_LONG).show();
                 });
             } catch (Throwable t) {
                 boolean isCancel = (progress != null && progress.isCancelled()) || (t instanceof InterruptedException);
@@ -7801,7 +7806,7 @@ public final class FishbowlActivity extends AppCompatActivity
                         svc.reconcileInstalledState();
                         refreshServicesTabUI();
                         refreshHomeServicesBadge();
-                        Toast.makeText(this, "Installation cancelled.", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, I18n.tr("Installation cancelled."), Toast.LENGTH_SHORT).show();
                     });
                     return;
                 }
@@ -7809,7 +7814,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 cleanupPartialServiceInstall(svc.getId());
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    Toast.makeText(this, "Installation failed: " + t.getMessage(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, I18n.tr("Installation failed: " + t.getMessage()), Toast.LENGTH_LONG).show();
                 });
             }
         }).start();
@@ -7832,8 +7837,8 @@ public final class FishbowlActivity extends AppCompatActivity
                 final int total = services.size();
                 runOnUiThread(() -> {
                     if (progress != null) {
-                        progress.setTitle("INSTALLING (" + idx + "/" + total + ") " + svc.getDisplayName().toUpperCase(Locale.ROOT));
-                        progress.setMessage("Preparing runtime environment...");
+                        progress.setTitle(I18n.tr("INSTALLING (" + idx + "/" + total + ") " + svc.getDisplayName().toUpperCase(Locale.ROOT)));
+                        progress.setMessage(I18n.tr("Preparing runtime environment..."));
                         progress.setProgress(0);
                     }
                 });
@@ -7860,9 +7865,9 @@ public final class FishbowlActivity extends AppCompatActivity
                 refreshServicesTabUI();
                 refreshHomeServicesBadge();
                 if (wasCancelled) {
-                    Toast.makeText(this, "Installation cancelled (" + finalSuccess + " installed).", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, I18n.tr("Installation cancelled (" + finalSuccess + " installed)."), Toast.LENGTH_LONG).show();
                 } else {
-                    Toast.makeText(this, "Batch installation complete (" + finalSuccess + " installed)!", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, I18n.tr("Batch installation complete (" + finalSuccess + " installed)!"), Toast.LENGTH_LONG).show();
                 }
             });
         }).start();
@@ -7879,8 +7884,8 @@ public final class FishbowlActivity extends AppCompatActivity
                 final int total = services.size();
                 runOnUiThread(() -> {
                     if (progress != null) {
-                        progress.setTitle("UNINSTALLING (" + current + "/" + total + ") " + s.getDisplayName().toUpperCase(Locale.ROOT));
-                        progress.setMessage("Reclaiming binaries...");
+                        progress.setTitle(I18n.tr("UNINSTALLING (" + current + "/" + total + ") " + s.getDisplayName().toUpperCase(Locale.ROOT)));
+                        progress.setMessage(I18n.tr("Reclaiming binaries..."));
                         progress.setProgress((current * 100) / total);
                     }
                 });
@@ -7896,7 +7901,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 if (progress != null) progress.dismiss();
                 refreshServicesTabUI();
                 refreshHomeServicesBadge();
-                Toast.makeText(this, "Uninstalled " + uninstalledCount + " service(s).", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, I18n.tr("Uninstalled " + uninstalledCount + " service(s)."), Toast.LENGTH_LONG).show();
             });
         }).start();
     }
@@ -7912,7 +7917,7 @@ public final class FishbowlActivity extends AppCompatActivity
             }
         }
         if (candidates.isEmpty()) {
-            Toast.makeText(this, "All companion services are already installed!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("All companion services are already installed!"), Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -8084,7 +8089,7 @@ public final class FishbowlActivity extends AppCompatActivity
         footer.addView(actionBtn, new LinearLayout.LayoutParams(0, dp(38), 1.2f));
 
         root.addView(footer);
-        d.setContentView(root);
+        d.setContentView(I18n.attach(root));
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(AppTheme.isDark() ? 0.85f : 0.5f);
@@ -8108,7 +8113,7 @@ public final class FishbowlActivity extends AppCompatActivity
             }
         }
         if (candidates.isEmpty()) {
-            Toast.makeText(this, "No companion services installed to uninstall.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("No companion services installed to uninstall."), Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -8304,7 +8309,7 @@ public final class FishbowlActivity extends AppCompatActivity
         footer.addView(actionBtn, new LinearLayout.LayoutParams(0, dp(38), 1.2f));
 
         root.addView(footer);
-        d.setContentView(root);
+        d.setContentView(I18n.attach(root));
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(AppTheme.isDark() ? 0.85f : 0.5f);
@@ -8403,7 +8408,7 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private void launchMoviesStack() {
-        Toast.makeText(this, "Starting Movies Stack (Radarr + Transmission + Prowlarr + Jackett)...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, I18n.tr("Starting Movies Stack (Radarr + Transmission + Prowlarr + Jackett)..."), Toast.LENGTH_SHORT).show();
         new Thread(() -> {
             MediaServiceManager mgr = MediaServiceManager.getInstance(this);
             String[] servicesToStart = {"transmission", "prowlarr", "jackett", "radarr"};
@@ -8418,13 +8423,13 @@ public final class FishbowlActivity extends AppCompatActivity
             runOnUiThread(() -> {
                 refreshServicesTabUI();
                 refreshHomeServicesBadge();
-                Toast.makeText(this, "Movies Stack started & wired.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, I18n.tr("Movies Stack started & wired."), Toast.LENGTH_SHORT).show();
             });
         }).start();
     }
 
     private void launchSeriesStack() {
-        Toast.makeText(this, "Starting TV Shows / Series Stack (Sonarr + Transmission + Prowlarr + Jackett)...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, I18n.tr("Starting TV Shows / Series Stack (Sonarr + Transmission + Prowlarr + Jackett)..."), Toast.LENGTH_SHORT).show();
         new Thread(() -> {
             MediaServiceManager mgr = MediaServiceManager.getInstance(this);
             String[] servicesToStart = {"transmission", "prowlarr", "jackett", "sonarr"};
@@ -8439,7 +8444,7 @@ public final class FishbowlActivity extends AppCompatActivity
             runOnUiThread(() -> {
                 refreshServicesTabUI();
                 refreshHomeServicesBadge();
-                Toast.makeText(this, "TV Shows / Series Stack started & wired.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, I18n.tr("TV Shows / Series Stack started & wired."), Toast.LENGTH_SHORT).show();
             });
         }).start();
     }
@@ -8519,7 +8524,7 @@ public final class FishbowlActivity extends AppCompatActivity
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (clipboard != null) {
             clipboard.setPrimaryClip(ClipData.newPlainText("fishbowl_diagnostics", sb.toString()));
-            Toast.makeText(this, "Sanitized diagnostics copied to clipboard", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, I18n.tr("Sanitized diagnostics copied to clipboard"), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -8660,7 +8665,7 @@ public final class FishbowlActivity extends AppCompatActivity
             try {
                 startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Suz41/Fishbowl")));
             } catch (Throwable t) {
-                Toast.makeText(this, "Could not open browser: https://github.com/Suz41/Fishbowl", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, I18n.tr("Could not open browser: https://github.com/Suz41/Fishbowl"), Toast.LENGTH_LONG).show();
             }
         });
         communityRow.addView(btnGithub, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
@@ -9139,7 +9144,7 @@ public final class FishbowlActivity extends AppCompatActivity
                     runOnUiThread(() -> {
                         btnSync.setEnabled(true);
                         btnSync.setText("SAFE FLUSH & SYNC");
-                        Toast.makeText(this, ok ? "Storage buffers synced safely! Safe to unmount when idle." : "Storage sync completed.", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, I18n.tr(ok ? "Storage buffers synced safely! Safe to unmount when idle." : "Storage sync completed."), Toast.LENGTH_SHORT).show();
                     });
                 }).start();
             });
@@ -9345,7 +9350,7 @@ public final class FishbowlActivity extends AppCompatActivity
                             new Thread(() -> {
                                 MediaServiceManager.deleteRecursive(radarrBak);
                                 runOnUiThread(() -> {
-                                    Toast.makeText(this, "Cleaned backup files! " + MediaStorageManager.formatBytes(radarrBakBytes) + " reclaimed.", Toast.LENGTH_LONG).show();
+                                    Toast.makeText(this, I18n.tr("Cleaned backup files! " + MediaStorageManager.formatBytes(radarrBakBytes) + " reclaimed."), Toast.LENGTH_LONG).show();
                                     refreshStorageBar();
                                 });
                             }).start();
@@ -9360,7 +9365,7 @@ public final class FishbowlActivity extends AppCompatActivity
             } catch (Throwable t) {
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    Toast.makeText(this, "Failed to analyze storage: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Failed to analyze storage: " + t.getMessage()), Toast.LENGTH_SHORT).show();
                 });
             }
         }).start();
@@ -9440,7 +9445,7 @@ public final class FishbowlActivity extends AppCompatActivity
             } catch (Throwable t) {
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    Toast.makeText(this, "Failed to analyze databases: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Failed to analyze databases: " + t.getMessage()), Toast.LENGTH_SHORT).show();
                 });
             }
         }).start();
@@ -9508,7 +9513,7 @@ public final class FishbowlActivity extends AppCompatActivity
             } catch (Throwable t) {
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    Toast.makeText(this, "Failed to analyze cache: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Failed to analyze cache: " + t.getMessage()), Toast.LENGTH_SHORT).show();
                 });
             }
         }).start();
@@ -9522,7 +9527,7 @@ public final class FishbowlActivity extends AppCompatActivity
         View segment = new View(this);
         segment.setBackgroundColor(color);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, weight);
-        lp.rightMargin = dp(1);
+        lp.setMarginEnd(dp(1));
         segment.setLayoutParams(lp);
         parent.addView(segment);
     }
@@ -9536,7 +9541,7 @@ public final class FishbowlActivity extends AppCompatActivity
         View dot = new View(this);
         dot.setBackground(createRoundedDrawable(color, dp(4)));
         LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dp(8), dp(8));
-        dotLp.rightMargin = dp(10);
+        dotLp.setMarginEnd(dp(10));
         item.addView(dot, dotLp);
 
         LinearLayout textCol = new LinearLayout(this);
@@ -9655,7 +9660,7 @@ public final class FishbowlActivity extends AppCompatActivity
         autoStartCompSwitch.setChecked(compAutoStart);
         autoStartCompSwitch.setOnCheckedChangeListener((v, checked) -> {
             MediaServiceManager.getInstance(this).setCompanionAutoStartEnabled(checked);
-            Toast.makeText(this, checked ? "Companion auto-start enabled." : "Companion auto-start disabled (on-demand only).", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr(checked ? "Companion auto-start enabled." : "Companion auto-start disabled (on-demand only)."), Toast.LENGTH_SHORT).show();
         });
         autoStartCompRow.addView(autoStartCompSwitch);
         card.addView(autoStartCompRow);
@@ -9688,7 +9693,7 @@ public final class FishbowlActivity extends AppCompatActivity
         mediaStackSwitch.setChecked(isMediaStackEnabled());
         mediaStackSwitch.setOnCheckedChangeListener((v, checked) -> {
             setMediaStackEnabled(checked);
-            Toast.makeText(this, checked ? "Media Stack enabled." : "Media Stack disabled (Jellyfin-only mode).", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr(checked ? "Media Stack enabled." : "Media Stack disabled (Jellyfin-only mode)."), Toast.LENGTH_SHORT).show();
         });
         mediaStackRow.addView(mediaStackSwitch);
         card.addView(mediaStackRow);
@@ -9723,11 +9728,11 @@ public final class FishbowlActivity extends AppCompatActivity
         btnAddTile.setOnClickListener(v -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 FishbowlQuickSettingsTileService.requestAddTile(this,
-                    () -> Toast.makeText(this, "Jellyarr Quick Settings tile added!", Toast.LENGTH_SHORT).show(),
-                    () -> Toast.makeText(this, "Quick Settings tile request cancelled or already present.", Toast.LENGTH_SHORT).show()
+                    () -> Toast.makeText(this, I18n.tr("Jellyarr Quick Settings tile added!"), Toast.LENGTH_SHORT).show(),
+                    () -> Toast.makeText(this, I18n.tr("Quick Settings tile request cancelled or already present."), Toast.LENGTH_SHORT).show()
                 );
             } else {
-                Toast.makeText(this, "To add the Jellyarr tile: swipe down twice from the top of your screen, tap Edit (pencil icon), and drag the Jellyarr tile into active tiles.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, I18n.tr("To add the Jellyarr tile: swipe down twice from the top of your screen, tap Edit (pencil icon), and drag the Jellyarr tile into active tiles."), Toast.LENGTH_LONG).show();
             }
         });
         qsRow.addView(btnAddTile, new LinearLayout.LayoutParams(-2, dp(32)));
@@ -9750,7 +9755,7 @@ public final class FishbowlActivity extends AppCompatActivity
         for (int i = 0; i < THEME_MODE_VALUES.length; i++) if (THEME_MODE_VALUES[i] == m) mode = THEME_MODE_LABELS[i];
         int a = AppTheme.getAccentIndex();
         String accent = a == AppTheme.ACCENT_DYNAMIC ? "Dynamic" : AppTheme.ACCENT_NAMES[a];
-        return mode + " \u00B7 " + accent;
+        return I18n.tr(mode) + " \u00B7 " + I18n.tr(accent);
     }
 
     /** Colours are baked into the programmatic views, so a theme change rebuilds the activity. */
@@ -9781,6 +9786,37 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
 
+        // ---- Language ----
+        section.addView(createSettingsSectionHeader("LANGUAGE"));
+        LinearLayout langCard = createSettingsSectionCard();
+        langCard.addView(appearanceTitle("Language"));
+        langCard.addView(appearanceHint("Choose the app language. The app restarts its screens to apply it."));
+        final String[] langValues = {I18n.LANG_SYSTEM, I18n.LANG_EN, I18n.LANG_AR};
+        final String[] langLabels = {"System", "English", "\u0627\u0644\u0639\u0631\u0628\u064A\u0629"};
+        LinearLayout langSeg = new LinearLayout(this);
+        langSeg.setOrientation(LinearLayout.HORIZONTAL);
+        String currentLang = I18n.getChoice();
+        for (int i = 0; i < langValues.length; i++) {
+            final String value = langValues[i];
+            boolean sel = value.equals(currentLang);
+            Button chip = createPixelButton((sel ? "\u2713 " : "") + langLabels[i],
+                    sel ? AppTheme.accentContainer() : AppTheme.card(),
+                    sel ? AppTheme.onAccentContainer() : AppTheme.textSecondary());
+            chip.setTextSize(12f);
+            chip.setPadding(dp(4), 0, dp(4), 0);
+            chip.setOnClickListener(v -> {
+                if (!value.equals(I18n.getChoice())) {
+                    I18n.setLanguage(this, value);
+                    recreate();
+                }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
+            if (i > 0) lp.setMarginStart(dp(6));
+            langSeg.addView(chip, lp);
+        }
+        langCard.addView(langSeg);
+        section.addView(langCard);
+
         // ---- Mode ----
         section.addView(createSettingsSectionHeader("THEME"));
         LinearLayout modeCard = createSettingsSectionCard();
@@ -9806,7 +9842,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 }
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
-            if (i > 0) lp.leftMargin = dp(6);
+            if (i > 0) lp.setMarginStart(dp(6));
             seg.addView(chip, lp);
         }
         modeCard.addView(seg);
@@ -9858,7 +9894,7 @@ public final class FishbowlActivity extends AppCompatActivity
         Button[] three = {filled, tonal, outlined};
         for (int i = 0; i < three.length; i++) {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
-            if (i > 0) lp.leftMargin = dp(6);
+            if (i > 0) lp.setMarginStart(dp(6));
             btns.addView(three[i], lp);
         }
         previewCard.addView(btns);
@@ -9966,7 +10002,7 @@ public final class FishbowlActivity extends AppCompatActivity
         cleanSwitch.setChecked(com.fishbowl.app.services.AutomationPrefs.isCleanupEnabled(this));
         cleanSwitch.setOnCheckedChangeListener((v, checked) -> {
             com.fishbowl.app.services.AutomationPrefs.setCleanupEnabled(this, checked);
-            Toast.makeText(this, checked ? "Auto-cleanup enabled." : "Auto-cleanup disabled.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr(checked ? "Auto-cleanup enabled." : "Auto-cleanup disabled."), Toast.LENGTH_SHORT).show();
         });
         cleanRow.addView(cleanSwitch);
         card.addView(cleanRow);
@@ -9997,10 +10033,10 @@ public final class FishbowlActivity extends AppCompatActivity
             try { h = Integer.parseInt(hoursInput.getText().toString().trim()); } catch (Throwable ignored) {}
             com.fishbowl.app.services.AutomationPrefs.setCleanupHours(this, h);
             hoursInput.setText(String.valueOf(com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this)));
-            Toast.makeText(this, "Saved: " + com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this) + " h", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Saved: " + com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this) + " h"), Toast.LENGTH_SHORT).show();
         });
         LinearLayout.LayoutParams saveLp = new LinearLayout.LayoutParams(-2, dp(32));
-        saveLp.leftMargin = dp(8);
+        saveLp.setMarginStart(dp(8));
         periodRow.addView(btnSaveHours, saveLp);
         final Runnable hoursDirty = UiStyle.bindDirty(btnSaveHours, hoursInput,
                 () -> String.valueOf(com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this)));
@@ -10010,7 +10046,7 @@ public final class FishbowlActivity extends AppCompatActivity
             com.fishbowl.app.services.AutomationPrefs.setCleanupHours(this, h);
             hoursInput.setText(String.valueOf(com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this)));
             hoursDirty.run();
-            Toast.makeText(this, "Saved: " + com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this) + " h", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Saved: " + com.fishbowl.app.services.AutomationPrefs.getCleanupHours(this) + " h"), Toast.LENGTH_SHORT).show();
         });
         card.addView(periodRow);
 
@@ -10034,7 +10070,7 @@ public final class FishbowlActivity extends AppCompatActivity
         btnRunNow.setTextSize(10.5f);
         btnRunNow.setOnClickListener(v -> runCleanupAsync(false, statusText));
         LinearLayout.LayoutParams b1 = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
-        b1.rightMargin = dp(6);
+        b1.setMarginEnd(dp(6));
         LinearLayout.LayoutParams b2 = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
         btnRow.addView(btnPreview, b1);
         btnRow.addView(btnRunNow, b2);
@@ -10065,7 +10101,7 @@ public final class FishbowlActivity extends AppCompatActivity
         recheckSwitch.setChecked(com.fishbowl.app.services.AutomationPrefs.isAutoRecheckEnabled(this));
         recheckSwitch.setOnCheckedChangeListener((v, checked) -> {
             com.fishbowl.app.services.AutomationPrefs.setAutoRecheckEnabled(this, checked);
-            Toast.makeText(this, checked ? "Auto-recheck enabled." : "Auto-recheck disabled.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr(checked ? "Auto-recheck enabled." : "Auto-recheck disabled."), Toast.LENGTH_SHORT).show();
         });
         recheckRow.addView(recheckSwitch);
         card.addView(recheckRow);
@@ -10276,7 +10312,7 @@ public final class FishbowlActivity extends AppCompatActivity
                         bAdmin.setPadding(dp(5), dp(2), dp(5), dp(2));
                         bAdmin.setBackground(createBorderedRoundedDrawable(AppTheme.inner(), Color.parseColor("#7C3AED"), dp(1), dp(4)));
                         LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(-2, -2);
-                        bLp.rightMargin = dp(6);
+                        bLp.setMarginEnd(dp(6));
                         topRow.addView(bAdmin, bLp);
                     }
 
@@ -10355,16 +10391,16 @@ public final class FishbowlActivity extends AppCompatActivity
                 () -> {
                     String newPass = input.getText() != null ? input.getText().toString().trim() : "";
                     if (newPass.isEmpty()) {
-                        Toast.makeText(this, "Password cannot be empty. Use 'RESET TO BLANK' if you want no password.", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, I18n.tr("Password cannot be empty. Use 'RESET TO BLANK' if you want no password."), Toast.LENGTH_LONG).show();
                         return;
                     }
                     boolean ok = com.fishbowl.app.security.FishbowlSecurityManager.setPassword(this, username, newPass);
                     if (ok) {
-                        Toast.makeText(this, "Password for '" + username + "' saved successfully.", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, I18n.tr("Password for '" + username + "' saved successfully."), Toast.LENGTH_LONG).show();
                         refreshSecurityUsersUI();
                         refreshHomeAccountsUI();
                     } else {
-                        Toast.makeText(this, "Failed to save password. Is database locked?", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, I18n.tr("Failed to save password. Is database locked?"), Toast.LENGTH_LONG).show();
                     }
                 },
                 "CANCEL",
@@ -10392,11 +10428,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 () -> {
                     boolean ok = com.fishbowl.app.security.FishbowlSecurityManager.resetPasswordToBlank(this, username);
                     if (ok) {
-                        Toast.makeText(this, "Password for '" + username + "' reset to blank.", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, I18n.tr("Password for '" + username + "' reset to blank."), Toast.LENGTH_LONG).show();
                         refreshSecurityUsersUI();
                         refreshHomeAccountsUI();
                     } else {
-                        Toast.makeText(this, "Could not reset password. Is database locked?", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, I18n.tr("Could not reset password. Is database locked?"), Toast.LENGTH_LONG).show();
                     }
                 },
                 "CANCEL",
@@ -10621,7 +10657,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 }
             });
             LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
-            if (i < hoursOpts.length - 1) ilp.rightMargin = dp(8);
+            if (i < hoursOpts.length - 1) ilp.setMarginEnd(dp(8));
             intervalRow.addView(intervalBtns[i], ilp);
             boolean sel = hoursOpts[i] == UpdateNotifier.intervalHours(this);
             if (sel) {
@@ -10804,7 +10840,7 @@ public final class FishbowlActivity extends AppCompatActivity
         btnExport.setBackground(createBorderedRoundedDrawable(Color.parseColor("#55A9A0"), Color.parseColor("#55A9A0"), 0, dp(8)));
         btnExport.setOnClickListener(v -> triggerExportBackup());
         LinearLayout.LayoutParams b1P = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        b1P.rightMargin = dp(6);
+        b1P.setMarginEnd(dp(6));
         actionsRow.addView(btnExport, b1P);
 
         Button btnRestore = new Button(this);
@@ -10815,7 +10851,7 @@ public final class FishbowlActivity extends AppCompatActivity
         btnRestore.setBackground(createBorderedRoundedDrawable(AppTheme.inner(), AppTheme.outlineStrong(), dp(1), dp(8)));
         btnRestore.setOnClickListener(v -> showRestoreOptionsDialog());
         LinearLayout.LayoutParams b2P = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        b2P.leftMargin = dp(6);
+        b2P.setMarginStart(dp(6));
         actionsRow.addView(btnRestore, b2P);
 
         content.addView(actionsRow);
@@ -10884,7 +10920,7 @@ public final class FishbowlActivity extends AppCompatActivity
             msgHolder[0] = msgTv;
         }
 
-        d.setContentView(box);
+        d.setContentView(I18n.attach(box));
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(AppTheme.isDark() ? 0.85f : 0.5f);
@@ -10972,7 +11008,7 @@ public final class FishbowlActivity extends AppCompatActivity
             BackupRestoreManager.shareBackupFile(this, backupFile);
         });
         LinearLayout.LayoutParams b1P = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        b1P.rightMargin = dp(6);
+        b1P.setMarginEnd(dp(6));
         btnRow.addView(btnShare, b1P);
 
         Button btnDone = new Button(this);
@@ -10983,12 +11019,12 @@ public final class FishbowlActivity extends AppCompatActivity
         btnDone.setBackground(createBorderedRoundedDrawable(AppTheme.inner(), AppTheme.outlineStrong(), dp(1), dp(8)));
         btnDone.setOnClickListener(v -> d.dismiss());
         LinearLayout.LayoutParams b2P = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        b2P.leftMargin = dp(6);
+        b2P.setMarginStart(dp(6));
         btnRow.addView(btnDone, b2P);
 
         box.addView(btnRow);
 
-        d.setContentView(box);
+        d.setContentView(I18n.attach(box));
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(AppTheme.isDark() ? 0.85f : 0.5f);
@@ -11096,7 +11132,7 @@ public final class FishbowlActivity extends AppCompatActivity
         btnCancel.setOnClickListener(v -> d.dismiss());
         box.addView(btnCancel, new LinearLayout.LayoutParams(-1, dp(36)));
 
-        d.setContentView(scroll);
+        d.setContentView(I18n.attach(scroll));
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(AppTheme.isDark() ? 0.85f : 0.5f);
@@ -11116,7 +11152,7 @@ public final class FishbowlActivity extends AppCompatActivity
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             restoreFilePickerLauncher.launch(Intent.createChooser(intent, "Select Jellyarr Backup (.zip)"));
         } catch (Throwable t) {
-            Toast.makeText(this, "Cannot open file picker: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Cannot open file picker: " + t.getMessage()), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -11219,7 +11255,7 @@ public final class FishbowlActivity extends AppCompatActivity
             if (onConfirmed != null) onConfirmed.run();
         });
         LinearLayout.LayoutParams b1P = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        b1P.rightMargin = dp(6);
+        b1P.setMarginEnd(dp(6));
         btnRow.addView(btnProceed, b1P);
 
         Button btnCancel = new Button(this);
@@ -11230,12 +11266,12 @@ public final class FishbowlActivity extends AppCompatActivity
         btnCancel.setBackground(createBorderedRoundedDrawable(AppTheme.inner(), AppTheme.outlineStrong(), dp(1), dp(8)));
         btnCancel.setOnClickListener(v -> d.dismiss());
         LinearLayout.LayoutParams b2P = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        b2P.leftMargin = dp(6);
+        b2P.setMarginStart(dp(6));
         btnRow.addView(btnCancel, b2P);
 
         box.addView(btnRow);
 
-        d.setContentView(box);
+        d.setContentView(I18n.attach(box));
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(AppTheme.isDark() ? 0.85f : 0.5f);
@@ -11285,7 +11321,7 @@ public final class FishbowlActivity extends AppCompatActivity
             d.dismiss();
             triggerServerAction(JellyfinServerService.ACTION_STOP_ALL);
             mainHandler.postDelayed(() -> triggerServerAction(JellyfinServerService.ACTION_START_ALL), 1000);
-            Toast.makeText(this, "Restarting all services...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Restarting all services..."), Toast.LENGTH_SHORT).show();
             mainHandler.postDelayed(() -> {
                 refreshServicesTabUI();
                 refreshHomeServicesBadge();
@@ -11294,7 +11330,7 @@ public final class FishbowlActivity extends AppCompatActivity
         });
         box.addView(btnRestart, new LinearLayout.LayoutParams(-1, dp(40)));
 
-        d.setContentView(box);
+        d.setContentView(I18n.attach(box));
         if (d.getWindow() != null) {
             d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             d.getWindow().setDimAmount(AppTheme.isDark() ? 0.85f : 0.5f);
@@ -11321,14 +11357,14 @@ public final class FishbowlActivity extends AppCompatActivity
         btnImporter.setTextSize(10f);
         btnImporter.setOnClickListener(v -> startActivity(new Intent(this, com.fishbowl.app.importer.MovieImportActivity.class)));
         LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
-        p1.rightMargin = dp(5);
+        p1.setMarginEnd(dp(5));
         row.addView(btnImporter, p1);
 
         Button btnStorage = createPixelButton("MEDIA STORAGE", getSurfaceElevatedColor(), getPrimaryTextColor());
         btnStorage.setTextSize(10f);
         btnStorage.setOnClickListener(v -> startActivity(new Intent(this, JellyfinStorageActivity.class)));
         LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
-        p2.leftMargin = dp(5);
+        p2.setMarginStart(dp(5));
         row.addView(btnStorage, p2);
 
         return row;
@@ -11385,7 +11421,7 @@ public final class FishbowlActivity extends AppCompatActivity
         detectSwitch.setChecked(dm.isDetectionEnabled());
         detectSwitch.setOnCheckedChangeListener((b, isChecked) -> {
             dm.setDetectionEnabled(isChecked);
-            Toast.makeText(this, isChecked ? "Download detection enabled" : "Download detection disabled", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr(isChecked ? "Download detection enabled" : "Download detection disabled"), Toast.LENGTH_SHORT).show();
         });
         autoDetectRow.addView(detectSwitch);
         content.addView(autoDetectRow);
@@ -11421,7 +11457,7 @@ public final class FishbowlActivity extends AppCompatActivity
         keepScreenSwitch.setChecked(dm.isKeepScreenOnEnabled());
         keepScreenSwitch.setOnCheckedChangeListener((b, isChecked) -> {
             dm.setKeepScreenOnEnabled(isChecked);
-            Toast.makeText(this, isChecked ? "Screen will stay awake during imports" : "Screen wake lock disabled", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr(isChecked ? "Screen will stay awake during imports" : "Screen wake lock disabled"), Toast.LENGTH_SHORT).show();
         });
         keepScreenRow.addView(keepScreenSwitch);
         content.addView(keepScreenRow);
@@ -11511,7 +11547,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 () -> {
                     String key = input.getText().toString().trim();
                     com.fishbowl.app.importer.TmdbMetadataProvider.setApiKey(this, key);
-                    Toast.makeText(this, key.isEmpty() ? "TMDB API key cleared" : "TMDB API key saved", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr(key.isEmpty() ? "TMDB API key cleared" : "TMDB API key saved"), Toast.LENGTH_SHORT).show();
                 },
                 "CANCEL",
                 null
@@ -11938,7 +11974,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 "Grants Jellyfin read access to movies, music, and shows on internal and external drives.",
                 v -> {
                     if (com.fishbowl.app.permissions.AppPermissionManager.isStorageGranted(this)) {
-                        Toast.makeText(this, "Storage access is already granted.", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, I18n.tr("Storage access is already granted."), Toast.LENGTH_SHORT).show();
                     } else {
                         com.fishbowl.app.permissions.AppPermissionManager.requestStorage(this);
                     }
@@ -11971,7 +12007,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 "Prevents Android OS from pausing or terminating background playback services.",
                 v -> {
                     if (com.fishbowl.app.permissions.AppPermissionManager.isBatteryOptimizationExempted(this)) {
-                        Toast.makeText(this, "Battery optimization exemption is already active.", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, I18n.tr("Battery optimization exemption is already active."), Toast.LENGTH_SHORT).show();
                     } else {
                         requestIgnoreBatteryOptimizationsIfNeeded();
                     }
@@ -11995,7 +12031,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 "Maintains persistent media server notification to protect background execution.",
                 v -> {
                     if (com.fishbowl.app.permissions.AppPermissionManager.isNotificationGranted(this)) {
-                        Toast.makeText(this, "Notification permission is already granted.", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, I18n.tr("Notification permission is already granted."), Toast.LENGTH_SHORT).show();
                     } else {
                         com.fishbowl.app.permissions.AppPermissionManager.requestNotification(this);
                     }
@@ -12115,7 +12151,7 @@ public final class FishbowlActivity extends AppCompatActivity
         col.addView(tvAction);
 
         LinearLayout.LayoutParams colLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        colLp.rightMargin = dp(12);
+        colLp.setMarginEnd(dp(12));
         row.addView(col, colLp);
 
         TextView badge = new TextView(this);
@@ -12295,7 +12331,7 @@ public final class FishbowlActivity extends AppCompatActivity
         errorCardCategoryText.setBackground(createRoundedDrawable(AppTheme.dangerContainer(), dp(6)));
         errorCardCategoryText.setPadding(dp(8), dp(3), dp(8), dp(3));
         LinearLayout.LayoutParams catParams = new LinearLayout.LayoutParams(-2, -2);
-        catParams.rightMargin = dp(8);
+        catParams.setMarginEnd(dp(8));
         headerRow.addView(errorCardCategoryText, catParams);
 
         Button btnDismiss = createPillCopyButton();
@@ -12405,7 +12441,7 @@ public final class FishbowlActivity extends AppCompatActivity
         Button btnCopyDiag = createPixelButton("COPY DIAGNOSTICS", AppTheme.dangerContainer(), AppTheme.danger());
         btnCopyDiag.setOnClickListener(v -> copyDiagnosticsToClipboard());
         LinearLayout.LayoutParams pCopy = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        pCopy.rightMargin = dp(6);
+        pCopy.setMarginEnd(dp(6));
         btnRow.addView(btnCopyDiag, pCopy);
 
         Button btnLogs = createPixelButton("VIEW LOGS", getSurfaceElevatedColor(), getPrimaryTextColor());
@@ -12547,7 +12583,7 @@ public final class FishbowlActivity extends AppCompatActivity
         ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         if (cm != null) {
             cm.setPrimaryClip(ClipData.newPlainText("Jellyarr Error Diagnostics", diag.toString()));
-            Toast.makeText(this, "Diagnostic report copied to clipboard", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Diagnostic report copied to clipboard"), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -12633,7 +12669,7 @@ public final class FishbowlActivity extends AppCompatActivity
                     ClipboardManager cb = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                     if (cb != null) {
                         cb.setPrimaryClip(ClipData.newPlainText("Codec Report", reportTv.getText()));
-                        Toast.makeText(this, "Copied SoC codec report to clipboard", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, I18n.tr("Copied SoC codec report to clipboard"), Toast.LENGTH_SHORT).show();
                     }
                 }, "CLOSE", null);
     }
@@ -12703,9 +12739,9 @@ public final class FishbowlActivity extends AppCompatActivity
                 updateStorageInfoText();
                 refreshStorageBar();
                 if (finalSuccess) {
-                    Toast.makeText(FishbowlActivity.this, "Cache cleared successfully.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(FishbowlActivity.this, I18n.tr("Cache cleared successfully."), Toast.LENGTH_SHORT).show();
                 } else {
-                    Toast.makeText(FishbowlActivity.this, "Cache partially cleared. Some temporary files could not be removed.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(FishbowlActivity.this, I18n.tr("Cache partially cleared. Some temporary files could not be removed."), Toast.LENGTH_LONG).show();
                 }
             });
         }).start();
@@ -12792,7 +12828,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         btnSettingsRetry = createPixelButton("RETRY SETUP", getAccentColor(), AppTheme.onAccent());
         btnSettingsRetry.setOnClickListener(v -> {
-            Toast.makeText(this, "Retrying Jellyarr setup...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr("Retrying Jellyarr setup..."), Toast.LENGTH_SHORT).show();
             controller.reinstallRuntime(this);
         });
         btnSettingsRetry.setVisibility(View.GONE);
@@ -12814,11 +12850,11 @@ public final class FishbowlActivity extends AppCompatActivity
         btnAddQsTile.setOnClickListener(v -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 FishbowlQuickSettingsTileService.requestAddTile(this,
-                    () -> Toast.makeText(this, "Jellyarr Quick Settings tile added!", Toast.LENGTH_SHORT).show(),
-                    () -> Toast.makeText(this, "Quick Settings tile request cancelled or already present.", Toast.LENGTH_SHORT).show()
+                    () -> Toast.makeText(this, I18n.tr("Jellyarr Quick Settings tile added!"), Toast.LENGTH_SHORT).show(),
+                    () -> Toast.makeText(this, I18n.tr("Quick Settings tile request cancelled or already present."), Toast.LENGTH_SHORT).show()
                 );
             } else {
-                Toast.makeText(this, "To add the Jellyarr tile: swipe down twice from the top of your screen, tap Edit (pencil icon), and drag the Jellyarr tile into active tiles.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, I18n.tr("To add the Jellyarr tile: swipe down twice from the top of your screen, tap Edit (pencil icon), and drag the Jellyarr tile into active tiles."), Toast.LENGTH_LONG).show();
             }
         });
         LinearLayout.LayoutParams pAddTile = new LinearLayout.LayoutParams(-1, dp(36));
@@ -12887,7 +12923,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         showOledDialog("Reinstall Jellyarr Runtime?", "Clean runtime re-extraction", tv,
                 "REINSTALL", getAccentColor(), () -> {
-                    Toast.makeText(this, "Beginning clean runtime extraction...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, I18n.tr("Beginning clean runtime extraction..."), Toast.LENGTH_SHORT).show();
                     controller.reinstallRuntime(this);
                 }, "CANCEL", null);
     }

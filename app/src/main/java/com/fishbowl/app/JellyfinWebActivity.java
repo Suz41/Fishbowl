@@ -42,6 +42,11 @@ import java.net.InetAddress;
  * Also supports generic in-app service Web UI loading (Radarr, Sonarr, Prowlarr, Transmission, Seerr).
  */
 public final class JellyfinWebActivity extends AppCompatActivity implements JellyfinController.Listener {
+
+    @Override
+    protected void attachBaseContext(android.content.Context newBase) {
+        super.attachBaseContext(I18n.wrap(newBase));
+    }
     private static final String TAG = "JellyfinWebActivity";
 
     public static final String EXTRA_URL = "extra_url";
@@ -357,7 +362,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
         container.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, -2));
         container.addView(rootLayout, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
-        setContentView(container);
+        setContentView(I18n.attach(container));
 
         if (customUrl != null && !customUrl.isEmpty()) {
             connectToCustomService();
@@ -479,7 +484,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                         forceBtn.setTextColor(AppTheme.text());
                         forceBtn.setBackgroundColor(AppTheme.outline());
                         LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(-2, -2);
-                        fp.leftMargin = dp(10);
+                        fp.setMarginStart(dp(10));
                         forceBtn.setLayoutParams(fp);
                         forceBtn.setOnClickListener(v -> {
                             loaded = true;
@@ -495,7 +500,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
                         browserBtn.setTextColor(AppTheme.text());
                         browserBtn.setBackgroundColor(AppTheme.outline());
                         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2);
-                        bp.leftMargin = dp(10);
+                        bp.setMarginStart(dp(10));
                         browserBtn.setLayoutParams(bp);
                         browserBtn.setOnClickListener(v -> {
                             try {

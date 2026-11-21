@@ -306,7 +306,7 @@ public final class LibraryTabView {
             Toast.makeText(act, "Saved: " + getHours.get() + " h", Toast.LENGTH_SHORT).show();
         });
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-2, dp(34));
-        slp.leftMargin = dp(8);
+        slp.setMarginStart(dp(8));
         period.addView(save, slp);
         final Runnable dirty = UiStyle.bindDirty(save, input, () -> String.valueOf(getHours.get()));
         save.setOnClickListener(v -> {
@@ -371,7 +371,7 @@ public final class LibraryTabView {
         del.setClickable(true);
         del.setOnClickListener(v -> confirmDelete(item));
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(-2, -2);
-        dlp.leftMargin = dp(8);
+        dlp.setMarginStart(dp(8));
         row.addView(del, dlp);
 
         listContainer.addView(row);
@@ -459,7 +459,7 @@ public final class LibraryTabView {
 
     private LinearLayout.LayoutParams weight() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(34), 1.0f);
-        lp.rightMargin = dp(6);
+        lp.setMarginEnd(dp(6));
         return lp;
     }
 

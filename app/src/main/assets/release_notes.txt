@@ -1,4 +1,8 @@
-What's new in 2.0.4-beta.2 (beta)
+What's new in 2.0.4-beta.3 (beta)
+- Arabic language support: the whole app can now be used in Arabic or English (Settings > Appearance > Language), with full right-to-left layout. "System" follows your phone's language.
+- Texts without an Arabic translation yet stay in English.
+
+From 2.0.4-beta.2:
 - Material 3 redesign: new colour system, pill-shaped buttons (filled / tonal / outlined) with press animation, and a new bottom navigation bar with labels and an active indicator.
 - Settings > Appearance: choose System, Light, Dark or AMOLED black, pick an accent colour (8 presets), or use Dynamic colours from your wallpaper (Material You, Android 12+). Includes a live preview and "Reset to default".
 - Settings are now grouped by task: Personalize, Server, Device & Security, Maintenance.

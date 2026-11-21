@@ -44,6 +44,7 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.fishbowl.app.AppTheme;
+import com.fishbowl.app.I18n;
 import com.fishbowl.app.MediaStorageManager;
 import com.termux.R;
 import com.fishbowl.app.StorageDriveHelper;
@@ -68,6 +69,11 @@ import java.util.concurrent.Executors;
  * and live source-to-destination path tracking.
  */
 public final class MovieImportActivity extends AppCompatActivity {
+
+    @Override
+    protected void attachBaseContext(android.content.Context newBase) {
+        super.attachBaseContext(I18n.wrap(newBase));
+    }
 
     private static final String TAG = "MovieImportActivity";
 
@@ -106,7 +112,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         metadataProvider = new TmdbMetadataProvider();
 
         configureSystemBars();
-        setContentView(buildRootLayout());
+        setContentView(I18n.attach(buildRootLayout()));
 
         // Handle incoming review intent if opened from download notification
         handleIncomingIntent(getIntent());
@@ -208,7 +214,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         btnBack.setFocusable(true);
         btnBack.setBackground(createButtonRippleDrawable(AppTheme.inner(), dp(18), AppTheme.accent()));
         LinearLayout.LayoutParams pBack = new LinearLayout.LayoutParams(dp(38), dp(38));
-        pBack.rightMargin = dp(12);
+        pBack.setMarginEnd(dp(12));
         btnBack.setLayoutParams(pBack);
         btnBack.setOnClickListener(v -> finish());
         header.addView(btnBack);
@@ -219,7 +225,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         logo.setColorFilter(AppTheme.text());
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(24), dp(24));
-        logoParams.rightMargin = dp(10);
+        logoParams.setMarginEnd(dp(10));
         header.addView(logo, logoParams);
 
         // Title Column
@@ -395,7 +401,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         screenSwitch.setChecked(detectionManager.isKeepScreenOnEnabled());
         screenSwitch.setOnCheckedChangeListener((btn, isChecked) -> {
             detectionManager.setKeepScreenOnEnabled(isChecked);
-            Toast.makeText(this, isChecked ? "Screen will stay awake during imports" : "Screen wake lock disabled", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, I18n.tr(isChecked ? "Screen will stay awake during imports" : "Screen wake lock disabled"), Toast.LENGTH_SHORT).show();
         });
         screenRow.addView(screenSwitch, new LinearLayout.LayoutParams(-2, -2));
 
@@ -952,11 +958,11 @@ public final class MovieImportActivity extends AppCompatActivity {
         Button btnTvTab = createButton("TV SERIES", isTvShow[0] ? AppTheme.accent() : AppTheme.inner(), isTvShow[0] ? AppTheme.onAccent() : AppTheme.textMuted());
 
         LinearLayout.LayoutParams pTab1 = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        pTab1.rightMargin = dp(6);
+        pTab1.setMarginEnd(dp(6));
         typeSwitchRow.addView(btnMovieTab, pTab1);
 
         LinearLayout.LayoutParams pTab2 = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        pTab2.leftMargin = dp(6);
+        pTab2.setMarginStart(dp(6));
         typeSwitchRow.addView(btnTvTab, pTab2);
         content.addView(typeSwitchRow);
 
@@ -1019,7 +1025,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         colSeason.addView(editSeason);
 
         LinearLayout.LayoutParams pCol1 = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        pCol1.rightMargin = dp(8);
+        pCol1.setMarginEnd(dp(8));
         tvFieldsContainer.addView(colSeason, pCol1);
 
         LinearLayout colEpisode = new LinearLayout(this);
@@ -1041,7 +1047,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         colEpisode.addView(editEpisode);
 
         LinearLayout.LayoutParams pCol2 = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        pCol2.leftMargin = dp(8);
+        pCol2.setMarginStart(dp(8));
         tvFieldsContainer.addView(colEpisode, pCol2);
         content.addView(tvFieldsContainer);
 
@@ -1186,11 +1192,11 @@ public final class MovieImportActivity extends AppCompatActivity {
         Button btnCopy = createButton("COPY (DUPLICATE)", AppTheme.inner(), AppTheme.textMuted());
 
         LinearLayout.LayoutParams pOp1 = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        pOp1.rightMargin = dp(6);
+        pOp1.setMarginEnd(dp(6));
         opRow.addView(btnMove, pOp1);
 
         LinearLayout.LayoutParams pOp2 = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        pOp2.leftMargin = dp(6);
+        pOp2.setMarginStart(dp(6));
         opRow.addView(btnCopy, pOp2);
         content.addView(opRow);
 
@@ -1318,7 +1324,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         });
 
         scroll.addView(content);
-        dialog.setContentView(scroll);
+        dialog.setContentView(I18n.attach(scroll));
         dialog.show();
         if (dialog.getWindow() != null) {
             dialog.getWindow().setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.94), -2);
@@ -1336,7 +1342,7 @@ public final class MovieImportActivity extends AppCompatActivity {
 
         String ext = MovieImportManager.getFileExtension(sourceFilename);
         if (!MovieFilenameParser.isSupportedMediaExtension(ext)) {
-            Toast.makeText(this, "Rejected: Unsupported or unsafe media format: '" + ext + "'", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, I18n.tr("Rejected: Unsupported or unsafe media format: '" + ext + "'"), Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -1385,7 +1391,7 @@ public final class MovieImportActivity extends AppCompatActivity {
         });
         layout.addView(btnCancel, new LinearLayout.LayoutParams(-1, dp(38)));
 
-        progressDialog.setContentView(layout);
+        progressDialog.setContentView(I18n.attach(layout));
         progressDialog.setOnDismissListener(d -> {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         });
@@ -1446,9 +1452,9 @@ public final class MovieImportActivity extends AppCompatActivity {
                 progressDialog.dismiss();
                 refreshHistoryUI();
                 new androidx.appcompat.app.AlertDialog.Builder(MovieImportActivity.this)
-                        .setTitle("Import Failed")
+                        .setTitle(I18n.tr("Import Failed"))
                         .setMessage(errorMessage)
-                        .setPositiveButton("OK", null)
+                        .setPositiveButton(I18n.tr("OK"), null)
                         .show();
             }
 
@@ -1456,7 +1462,7 @@ public final class MovieImportActivity extends AppCompatActivity {
             public void onCancelled(MovieImportJournal.ImportRecord record) {
                 progressDialog.dismiss();
                 refreshHistoryUI();
-                Toast.makeText(MovieImportActivity.this, "Import cancelled.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(MovieImportActivity.this, I18n.tr("Import cancelled."), Toast.LENGTH_SHORT).show();
             }
         });
     }
