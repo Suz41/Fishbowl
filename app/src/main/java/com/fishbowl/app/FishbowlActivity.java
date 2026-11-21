@@ -383,7 +383,7 @@ public final class FishbowlActivity extends AppCompatActivity
     private final Runnable healthPollRunnable = new Runnable() {
         @Override
         public void run() {
-            refreshServerHealthUI();
+            if (activeTab == 0) refreshServerHealthUI();
             healthHandler.postDelayed(this, 4000);
         }
     };
@@ -962,9 +962,12 @@ public final class FishbowlActivity extends AppCompatActivity
         tab.setPadding(0, dp(4), 0, dp(4));
         tab.setOnClickListener(v -> {
             if (activeTab != tabIndex) {
+                final long t0 = SystemClock.elapsedRealtime();
                 activeTab = tabIndex;
                 updateBottomNavSelection();
                 renderActiveTab();
+                final int shown = tabIndex;
+                v.post(() -> Log.i("JellyarrPerf", "tab " + shown + " switch+layout ms=" + (SystemClock.elapsedRealtime() - t0)));
             }
         });
 
@@ -4007,8 +4010,50 @@ public final class FishbowlActivity extends AppCompatActivity
         ssb.setSpan(new ForegroundColorSpan(msgColor), lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
+    private static final class UnifiedLogsResult {
+        CharSequence text;
+        Integer color;
+        String subtitle;
+    }
+
+    private final java.util.concurrent.atomic.AtomicInteger unifiedLogsGen = new java.util.concurrent.atomic.AtomicInteger();
+
+    /** Reads and colorizes logs off the main thread, then applies the result on the UI thread. */
     private void refreshUnifiedLogsDisplay() {
         if (logsOutputText == null) return;
+        final int gen = unifiedLogsGen.incrementAndGet();
+        bgExecutor.execute(() -> {
+            final UnifiedLogsResult out;
+            try {
+                out = computeUnifiedLogs();
+            } catch (Throwable t) {
+                Log.w(TAG, "Unified logs compute failed: " + t.getMessage());
+                return;
+            }
+            runOnUiThread(() -> {
+                if (isFinishing() || gen != unifiedLogsGen.get() || logsOutputText == null) return;
+                if (out.text != null) logsOutputText.setText(out.text);
+                if (out.color != null) logsOutputText.setTextColor(out.color);
+                if (out.subtitle != null && logsStatusSubtitle != null) logsStatusSubtitle.setText(out.subtitle);
+                if (autoScrollEnabled && logsScrollView != null) {
+                    logsScrollView.postDelayed(() -> {
+                        if (logsScrollView != null) {
+                            View child = logsScrollView.getChildAt(0);
+                            if (child != null) {
+                                int diff = child.getBottom() - (logsScrollView.getHeight() + logsScrollView.getScrollY());
+                                if (diff <= dp(140)) logsScrollView.fullScroll(View.FOCUS_DOWN);
+                            } else {
+                                logsScrollView.fullScroll(View.FOCUS_DOWN);
+                            }
+                        }
+                    }, 40);
+                }
+            });
+        });
+    }
+
+    private UnifiedLogsResult computeUnifiedLogs() {
+        UnifiedLogsResult out = new UnifiedLogsResult();
 
         SpannableStringBuilder ssb = new SpannableStringBuilder();
         int lineCount = 0;
@@ -4044,16 +4089,12 @@ public final class FishbowlActivity extends AppCompatActivity
             }
         } else if ("JELLYFIN".equalsIgnoreCase(selectedLogService)) {
             if (!JellyfinBootstrapper.isInitialized(this)) {
-                logsOutputText.setText("--- Jellyfin server runtime is not installed ---");
-                logsOutputText.setTextColor(Color.parseColor("#71717A"));
-                if (logsStatusSubtitle != null) {
-                    logsStatusSubtitle.setText("[JELLYFIN] - Not installed");
-                }
-                return;
+                out.text = "--- Jellyfin server runtime is not installed ---";
+                out.color = Color.parseColor("#71717A");
+                out.subtitle = "[JELLYFIN] - Not installed";
+                return out;
             }
-            if (logsStatusSubtitle != null) {
-                logsStatusSubtitle.setText("[JELLYFIN] - Live Stream & Disk Log Output");
-            }
+            out.subtitle = "[JELLYFIN] - Live Stream & Disk Log Output";
             if (controller != null) {
                 String raw = showingDiskLog ? controller.getDiskLogs() : controller.getLogs();
                 if (showingDiskLog && (raw == null || raw.isEmpty())) {
@@ -4091,44 +4132,25 @@ public final class FishbowlActivity extends AppCompatActivity
                     }
                 }
             } else {
-                logsOutputText.setText("--- Service [" + selectedLogService + "] is not installed ---");
-                logsOutputText.setTextColor(Color.parseColor("#71717A"));
-                if (logsStatusSubtitle != null) {
-                    logsStatusSubtitle.setText("[" + selectedLogService + "] - Not installed");
-                }
-                return;
+                out.text = "--- Service [" + selectedLogService + "] is not installed ---";
+                out.color = Color.parseColor("#71717A");
+                out.subtitle = "[" + selectedLogService + "] - Not installed";
+                return out;
             }
         }
 
         if (ssb.length() == 0) {
-            logsOutputText.setText("--- No logs recorded for [" + selectedLogService + "] with filter [" + selectedLogLevel + "] ---");
-            logsOutputText.setTextColor(Color.parseColor("#71717A"));
+            out.text = "--- No logs recorded for [" + selectedLogService + "] with filter [" + selectedLogLevel + "] ---";
+            out.color = Color.parseColor("#71717A");
         } else {
-            logsOutputText.setText(ssb);
+            out.text = ssb;
+            out.color = Color.parseColor("#D4D4D8");
         }
 
-        if (logsStatusSubtitle != null) {
-            logsStatusSubtitle.setText("[" + selectedLogService + "] - " + lineCount + " lines (" + selectedLogLevel + ") - Auto-scroll: " + (autoScrollEnabled ? "ON" : "OFF"));
-        }
-
-        if (autoScrollEnabled && logsScrollView != null) {
-            logsScrollView.postDelayed(() -> {
-                if (logsScrollView != null) {
-                    View child = logsScrollView.getChildAt(0);
-                    if (child != null) {
-                        int diff = child.getBottom() - (logsScrollView.getHeight() + logsScrollView.getScrollY());
-                        if (diff <= dp(140)) {
-                            logsScrollView.fullScroll(View.FOCUS_DOWN);
-                        }
-                    } else {
-                        logsScrollView.fullScroll(View.FOCUS_DOWN);
-                    }
-                }
-            }, 40);
-        }
+        out.subtitle = "[" + selectedLogService + "] - " + lineCount + " lines (" + selectedLogLevel + ") - Auto-scroll: " + (autoScrollEnabled ? "ON" : "OFF");
+        return out;
     }
 
-    
     public boolean isMediaStackEnabled() {
         return getFishbowlPrefs().getBoolean("media_stack_enabled", true);
     }
@@ -4584,8 +4606,33 @@ public final class FishbowlActivity extends AppCompatActivity
         return scroll;
     }
 
+    private String lastServicesSignature = null;
+
+    private String computeServicesSignature() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(isMediaStackEnabled()).append('|').append(isAvailableServicesDrawerOpen).append('|');
+        try {
+            sb.append(controller != null ? controller.getState() : "-").append('|');
+            for (ManagedService s : MediaServiceManager.getInstance(this).getAllServices()) {
+                sb.append(s.getId()).append(':').append(s.getState()).append(':')
+                        .append(s.isInstalled()).append(s.isRunning()).append(s.isStarting()).append(s.isBlocked()).append(';');
+            }
+        } catch (Throwable t) {
+            return null;
+        }
+        return sb.toString();
+    }
+
     private void refreshServicesTabUI() {
         if (servicesCardsContainer == null) return;
+        // Skip all work while the tab is hidden; it is refreshed when the tab is opened.
+        if (activeTab != 1 && servicesCardsContainer.getChildCount() > 0) {
+            lastServicesSignature = null;
+            return;
+        }
+        String sig = computeServicesSignature();
+        if (sig != null && sig.equals(lastServicesSignature) && servicesCardsContainer.getChildCount() > 0) return;
+        lastServicesSignature = sig;
         servicesCardsContainer.removeAllViews();
 
         if (!isMediaStackEnabled()) {
@@ -12369,7 +12416,13 @@ public final class FishbowlActivity extends AppCompatActivity
         }
     }
 
+    private long lastStorageScanMs = 0;
+
     private void updateStorageInfoText() {
+        // Scanning the whole data dir is expensive: do it at most every 30s when merely opening the tab.
+        long now = SystemClock.elapsedRealtime();
+        if (lastStorageScanMs != 0 && now - lastStorageScanMs < 30000) return;
+        lastStorageScanMs = now;
         refreshStorageBar();
     }
 

@@ -1,4 +1,10 @@
-What's new in 2.0.4-beta.1 (beta)
+What's new in 2.0.4-beta.2 (beta)
+- Faster, smoother UI: log reading and colouring moved off the main thread (Activity tab no longer freezes).
+- Hidden tabs no longer refresh in the background; service cards are rebuilt only when something actually changed.
+- Settings no longer rescans storage every time it is opened (at most every 30 s).
+- Light performance timing added to help find remaining slow spots.
+
+From 2.0.4-beta.1:
 - Consistent design across ALL tabs: one card style (colour, border, corner radius) for Home, Library, Downloads, Services and Settings.
 - Unified section titles (same font, size, colour and spacing everywhere).
 - Settings cards and rows now match the rest of the app.
