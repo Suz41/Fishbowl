@@ -55,7 +55,7 @@ public final class LibraryTabView {
 
         root = new LinearLayout(act);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.BLACK);
+        root.setBackgroundColor(AppTheme.bg());
 
         LinearLayout header = new LinearLayout(act);
         header.setOrientation(LinearLayout.VERTICAL);
@@ -260,7 +260,7 @@ public final class LibraryTabView {
         LinearLayout card = new LinearLayout(act);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(12), dp(10), dp(12), dp(10));
-        card.setBackground(rounded(Color.parseColor("#0C0C0E"), Color.argb(20, 255, 255, 255), 10));
+        card.setBackground(rounded(AppTheme.card(), AppTheme.outline(), 10));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(8);
         card.setLayoutParams(lp);
@@ -293,7 +293,7 @@ public final class LibraryTabView {
         final EditText input = new EditText(act);
         input.setInputType(InputType.TYPE_CLASS_NUMBER);
         input.setText(String.valueOf(hours));
-        input.setTextColor(Color.WHITE);
+        input.setTextColor(AppTheme.text());
         input.setTextSize(13f);
         input.setGravity(Gravity.CENTER);
         input.setSingleLine(true);
@@ -306,7 +306,7 @@ public final class LibraryTabView {
             Toast.makeText(act, "Saved: " + getHours.get() + " h", Toast.LENGTH_SHORT).show();
         });
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-2, dp(34));
-        slp.leftMargin = dp(8);
+        slp.setMarginStart(dp(8));
         period.addView(save, slp);
         final Runnable dirty = UiStyle.bindDirty(save, input, () -> String.valueOf(getHours.get()));
         save.setOnClickListener(v -> {
@@ -342,7 +342,7 @@ public final class LibraryTabView {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(12), dp(10), dp(10), dp(10));
-        row.setBackground(rounded(Color.parseColor("#0C0C0E"), Color.argb(20, 255, 255, 255), 8));
+        row.setBackground(rounded(AppTheme.card(), AppTheme.outline(), 8));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(6);
         row.setLayoutParams(lp);
@@ -367,11 +367,11 @@ public final class LibraryTabView {
         TextView del = text("DEL", 10f, "#EF4444", true);
         del.setGravity(Gravity.CENTER);
         del.setPadding(dp(8), dp(5), dp(8), dp(5));
-        del.setBackground(rounded(Color.parseColor("#271212"), Color.parseColor("#7F1D1D"), 4));
+        del.setBackground(rounded(AppTheme.dangerContainer(), AppTheme.danger(), 4));
         del.setClickable(true);
         del.setOnClickListener(v -> confirmDelete(item));
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(-2, -2);
-        dlp.leftMargin = dp(8);
+        dlp.setMarginStart(dp(8));
         row.addView(del, dlp);
 
         listContainer.addView(row);
@@ -425,16 +425,16 @@ public final class LibraryTabView {
             final EditText user = new EditText(act);
             user.setHint("Username");
             user.setSingleLine(true);
-            user.setTextColor(Color.WHITE);
-            user.setHintTextColor(Color.parseColor("#52525B"));
+            user.setTextColor(AppTheme.text());
+            user.setHintTextColor(AppTheme.textMuted());
             user.setText(JellyfinLibraryClient.suggestedUsername(act));
             listContainer.addView(user, new LinearLayout.LayoutParams(-1, -2));
             final EditText pass = new EditText(act);
             pass.setHint("Password (leave empty if none)");
             pass.setSingleLine(true);
             pass.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-            pass.setTextColor(Color.WHITE);
-            pass.setHintTextColor(Color.parseColor("#52525B"));
+            pass.setTextColor(AppTheme.text());
+            pass.setHintTextColor(AppTheme.textMuted());
             listContainer.addView(pass, new LinearLayout.LayoutParams(-1, -2));
             LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, dp(40));
             blp.topMargin = dp(8);
@@ -459,7 +459,7 @@ public final class LibraryTabView {
 
     private LinearLayout.LayoutParams weight() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(34), 1.0f);
-        lp.rightMargin = dp(6);
+        lp.setMarginEnd(dp(6));
         return lp;
     }
 
@@ -467,8 +467,8 @@ public final class LibraryTabView {
         TextView t = text(label, 9.5f, selected ? "#000000" : "#A1A1AA", true);
         t.setGravity(Gravity.CENTER);
         t.setSingleLine(true);
-        t.setBackground(rounded(selected ? Color.parseColor("#38BDF8") : Color.parseColor("#0C0C0E"),
-                Color.argb(30, 255, 255, 255), 8));
+        t.setBackground(rounded(selected ? AppTheme.accent() : AppTheme.card(),
+                AppTheme.outline(), 8));
         t.setClickable(true);
         t.setOnClickListener(l);
         return t;
@@ -480,18 +480,33 @@ public final class LibraryTabView {
         b.setAllCaps(false);
         b.setTextSize(10.5f);
         b.setTypeface(Typeface.DEFAULT_BOLD);
-        int c = Color.parseColor(colorHex);
+        int c = col(colorHex);
         b.setTextColor(c);
         b.setBackground(rounded(Color.argb(25, Color.red(c), Color.green(c), Color.blue(c)), Color.argb(80, Color.red(c), Color.green(c), Color.blue(c)), 6));
         b.setOnClickListener(l);
         return b;
     }
 
+    /** Maps the legacy dark-theme hex literals used by callers to the active theme's roles. */
+    private static int col(String hex) {
+        String h = hex.toUpperCase(java.util.Locale.ROOT);
+        switch (h) {
+            case "#38BDF8": return AppTheme.accent();
+            case "#F4F4F5": case "#FFFFFF": return AppTheme.text();
+            case "#A1A1AA": return AppTheme.textSecondary();
+            case "#71717A": return AppTheme.textMuted();
+            case "#F87171": case "#EF4444": return AppTheme.danger();
+            case "#34D399": return AppTheme.success();
+            case "#000000": return AppTheme.onAccent();
+            default: return Color.parseColor(hex);
+        }
+    }
+
     private TextView text(String s, float size, String colorHex, boolean bold) {
         TextView t = new TextView(act);
         t.setText(s);
         t.setTextSize(size);
-        t.setTextColor(Color.parseColor(colorHex));
+        t.setTextColor(col(colorHex));
         if (bold) t.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         return t;
     }

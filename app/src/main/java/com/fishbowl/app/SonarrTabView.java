@@ -50,12 +50,12 @@ public final class SonarrTabView {
 
         root = new LinearLayout(act);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.BLACK);
+        root.setBackgroundColor(AppTheme.bg());
 
         LinearLayout header = new LinearLayout(act);
         header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(dp(16), dp(12), dp(16), dp(4));
-        TextView title = text("SONARR", 14f, "#FFFFFF", true);
+        TextView title = text("SONARR", 14f, "#F4F4F5", true);
         title.setLetterSpacing(0.14f);
         header.addView(title);
         TextView sub = text("Missing episodes - search them automatically", 11f, "#71717A", false);
@@ -113,7 +113,7 @@ public final class SonarrTabView {
         LinearLayout card = new LinearLayout(act);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(12), dp(10), dp(12), dp(10));
-        card.setBackground(rounded(Color.parseColor("#0C0C0E"), Color.argb(20, 255, 255, 255), 10));
+        card.setBackground(rounded(AppTheme.card(), AppTheme.outline(), 10));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(8);
         card.setLayoutParams(lp);
@@ -132,7 +132,7 @@ public final class SonarrTabView {
         sw.setChecked(AutomationPrefs.isSonarrMissingEnabled(act));
         sw.setOnCheckedChangeListener((v, checked) -> {
             AutomationPrefs.setSonarrMissingEnabled(act, checked);
-            Toast.makeText(act, checked ? "Auto-search enabled." : "Auto-search disabled.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(act, I18n.tr(checked ? "Auto-search enabled." : "Auto-search disabled."), Toast.LENGTH_SHORT).show();
         });
         UiStyle.styleSwitch(act, sw);
         top.addView(sw);
@@ -146,14 +146,14 @@ public final class SonarrTabView {
         final EditText input = new EditText(act);
         input.setInputType(InputType.TYPE_CLASS_NUMBER);
         input.setText(String.valueOf(AutomationPrefs.getSonarrMissingMinutes(act)));
-        input.setTextColor(Color.WHITE);
+        input.setTextColor(AppTheme.text());
         input.setTextSize(13f);
         input.setGravity(Gravity.CENTER);
         input.setSingleLine(true);
         period.addView(input, new LinearLayout.LayoutParams(dp(80), -2));
         Button save = actionButton("SAVE", "#38BDF8", null);
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-2, dp(34));
-        slp.leftMargin = dp(8);
+        slp.setMarginStart(dp(8));
         period.addView(save, slp);
         final Runnable dirty = UiStyle.bindDirty(save, input,
                 () -> String.valueOf(AutomationPrefs.getSonarrMissingMinutes(act)));
@@ -163,7 +163,7 @@ public final class SonarrTabView {
             AutomationPrefs.setSonarrMissingMinutes(act, val);
             input.setText(String.valueOf(AutomationPrefs.getSonarrMissingMinutes(act)));
             dirty.run();
-            Toast.makeText(act, "Saved: every " + AutomationPrefs.getSonarrMissingMinutes(act) + " min", Toast.LENGTH_SHORT).show();
+            Toast.makeText(act, I18n.tr("Saved: every " + AutomationPrefs.getSonarrMissingMinutes(act) + " min"), Toast.LENGTH_SHORT).show();
         });
         card.addView(period);
         listContainer.addView(card);
@@ -246,7 +246,7 @@ public final class SonarrTabView {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(12), dp(10), dp(10), dp(10));
-        row.setBackground(rounded(Color.parseColor("#0C0C0E"), Color.argb(20, 255, 255, 255), 8));
+        row.setBackground(rounded(AppTheme.card(), AppTheme.outline(), 8));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(6);
         row.setLayoutParams(lp);
@@ -268,18 +268,18 @@ public final class SonarrTabView {
         TextView go = text("SEARCH", 10f, "#34D399", true);
         go.setGravity(Gravity.CENTER);
         go.setPadding(dp(8), dp(5), dp(8), dp(5));
-        go.setBackground(rounded(Color.parseColor("#0F2A1F"), Color.parseColor("#14532D"), 4));
+        go.setBackground(rounded(AppTheme.successContainer(), AppTheme.success(), 4));
         go.setClickable(true);
         go.setOnClickListener(v -> {
-            Toast.makeText(act, "Searching...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(act, I18n.tr("Searching..."), Toast.LENGTH_SHORT).show();
             bg.execute(() -> {
                 final boolean ok = SonarrMissingSearch.searchEpisode(act, e.episodeId);
                 act.runOnUiThread(() -> Toast.makeText(act,
-                        ok ? "Search queued." : "Could not queue the search.", Toast.LENGTH_SHORT).show());
+                        I18n.tr(ok ? "Search queued." : "Could not queue the search."), Toast.LENGTH_SHORT).show());
             });
         });
         LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(-2, -2);
-        glp.leftMargin = dp(8);
+        glp.setMarginStart(dp(8));
         row.addView(go, glp);
 
         listContainer.addView(row);
@@ -305,7 +305,7 @@ public final class SonarrTabView {
 
     private LinearLayout.LayoutParams weight() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(34), 1.0f);
-        lp.rightMargin = dp(6);
+        lp.setMarginEnd(dp(6));
         return lp;
     }
 
@@ -313,8 +313,8 @@ public final class SonarrTabView {
         TextView t = text(label, 9.5f, selected ? "#000000" : "#A1A1AA", true);
         t.setGravity(Gravity.CENTER);
         t.setSingleLine(true);
-        t.setBackground(rounded(selected ? Color.parseColor("#38BDF8") : Color.parseColor("#0C0C0E"),
-                Color.argb(30, 255, 255, 255), 8));
+        t.setBackground(rounded(selected ? AppTheme.accent() : AppTheme.card(),
+                AppTheme.outline(), 8));
         t.setClickable(true);
         t.setOnClickListener(l);
         return t;
@@ -326,7 +326,7 @@ public final class SonarrTabView {
         b.setAllCaps(false);
         b.setTextSize(10.5f);
         b.setTypeface(Typeface.DEFAULT_BOLD);
-        int c = Color.parseColor(colorHex);
+        int c = col(colorHex);
         b.setTextColor(c);
         b.setBackground(rounded(Color.argb(25, Color.red(c), Color.green(c), Color.blue(c)),
                 Color.argb(80, Color.red(c), Color.green(c), Color.blue(c)), 6));
@@ -334,11 +334,25 @@ public final class SonarrTabView {
         return b;
     }
 
+    /** Maps the dark-theme hex literals used by callers to the active theme's roles. */
+    private static int col(String hex) {
+        switch (hex.toUpperCase(Locale.ROOT)) {
+            case "#38BDF8": return AppTheme.accent();
+            case "#F4F4F5": case "#FFFFFF": return AppTheme.text();
+            case "#A1A1AA": return AppTheme.textSecondary();
+            case "#71717A": return AppTheme.textMuted();
+            case "#F87171": case "#EF4444": return AppTheme.danger();
+            case "#34D399": return AppTheme.success();
+            case "#000000": return AppTheme.onAccent();
+            default: return Color.parseColor(hex);
+        }
+    }
+
     private TextView text(String s, float size, String colorHex, boolean bold) {
         TextView t = new TextView(act);
         t.setText(s);
         t.setTextSize(size);
-        t.setTextColor(Color.parseColor(colorHex));
+        t.setTextColor(col(colorHex));
         if (bold) t.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         return t;
     }
