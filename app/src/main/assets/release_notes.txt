@@ -1,4 +1,7 @@
-What's new in 2.0.4-beta.5 (beta)
+What's new in 2.0.4-beta.6 (beta)
+- Update bar at the top of the app: while an update downloads it shows the live percentage; when ready it shows an INSTALL button. It stays on screen until you close it with the X.
+
+From 2.0.4-beta.5:
 - Faster, smoother UI: log reading and colouring moved off the main thread (the Activity tab no longer freezes).
 - Hidden tabs no longer refresh in the background; service cards are rebuilt only when something actually changed.
 - Settings no longer rescans storage every time it is opened (at most every 30 s).

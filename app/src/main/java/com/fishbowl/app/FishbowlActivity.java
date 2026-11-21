@@ -617,6 +617,7 @@ public final class FishbowlActivity extends AppCompatActivity
         MediaServiceManager.getInstance(this).addListener(serviceListener);
         MediaServiceManager.getInstance(this).reconcileRunningServices();
         UpdateManager.getInstance(this).addListener(updateListener);
+        refreshUpdateBanner();
         UpdateManager.getInstance(this).checkForUpdates(this, false);
         refreshLanAddress();
         refreshHomeServicesBadge();
@@ -830,6 +831,9 @@ public final class FishbowlActivity extends AppCompatActivity
         rootLayout = new LinearLayout(this);
         rootLayout.setOrientation(LinearLayout.VERTICAL);
         rootLayout.setBackgroundColor(getBgColor());
+
+        // Persistent update bar (download progress / install) - stays until the user closes it
+        rootLayout.addView(buildUpdateBanner());
 
         // Header Bar
         headerBar = buildHeaderBar();
@@ -13885,10 +13889,103 @@ public final class FishbowlActivity extends AppCompatActivity
         }, "fishbowl-update-intent").start();
     }
 
+    private LinearLayout updateBannerBar;
+    private TextView updateBannerText;
+    private ProgressBar updateBannerProgress;
+    private Button updateBannerInstallBtn;
+    private boolean updateBannerDismissed = false;
+    private UpdateManager.State updateBannerLastState = null;
+    private int updateBannerLastPct = -1;
+
+    private View buildUpdateBanner() {
+        updateBannerBar = new LinearLayout(this);
+        updateBannerBar.setOrientation(LinearLayout.VERTICAL);
+        updateBannerBar.setBackgroundColor(AppTheme.card());
+        updateBannerBar.setVisibility(View.GONE);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(6), dp(8), dp(6));
+
+        updateBannerText = new TextView(this);
+        updateBannerText.setTextSize(12.5f);
+        updateBannerText.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        updateBannerText.setTextColor(AppTheme.text());
+        row.addView(updateBannerText, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        updateBannerInstallBtn = createPixelButton("تثبيت التحديث", AppTheme.accent(), AppTheme.onAccent());
+        updateBannerInstallBtn.setTextSize(11f);
+        updateBannerInstallBtn.setVisibility(View.GONE);
+        updateBannerInstallBtn.setOnClickListener(v -> UpdateManager.getInstance(this).installUpdate(this));
+        row.addView(updateBannerInstallBtn, new LinearLayout.LayoutParams(-2, dp(34)));
+
+        TextView close = new TextView(this);
+        close.setText("✕");
+        close.setTextSize(16f);
+        close.setGravity(Gravity.CENTER);
+        close.setTextColor(AppTheme.textSecondary());
+        close.setContentDescription("Close");
+        close.setOnClickListener(v -> {
+            updateBannerDismissed = true;
+            updateBannerBar.setVisibility(View.GONE);
+        });
+        row.addView(close, new LinearLayout.LayoutParams(dp(40), dp(34)));
+        updateBannerBar.addView(row);
+
+        updateBannerProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        updateBannerProgress.setMax(100);
+        updateBannerProgress.setVisibility(View.GONE);
+        updateBannerBar.addView(updateBannerProgress, new LinearLayout.LayoutParams(-1, dp(3)));
+        return updateBannerBar;
+    }
+
+    /** Shows download percent, then an install button; remains visible until the user taps X. */
+    private void refreshUpdateBanner() {
+        if (updateBannerBar == null) return;
+        UpdateManager mgr = UpdateManager.getInstance(this);
+        UpdateManager.State st = mgr.getCurrentState();
+        boolean downloading = st == UpdateManager.State.DOWNLOADING;
+        boolean verifying = st == UpdateManager.State.VERIFYING;
+        boolean ready = st == UpdateManager.State.DOWNLOAD_COMPLETE || st == UpdateManager.State.VERIFICATION_SUCCESSFUL;
+        // A new download cycle re-opens a bar that was closed earlier
+        if (downloading && updateBannerLastState != UpdateManager.State.DOWNLOADING) updateBannerDismissed = false;
+        updateBannerLastState = st;
+
+        if (!(downloading || verifying || ready) || updateBannerDismissed) {
+            if (!(downloading || verifying || ready)) updateBannerLastPct = -1;
+            updateBannerBar.setVisibility(View.GONE);
+            return;
+        }
+        String ver = mgr.getLatestVersionName();
+        String v = (ver == null || ver.isEmpty()) ? "" : " v" + ver;
+        if (downloading) {
+            long total = mgr.getTotalApkSize();
+            long got = mgr.getDownloadedBytes();
+            int pct = total > 0 ? (int) Math.min(100, got * 100 / total) : 0;
+            if (pct == updateBannerLastPct && updateBannerBar.getVisibility() == View.VISIBLE) return;
+            updateBannerLastPct = pct;
+            updateBannerText.setText("جارٍ تنزيل التحديث" + v + " — " + pct + "%");
+            updateBannerProgress.setVisibility(View.VISIBLE);
+            updateBannerProgress.setProgress(pct);
+            updateBannerInstallBtn.setVisibility(View.GONE);
+        } else if (verifying) {
+            updateBannerText.setText("جارٍ التحقق من التحديث" + v + "...");
+            updateBannerProgress.setVisibility(View.GONE);
+            updateBannerInstallBtn.setVisibility(View.GONE);
+        } else {
+            updateBannerText.setText("التحديث" + v + " جاهز للتثبيت — 100%");
+            updateBannerProgress.setVisibility(View.GONE);
+            updateBannerInstallBtn.setVisibility(View.VISIBLE);
+        }
+        updateBannerBar.setVisibility(View.VISIBLE);
+    }
+
     private final UpdateManager.UpdateListener updateListener = new UpdateManager.UpdateListener() {
         @Override
         public void onUpdateStateChanged(UpdateManager.State state) {
             refreshUpdateUI();
+            refreshUpdateBanner();
             if (updateAutoInstall) {
                 UpdateManager mgr = UpdateManager.getInstance(FishbowlActivity.this);
                 if (state == UpdateManager.State.UPDATE_AVAILABLE) {
@@ -13906,6 +14003,7 @@ public final class FishbowlActivity extends AppCompatActivity
         @Override
         public void onDownloadProgress(long bytesDownloaded, long totalBytes) {
             refreshUpdateProgress(bytesDownloaded, totalBytes);
+            refreshUpdateBanner();
         }
     };
 
