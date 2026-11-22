@@ -1,4 +1,8 @@
-What's new in 2.0.4-beta.12 (beta)
+What's new in 2.0.4-beta.13 (beta)
+- Jellyfin now uses its original gradient logo everywhere (Home, side drawer, service card).
+- Side drawer swipe now works from anywhere on the screen (swipe right in English, left in Arabic to open; the other way to close).
+
+From 2.0.4-beta.12:
 - Service logos are now the original full-colour logos (Sonarr, Radarr, Prowlarr, Jackett, Transmission, Bazarr) on Home, the side drawer and service cards. Logos are grey and faded when the service is off.
 
 From 2.0.4-beta.11:

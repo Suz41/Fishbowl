@@ -2724,7 +2724,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         List<HomeServiceTileSpec> tiles = new ArrayList<>();
         // 1. Core Jellyfin Service Tile (always present)
-        tiles.add(new HomeServiceTileSpec("jellyfin", "Jellyfin", R.drawable.ic_service_jellyfin, AppTheme.text()));
+        tiles.add(new HomeServiceTileSpec("jellyfin", "Jellyfin", R.drawable.logo_jellyfin, AppTheme.text()));
 
         // 2. Installed Companion Service Tiles (ordered consistently)
         if (!isMovieStreamerModeEnabled() && isMediaStackEnabled()) {
@@ -2997,7 +2997,7 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private int getServiceIconRes(String serviceId) {
-        if (serviceId == null) return R.drawable.ic_service_jellyfin;
+        if (serviceId == null) return R.drawable.logo_jellyfin;
         switch (serviceId.toLowerCase(Locale.ROOT)) {
             case "radarr":       return R.drawable.logo_radarr;
             case "sonarr":       return R.drawable.logo_sonarr;
@@ -3008,7 +3008,7 @@ public final class FishbowlActivity extends AppCompatActivity
             case "transmission": return R.drawable.logo_transmission;
             case "bazarr":       return R.drawable.logo_bazarr;
             case "jellyfin":
-            default:             return R.drawable.ic_service_jellyfin;
+            default:             return R.drawable.logo_jellyfin;
         }
     }
 
@@ -4339,7 +4339,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
     /** True for the full-colour original service logos (PNG); they are never tinted. */
     private static boolean isColorLogoRes(int res) {
-        return res == R.drawable.logo_radarr || res == R.drawable.logo_sonarr || res == R.drawable.logo_prowlarr
+        return res == R.drawable.logo_jellyfin || res == R.drawable.logo_radarr || res == R.drawable.logo_sonarr || res == R.drawable.logo_prowlarr
                 || res == R.drawable.logo_jackett || res == R.drawable.logo_transmission || res == R.drawable.logo_bazarr;
     }
 
@@ -4465,7 +4465,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (sideDrawerPanel == null) return;
         if (sideDrawerItems == null) return;
         sideDrawerItems.removeAllViews();
-        addDrawerItem(5, R.drawable.ic_service_jellyfin, "Jellyfin Library");
+        addDrawerItem(5, R.drawable.logo_jellyfin, "Jellyfin Library");
         if (isMediaStackEnabled()) {
             addDrawerItem(6, R.drawable.logo_sonarr, "Sonarr");
             View sep = new View(this);
@@ -4520,7 +4520,7 @@ public final class FishbowlActivity extends AppCompatActivity
     private float edgeDownX, edgeDownY;
     private boolean edgeTracking = false;
 
-    /** Edge swipe: drag inward from the screen's start edge (left in LTR, right in RTL) to open the drawer; swipe back to close. */
+    /** Swipe anywhere: a horizontal drag toward the inside (rightwards in LTR, leftwards in RTL) opens the drawer; the opposite drag closes it. */
     @Override
     public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
         try {
@@ -4531,8 +4531,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 switch (ev.getActionMasked()) {
                     case android.view.MotionEvent.ACTION_DOWN: {
                         float x = ev.getRawX();
-                        boolean atEdge = rtl ? x >= w - dp(24) : x <= dp(24);
-                        edgeTracking = sideDrawerOpen || atEdge;
+                        edgeTracking = true;
                         edgeDownX = x;
                         edgeDownY = ev.getRawY();
                         break;
@@ -4541,7 +4540,7 @@ public final class FishbowlActivity extends AppCompatActivity
                         if (!edgeTracking) break;
                         float dx = ev.getRawX() - edgeDownX;
                         float dy = ev.getRawY() - edgeDownY;
-                        if (Math.abs(dx) > slop * 3 && Math.abs(dx) > Math.abs(dy) * 2) {
+                        if (Math.abs(dx) > slop * 4 && Math.abs(dx) > Math.abs(dy) * 2.5f) {
                             boolean inward = rtl ? dx < 0 : dx > 0;
                             edgeTracking = false;
                             if (!sideDrawerOpen && inward) {
@@ -5423,7 +5422,7 @@ public final class FishbowlActivity extends AppCompatActivity
         ImageView iconView = new ImageView(this);
         iconView.setImageResource(getServiceIconRes(id));
         if (isColorLogoRes(getServiceIconRes(id))) {
-            applyColorLogoState(iconView, tileCategory(svc.getState()) != 0);
+            applyColorLogoState(iconView, isJellyfin ? (isRunning || isStarting) : tileCategory(svc.getState()) != 0);
         } else {
             iconView.setColorFilter(iconTintColor);
         }
