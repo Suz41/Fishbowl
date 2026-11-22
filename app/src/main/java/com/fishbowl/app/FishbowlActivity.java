@@ -155,6 +155,12 @@ public final class FishbowlActivity extends AppCompatActivity
     private LibraryTabView libraryTabView;
     private View cachedSonarrView;
     private SonarrTabView sonarrTabView;
+    private View cachedRadarrView;
+    private RadarrTabView radarrTabView;
+    private View cachedTransmissionView;
+    private TransmissionTabView transmissionTabView;
+    private static final int TAB_RADARR = 10;
+    private static final int TAB_TRANSMISSION = 12;
 
     // Containers
     private LinearLayout rootLayout;
@@ -732,6 +738,12 @@ public final class FishbowlActivity extends AppCompatActivity
         if (activeTab == 6 && sonarrTabView != null && sonarrTabView.onBack()) {
             return;
         }
+        if (activeTab == TAB_RADARR && radarrTabView != null && radarrTabView.onBack()) {
+            return;
+        }
+        if (activeTab == TAB_TRANSMISSION && transmissionTabView != null && transmissionTabView.onBack()) {
+            return;
+        }
         if (activeTab == 3 && closeSettingsSection()) {
             return;
         }
@@ -917,6 +929,18 @@ public final class FishbowlActivity extends AppCompatActivity
         cachedSonarrView = sonarrTabView.getView();
         cachedSonarrView.setVisibility(View.GONE);
         contentContainer.addView(cachedSonarrView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        radarrTabView = new RadarrTabView(this);
+        cachedRadarrView = radarrTabView.getView();
+        cachedRadarrView.setVisibility(View.GONE);
+        contentContainer.addView(cachedRadarrView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        transmissionTabView = new TransmissionTabView(this);
+        cachedTransmissionView = transmissionTabView.getView();
+        cachedTransmissionView.setVisibility(View.GONE);
+        contentContainer.addView(cachedTransmissionView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         cachedPlaceholderView = buildPlaceholderView();
@@ -1118,8 +1142,10 @@ public final class FishbowlActivity extends AppCompatActivity
         if (cachedLogsView != null) cachedLogsView.setVisibility(activeTab == 4 ? View.VISIBLE : View.GONE);
         if (cachedLibraryView != null) cachedLibraryView.setVisibility(activeTab == 5 ? View.VISIBLE : View.GONE);
         if (cachedSonarrView != null) cachedSonarrView.setVisibility(activeTab == 6 ? View.VISIBLE : View.GONE);
+        if (cachedRadarrView != null) cachedRadarrView.setVisibility(activeTab == TAB_RADARR ? View.VISIBLE : View.GONE);
+        if (cachedTransmissionView != null) cachedTransmissionView.setVisibility(activeTab == TAB_TRANSMISSION ? View.VISIBLE : View.GONE);
         if (cachedPlaceholderView != null) {
-            boolean ph = activeTab >= PLACEHOLDER_TAB_BASE;
+            boolean ph = activeTab >= PLACEHOLDER_TAB_BASE && activeTab != TAB_RADARR && activeTab != TAB_TRANSMISSION;
             cachedPlaceholderView.setVisibility(ph ? View.VISIBLE : View.GONE);
             if (ph) showPlaceholderFor(activeTab);
         }
@@ -1152,6 +1178,10 @@ public final class FishbowlActivity extends AppCompatActivity
             if (libraryTabView != null) libraryTabView.refresh();
         } else if (activeTab == 6) {
             if (sonarrTabView != null) sonarrTabView.refresh();
+        } else if (activeTab == TAB_RADARR) {
+            if (radarrTabView != null) radarrTabView.refresh();
+        } else if (activeTab == TAB_TRANSMISSION) {
+            if (transmissionTabView != null) transmissionTabView.refresh();
         } else if (activeTab == 4) {
             refreshUnifiedLogsDisplay();
             if (autoScrollEnabled && logsScrollView != null) {

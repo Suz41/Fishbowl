@@ -1,4 +1,8 @@
-What's new in 2.0.4-beta.13 (beta)
+What's new in 2.0.4-beta.14 (beta)
+- New Radarr tab (side drawer): movies list and detail, add movie, interactive search, calendar, queue, history, wanted (missing / cutoff unmet) and system settings.
+- New Transmission tab (side drawer): live torrent list with filters, details (files, peers, trackers), add torrent, speed limits and alt-speed, session settings and global pause/resume.
+
+From 2.0.4-beta.13:
 - Jellyfin now uses its original gradient logo everywhere (Home, side drawer, service card).
 - Side drawer swipe now works from anywhere on the screen (swipe right in English, left in Arabic to open; the other way to close).
 
