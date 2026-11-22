@@ -919,6 +919,11 @@ public final class FishbowlActivity extends AppCompatActivity
         contentContainer.addView(cachedSonarrView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        cachedPlaceholderView = buildPlaceholderView();
+        cachedPlaceholderView.setVisibility(View.GONE);
+        contentContainer.addView(cachedPlaceholderView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
         // Dedicated Full-Screen Setup / Loading Overlay (placed on top of tabs)
         setupOverlayView = buildSetupOverlay();
         contentContainer.addView(setupOverlayView, new FrameLayout.LayoutParams(
@@ -1070,7 +1075,7 @@ public final class FishbowlActivity extends AppCompatActivity
             Object tagVal = tab.getTag();
             int tabIndex = (tagVal instanceof Integer) ? (Integer) tagVal : i;
 
-            boolean selected = (tabIndex == activeTab) || (tabIndex == -1 && (activeTab == 5 || activeTab == 6));
+            boolean selected = (tabIndex == activeTab) || (tabIndex == -1 && isDrawerTab(activeTab));
             if (pill != null) {
                 pill.setBackground(createRoundedDrawable(selected ? AppTheme.accentContainer() : Color.TRANSPARENT, dp(16)));
                 pill.setScaleX(selected ? 1f : 0.85f);
@@ -1113,6 +1118,11 @@ public final class FishbowlActivity extends AppCompatActivity
         if (cachedLogsView != null) cachedLogsView.setVisibility(activeTab == 4 ? View.VISIBLE : View.GONE);
         if (cachedLibraryView != null) cachedLibraryView.setVisibility(activeTab == 5 ? View.VISIBLE : View.GONE);
         if (cachedSonarrView != null) cachedSonarrView.setVisibility(activeTab == 6 ? View.VISIBLE : View.GONE);
+        if (cachedPlaceholderView != null) {
+            boolean ph = activeTab >= PLACEHOLDER_TAB_BASE;
+            cachedPlaceholderView.setVisibility(ph ? View.VISIBLE : View.GONE);
+            if (ph) showPlaceholderFor(activeTab);
+        }
 
         if (activeTab == 0) {
             refreshLanAddress();
@@ -4260,7 +4270,17 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private FrameLayout sideDrawerScrim;
     private LinearLayout sideDrawerPanel;
+    private LinearLayout sideDrawerItems;
     private boolean sideDrawerOpen = false;
+
+    private static final int PLACEHOLDER_TAB_BASE = 10;
+    private static final String[] PLACEHOLDER_NAMES = {"Radarr", "Prowlarr", "Transmission", "Lidarr", "Jackett", "Bazarr", "Seerr"};
+    private static final int[] PLACEHOLDER_ICONS = {R.drawable.ic_service_radarr, R.drawable.ic_service_prowlarr,
+            R.drawable.ic_service_transmission, R.drawable.ic_service_lidarr, R.drawable.ic_service_jackett,
+            R.drawable.ic_service_bazarr, R.drawable.ic_service_seerr};
+    private View cachedPlaceholderView;
+    private ImageView placeholderIcon;
+    private TextView placeholderTitle;
 
     private void buildSideDrawer(FrameLayout shell) {
         sideDrawerScrim = new FrameLayout(this);
@@ -4288,10 +4308,54 @@ public final class FishbowlActivity extends AppCompatActivity
             }
             return false;
         });
+        ScrollView drawerScroll = new ScrollView(this);
+        drawerScroll.setVerticalScrollBarEnabled(false);
+        drawerScroll.setFillViewport(false);
+        sideDrawerItems = new LinearLayout(this);
+        sideDrawerItems.setOrientation(LinearLayout.VERTICAL);
+        sideDrawerItems.setGravity(Gravity.CENTER_HORIZONTAL);
+        drawerScroll.addView(sideDrawerItems, new ViewGroup.LayoutParams(-1, -2));
+        sideDrawerPanel.addView(drawerScroll, new LinearLayout.LayoutParams(-1, -1));
         FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dp(68), -1);
         plp.gravity = Gravity.START;
         shell.addView(sideDrawerPanel, plp);
         rebuildDrawerItems();
+    }
+
+    /** Shared empty page for the services whose tab is not built yet. */
+    private View buildPlaceholderView() {
+        FrameLayout wrap = new FrameLayout(this);
+        wrap.setBackgroundColor(AppTheme.bg());
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER);
+        placeholderIcon = new ImageView(this);
+        placeholderIcon.setColorFilter(AppTheme.textMuted());
+        col.addView(placeholderIcon, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        placeholderTitle = new TextView(this);
+        placeholderTitle.setTextSize(16f);
+        placeholderTitle.setTextColor(AppTheme.text());
+        placeholderTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        placeholderTitle.setPadding(0, dp(14), 0, dp(4));
+        col.addView(placeholderTitle);
+        TextView soon = new TextView(this);
+        soon.setText("Coming soon");
+        soon.setTextSize(12f);
+        soon.setTextColor(AppTheme.textMuted());
+        col.addView(soon);
+        wrap.addView(col, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        return wrap;
+    }
+
+    private void showPlaceholderFor(int tab) {
+        int i = tab - PLACEHOLDER_TAB_BASE;
+        if (i < 0 || i >= PLACEHOLDER_NAMES.length || placeholderIcon == null) return;
+        placeholderIcon.setImageResource(PLACEHOLDER_ICONS[i]);
+        placeholderTitle.setText(PLACEHOLDER_NAMES[i]);
+    }
+
+    private boolean isDrawerTab(int tab) {
+        return tab == 5 || tab == 6 || tab >= PLACEHOLDER_TAB_BASE;
     }
 
     private boolean isRtlLayout() {
@@ -4322,9 +4386,21 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private void rebuildDrawerItems() {
         if (sideDrawerPanel == null) return;
-        sideDrawerPanel.removeAllViews();
+        if (sideDrawerItems == null) return;
+        sideDrawerItems.removeAllViews();
         addDrawerItem(5, R.drawable.ic_service_jellyfin, "Jellyfin Library");
-        if (isMediaStackEnabled()) addDrawerItem(6, R.drawable.ic_service_sonarr, "Sonarr");
+        if (isMediaStackEnabled()) {
+            addDrawerItem(6, R.drawable.ic_service_sonarr, "Sonarr");
+            View sep = new View(this);
+            sep.setBackgroundColor(AppTheme.outline());
+            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(28), dp(1));
+            slp.topMargin = dp(2);
+            slp.bottomMargin = dp(12);
+            sideDrawerItems.addView(sep, slp);
+            for (int i = 0; i < PLACEHOLDER_NAMES.length; i++) {
+                addDrawerItem(PLACEHOLDER_TAB_BASE + i, PLACEHOLDER_ICONS[i], PLACEHOLDER_NAMES[i]);
+            }
+        }
         updateDrawerSelection();
     }
 
@@ -4350,13 +4426,13 @@ public final class FishbowlActivity extends AppCompatActivity
         });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(52), dp(52));
         lp.bottomMargin = dp(10);
-        sideDrawerPanel.addView(item, lp);
+        sideDrawerItems.addView(item, lp);
     }
 
     private void updateDrawerSelection() {
-        if (sideDrawerPanel == null) return;
-        for (int i = 0; i < sideDrawerPanel.getChildCount(); i++) {
-            View c = sideDrawerPanel.getChildAt(i);
+        if (sideDrawerItems == null) return;
+        for (int i = 0; i < sideDrawerItems.getChildCount(); i++) {
+            View c = sideDrawerItems.getChildAt(i);
             boolean sel = c.getTag() instanceof Integer && (Integer) c.getTag() == activeTab;
             c.setBackground(createRoundedDrawable(sel ? AppTheme.accentContainer() : Color.TRANSPARENT, dp(16)));
             ImageView ic = c.findViewWithTag("icon");

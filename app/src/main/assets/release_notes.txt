@@ -1,4 +1,7 @@
-What's new in 2.0.4-beta.9 (beta)
+What's new in 2.0.4-beta.10 (beta)
+- The side drawer now lists every service icon (Radarr, Prowlarr, Transmission, Lidarr, Jackett, Bazarr, Seerr) under Jellyfin and Sonarr. Their pages are empty placeholders for now ("Coming soon") and will be filled in later updates.
+
+From 2.0.4-beta.9:
 - Side drawer now works properly in Arabic (RTL): it slides in from the right next to the Menu button, closes by swiping toward the edge, and has rounded corners on the side facing the content.
 
 From 2.0.4-beta.8:
