@@ -2787,8 +2787,12 @@ public final class FishbowlActivity extends AppCompatActivity
 
         ImageView icon = new ImageView(this);
         icon.setImageResource(iconRes);
-        icon.setColorFilter(brandColor);
-        int iconSize = dp(24);
+        if (isColorLogoRes(iconRes)) {
+            icon.setTag("logo");
+        } else {
+            icon.setColorFilter(brandColor);
+        }
+        int iconSize = dp(26);
         FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(iconSize, iconSize);
         iconParams.gravity = Gravity.CENTER;
         tile.addView(icon, iconParams);
@@ -2935,7 +2939,9 @@ public final class FishbowlActivity extends AppCompatActivity
             case 3: ring = getDangerColor(); break;
             default: ring = 0; break;
         }
-        if (category == 0) {
+        if ("logo".equals(icon.getTag())) {
+            applyColorLogoState(icon, category != 0);
+        } else if (category == 0) {
             icon.setColorFilter(AppTheme.textMuted());
             icon.setAlpha(0.45f);
         } else {
@@ -2993,14 +2999,14 @@ public final class FishbowlActivity extends AppCompatActivity
     private int getServiceIconRes(String serviceId) {
         if (serviceId == null) return R.drawable.ic_service_jellyfin;
         switch (serviceId.toLowerCase(Locale.ROOT)) {
-            case "radarr":       return R.drawable.ic_service_radarr;
-            case "sonarr":       return R.drawable.ic_service_sonarr;
-            case "prowlarr":     return R.drawable.ic_service_prowlarr;
+            case "radarr":       return R.drawable.logo_radarr;
+            case "sonarr":       return R.drawable.logo_sonarr;
+            case "prowlarr":     return R.drawable.logo_prowlarr;
             case "jackett":
             case "jkt":
-            case "jk":           return R.drawable.ic_service_jackett;
-            case "transmission": return R.drawable.ic_service_transmission;
-            case "bazarr":       return R.drawable.ic_service_bazarr;
+            case "jk":           return R.drawable.logo_jackett;
+            case "transmission": return R.drawable.logo_transmission;
+            case "bazarr":       return R.drawable.logo_bazarr;
             case "jellyfin":
             default:             return R.drawable.ic_service_jellyfin;
         }
@@ -4327,9 +4333,28 @@ public final class FishbowlActivity extends AppCompatActivity
 
     private static final int PLACEHOLDER_TAB_BASE = 10;
     private static final String[] PLACEHOLDER_NAMES = {"Radarr", "Prowlarr", "Transmission", "Jackett", "Bazarr"};
-    private static final int[] PLACEHOLDER_ICONS = {R.drawable.ic_service_radarr, R.drawable.ic_service_prowlarr,
-            R.drawable.ic_service_transmission, R.drawable.ic_service_jackett,
-            R.drawable.ic_service_bazarr};
+    private static final int[] PLACEHOLDER_ICONS = {R.drawable.logo_radarr, R.drawable.logo_prowlarr,
+            R.drawable.logo_transmission, R.drawable.logo_jackett,
+            R.drawable.logo_bazarr};
+
+    /** True for the full-colour original service logos (PNG); they are never tinted. */
+    private static boolean isColorLogoRes(int res) {
+        return res == R.drawable.logo_radarr || res == R.drawable.logo_sonarr || res == R.drawable.logo_prowlarr
+                || res == R.drawable.logo_jackett || res == R.drawable.logo_transmission || res == R.drawable.logo_bazarr;
+    }
+
+    /** Colour logo: full colour when active, desaturated and faded when off. */
+    private static void applyColorLogoState(ImageView iv, boolean active) {
+        if (active) {
+            iv.clearColorFilter();
+            iv.setAlpha(1f);
+        } else {
+            android.graphics.ColorMatrix cm = new android.graphics.ColorMatrix();
+            cm.setSaturation(0f);
+            iv.setColorFilter(new android.graphics.ColorMatrixColorFilter(cm));
+            iv.setAlpha(0.4f);
+        }
+    }
     private View cachedPlaceholderView;
     private ImageView placeholderIcon;
     private TextView placeholderTitle;
@@ -4442,7 +4467,7 @@ public final class FishbowlActivity extends AppCompatActivity
         sideDrawerItems.removeAllViews();
         addDrawerItem(5, R.drawable.ic_service_jellyfin, "Jellyfin Library");
         if (isMediaStackEnabled()) {
-            addDrawerItem(6, R.drawable.ic_service_sonarr, "Sonarr");
+            addDrawerItem(6, R.drawable.logo_sonarr, "Sonarr");
             View sep = new View(this);
             sep.setBackgroundColor(AppTheme.outline());
             LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(28), dp(1));
@@ -4463,7 +4488,7 @@ public final class FishbowlActivity extends AppCompatActivity
         item.setFocusable(true);
         item.setContentDescription(description);
         ImageView icon = new ImageView(this);
-        icon.setTag("icon");
+        icon.setTag(isColorLogoRes(iconRes) ? "logo" : "icon");
         icon.setImageResource(iconRes);
         FrameLayout.LayoutParams ilp = new FrameLayout.LayoutParams(dp(26), dp(26));
         ilp.gravity = Gravity.CENTER;
@@ -5397,7 +5422,11 @@ public final class FishbowlActivity extends AppCompatActivity
 
         ImageView iconView = new ImageView(this);
         iconView.setImageResource(getServiceIconRes(id));
-        iconView.setColorFilter(iconTintColor);
+        if (isColorLogoRes(getServiceIconRes(id))) {
+            applyColorLogoState(iconView, tileCategory(svc.getState()) != 0);
+        } else {
+            iconView.setColorFilter(iconTintColor);
+        }
         top.addView(iconView, new LinearLayout.LayoutParams(dp(22), dp(22)));
 
         View spIcon = new View(this);
@@ -5575,7 +5604,7 @@ public final class FishbowlActivity extends AppCompatActivity
 
         ImageView icon = new ImageView(this);
         icon.setImageResource(getServiceIconRes(id));
-        icon.setColorFilter(getServiceBrandColor(id));
+        if (!isColorLogoRes(getServiceIconRes(id))) icon.setColorFilter(getServiceBrandColor(id));
         headerRow.addView(icon, new LinearLayout.LayoutParams(dp(32), dp(32)));
 
         View spH = new View(this);

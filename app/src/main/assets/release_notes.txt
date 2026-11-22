@@ -1,4 +1,7 @@
-What's new in 2.0.4-beta.11 (beta)
+What's new in 2.0.4-beta.12 (beta)
+- Service logos are now the original full-colour logos (Sonarr, Radarr, Prowlarr, Jackett, Transmission, Bazarr) on Home, the side drawer and service cards. Logos are grey and faded when the service is off.
+
+From 2.0.4-beta.11:
 - Swipe from the screen edge (left edge in English, right edge in Arabic) to open the side drawer; swipe back to close it.
 - Seerr and Lidarr were removed from the app completely (services, widget, storage, settings, licences). The drawer now lists Radarr, Prowlarr, Transmission, Jackett and Bazarr.
 - Home service logos now show their state: faded grey when off, brand-coloured logo with a yellow ring while starting, green ring when running, red ring when failed.
