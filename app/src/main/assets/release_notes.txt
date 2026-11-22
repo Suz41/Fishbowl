@@ -1,4 +1,8 @@
-What's new in 2.0.4-beta.7 (beta)
+What's new in 2.0.4-beta.8 (beta)
+- New icon-only side drawer: the Jellyfin Library and Sonarr tabs moved out of the bottom bar. Tap the new Menu icon in the bottom bar to slide the drawer in (tap outside, swipe left or press Back to close it).
+- Update bar fix: the download / install bar at the top is no longer hidden under the phone's status bar.
+
+From 2.0.4-beta.7:
 - Sonarr tab is now a full Sonarr client (inspired by nzb360):
   - SERIES: browse your library with posters, filter, open any series (seasons and episodes), monitor / unmonitor series, seasons and episodes, SEARCH / REFRESH / RESCAN, delete downloaded episode files, delete a series (optionally with files).
   - ADD: search TheTVDB and add a series (root folder, quality profile, monitor mode, series type, season folders, search for missing).

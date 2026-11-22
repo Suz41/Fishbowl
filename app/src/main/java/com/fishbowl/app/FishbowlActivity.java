@@ -722,6 +722,10 @@ public final class FishbowlActivity extends AppCompatActivity
 
     @Override
     public void onBackPressed() {
+        if (sideDrawerOpen) {
+            closeSideDrawer();
+            return;
+        }
         if (activeTab == 5 && libraryTabView != null && libraryTabView.onBack()) {
             return;
         }
@@ -772,9 +776,8 @@ public final class FishbowlActivity extends AppCompatActivity
 
             statusBarInsetTop = statusBarInset.top;
             statusBarInsetBottom = navBarInset.bottom;
-            if (headerBar != null) {
-                headerBar.setPadding(dp(20), statusBarInset.top + dp(10), dp(20), dp(10));
-            }
+            applyTopInsets();
+            applyDrawerInsets(statusBarInset.top, navBarInset.bottom);
             if (bottomNavLayout != null) {
                 bottomNavLayout.setPadding(dp(8), dp(8), dp(8), navBarInset.bottom + dp(8));
             }
@@ -786,9 +789,23 @@ public final class FishbowlActivity extends AppCompatActivity
         });
     }
 
+    private boolean isUpdateBannerShown() {
+        return updateBannerBar != null && updateBannerBar.getVisibility() == View.VISIBLE;
+    }
+
+    /** The update bar sits at the very top, so while it is visible IT owns the status-bar inset. */
+    private void applyTopInsets() {
+        boolean banner = isUpdateBannerShown();
+        if (updateBannerBar != null) updateBannerBar.setPadding(0, banner ? statusBarInsetTop : 0, 0, 0);
+        if (headerBar != null) {
+            headerBar.setPadding(dp(20), (banner ? 0 : statusBarInsetTop) + dp(10), dp(20), dp(10));
+        }
+        updateContentInsetsForTab();
+    }
+
     private void updateContentInsetsForTab() {
         if (contentContainer == null) return;
-        if (activeTab == 0) {
+        if (activeTab == 0 || isUpdateBannerShown()) {
             contentContainer.setPadding(0, 0, 0, 0);
         } else {
             contentContainer.setPadding(0, statusBarInsetTop > 0 ? statusBarInsetTop : dp(24), 0, 0);
@@ -918,7 +935,10 @@ public final class FishbowlActivity extends AppCompatActivity
         // Initial tab render
         renderActiveTab();
 
-        return rootLayout;
+        FrameLayout shell = new FrameLayout(this);
+        shell.addView(rootLayout, new FrameLayout.LayoutParams(-1, -1));
+        buildSideDrawer(shell);
+        return shell;
     }
 
     private View buildHeaderBar() {
@@ -980,10 +1000,9 @@ public final class FishbowlActivity extends AppCompatActivity
     /** Material 3 navigation bar, ordered by what you do: control the server (Home), watch
      *  (Library), search missing episodes (Sonarr), acquire (Media: services + downloads), inspect (Activity), configure (Settings). */
     private void populateNavTabs(LinearLayout nav) {
+        addNavTab(nav, -1, R.drawable.ic_menu, "Menu");
         addNavTab(nav, 0, R.drawable.ic_home, "Home");
-        addNavTab(nav, 5, R.drawable.ic_service_jellyfin, "Library");
         if (isMediaStackEnabled()) {
-            addNavTab(nav, 6, R.drawable.ic_service_sonarr, "Sonarr");
             addNavTab(nav, 1, R.drawable.ic_services, "Media");
         }
         addNavTab(nav, 2, R.drawable.ic_activity, "Activity");
@@ -999,6 +1018,10 @@ public final class FishbowlActivity extends AppCompatActivity
         tab.setFocusable(true);
         tab.setContentDescription(label);
         tab.setOnClickListener(v -> {
+            if (tabIndex == -1) {
+                toggleSideDrawer();
+                return;
+            }
             if (activeTab != tabIndex) {
                 final long t0 = SystemClock.elapsedRealtime();
                 activeTab = tabIndex;
@@ -1035,6 +1058,7 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private void updateBottomNavSelection() {
+        updateDrawerSelection();
         if (bottomNavLayout == null) return;
         for (int i = 0; i < bottomNavLayout.getChildCount(); i++) {
             View child = bottomNavLayout.getChildAt(i);
@@ -1046,7 +1070,7 @@ public final class FishbowlActivity extends AppCompatActivity
             Object tagVal = tab.getTag();
             int tabIndex = (tagVal instanceof Integer) ? (Integer) tagVal : i;
 
-            boolean selected = (tabIndex == activeTab);
+            boolean selected = (tabIndex == activeTab) || (tabIndex == -1 && (activeTab == 5 || activeTab == 6));
             if (pill != null) {
                 pill.setBackground(createRoundedDrawable(selected ? AppTheme.accentContainer() : Color.TRANSPARENT, dp(16)));
                 pill.setScaleX(selected ? 1f : 0.85f);
@@ -4228,7 +4252,120 @@ public final class FishbowlActivity extends AppCompatActivity
         if (bottomNavLayout == null) return;
         bottomNavLayout.removeAllViews();
         populateNavTabs(bottomNavLayout);
+        rebuildDrawerItems();
         updateBottomNavSelection();
+    }
+
+    // -- Icon-only side drawer (Library / Sonarr), opened from the "Menu" item of the bottom bar ----
+
+    private FrameLayout sideDrawerScrim;
+    private LinearLayout sideDrawerPanel;
+    private boolean sideDrawerOpen = false;
+
+    private void buildSideDrawer(FrameLayout shell) {
+        sideDrawerScrim = new FrameLayout(this);
+        sideDrawerScrim.setBackgroundColor(0x99000000);
+        sideDrawerScrim.setVisibility(View.GONE);
+        sideDrawerScrim.setAlpha(0f);
+        sideDrawerScrim.setOnClickListener(v -> closeSideDrawer());
+        shell.addView(sideDrawerScrim, new FrameLayout.LayoutParams(-1, -1));
+
+        sideDrawerPanel = new LinearLayout(this);
+        sideDrawerPanel.setOrientation(LinearLayout.VERTICAL);
+        sideDrawerPanel.setGravity(Gravity.CENTER_HORIZONTAL);
+        sideDrawerPanel.setBackground(createBorderedRoundedDrawable(AppTheme.card(), AppTheme.outline(), dp(1), 0));
+        sideDrawerPanel.setPadding(0, dp(24), 0, dp(24));
+        sideDrawerPanel.setVisibility(View.GONE);
+        sideDrawerPanel.setClickable(true);
+        sideDrawerPanel.setElevation(dp(12));
+        final float[] downX = new float[1];
+        sideDrawerPanel.setOnTouchListener((v, ev) -> {
+            if (ev.getAction() == android.view.MotionEvent.ACTION_DOWN) downX[0] = ev.getRawX();
+            else if (ev.getAction() == android.view.MotionEvent.ACTION_MOVE && ev.getRawX() - downX[0] < -dp(36)) {
+                closeSideDrawer();
+                return true;
+            }
+            return false;
+        });
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dp(68), -1);
+        plp.gravity = Gravity.START;
+        shell.addView(sideDrawerPanel, plp);
+        rebuildDrawerItems();
+    }
+
+    private void applyDrawerInsets(int top, int bottom) {
+        if (sideDrawerPanel != null) sideDrawerPanel.setPadding(0, top + dp(24), 0, bottom + dp(24));
+    }
+
+    private void rebuildDrawerItems() {
+        if (sideDrawerPanel == null) return;
+        sideDrawerPanel.removeAllViews();
+        addDrawerItem(5, R.drawable.ic_service_jellyfin, "Jellyfin Library");
+        if (isMediaStackEnabled()) addDrawerItem(6, R.drawable.ic_service_sonarr, "Sonarr");
+        updateDrawerSelection();
+    }
+
+    private void addDrawerItem(final int tabIndex, int iconRes, String description) {
+        FrameLayout item = new FrameLayout(this);
+        item.setTag(tabIndex);
+        item.setClickable(true);
+        item.setFocusable(true);
+        item.setContentDescription(description);
+        ImageView icon = new ImageView(this);
+        icon.setTag("icon");
+        icon.setImageResource(iconRes);
+        FrameLayout.LayoutParams ilp = new FrameLayout.LayoutParams(dp(26), dp(26));
+        ilp.gravity = Gravity.CENTER;
+        item.addView(icon, ilp);
+        item.setOnClickListener(v -> {
+            closeSideDrawer();
+            if (activeTab != tabIndex) {
+                activeTab = tabIndex;
+                updateBottomNavSelection();
+                renderActiveTab();
+            }
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(52), dp(52));
+        lp.bottomMargin = dp(10);
+        sideDrawerPanel.addView(item, lp);
+    }
+
+    private void updateDrawerSelection() {
+        if (sideDrawerPanel == null) return;
+        for (int i = 0; i < sideDrawerPanel.getChildCount(); i++) {
+            View c = sideDrawerPanel.getChildAt(i);
+            boolean sel = c.getTag() instanceof Integer && (Integer) c.getTag() == activeTab;
+            c.setBackground(createRoundedDrawable(sel ? AppTheme.accentContainer() : Color.TRANSPARENT, dp(16)));
+            ImageView ic = c.findViewWithTag("icon");
+            if (ic != null) ic.setColorFilter(sel ? AppTheme.onAccentContainer() : AppTheme.textSecondary());
+        }
+    }
+
+    private void toggleSideDrawer() {
+        if (sideDrawerOpen) closeSideDrawer(); else openSideDrawer();
+    }
+
+    private void openSideDrawer() {
+        if (sideDrawerPanel == null || sideDrawerOpen) return;
+        sideDrawerOpen = true;
+        updateDrawerSelection();
+        sideDrawerScrim.setVisibility(View.VISIBLE);
+        sideDrawerPanel.setVisibility(View.VISIBLE);
+        sideDrawerPanel.setTranslationX(-dp(68));
+        sideDrawerScrim.animate().alpha(1f).setDuration(200).start();
+        sideDrawerPanel.animate().translationX(0f).setDuration(220)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+    }
+
+    private void closeSideDrawer() {
+        if (sideDrawerPanel == null || !sideDrawerOpen) return;
+        sideDrawerOpen = false;
+        sideDrawerScrim.animate().alpha(0f).setDuration(180).withEndAction(() -> {
+            if (!sideDrawerOpen) sideDrawerScrim.setVisibility(View.GONE);
+        }).start();
+        sideDrawerPanel.animate().translationX(-dp(68)).setDuration(180).withEndAction(() -> {
+            if (!sideDrawerOpen) sideDrawerPanel.setVisibility(View.GONE);
+        }).start();
     }
 
     public static class DiagnosticItem {
@@ -13929,6 +14066,7 @@ public final class FishbowlActivity extends AppCompatActivity
         close.setOnClickListener(v -> {
             updateBannerDismissed = true;
             updateBannerBar.setVisibility(View.GONE);
+            applyTopInsets();
         });
         row.addView(close, new LinearLayout.LayoutParams(dp(40), dp(34)));
         updateBannerBar.addView(row);
@@ -13942,6 +14080,11 @@ public final class FishbowlActivity extends AppCompatActivity
 
     /** Shows download percent, then an install button; remains visible until the user taps X. */
     private void refreshUpdateBanner() {
+        refreshUpdateBannerInner();
+        applyTopInsets();
+    }
+
+    private void refreshUpdateBannerInner() {
         if (updateBannerBar == null) return;
         UpdateManager mgr = UpdateManager.getInstance(this);
         UpdateManager.State st = mgr.getCurrentState();
