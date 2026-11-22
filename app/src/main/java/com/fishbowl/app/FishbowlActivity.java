@@ -4273,7 +4273,7 @@ public final class FishbowlActivity extends AppCompatActivity
         sideDrawerPanel = new LinearLayout(this);
         sideDrawerPanel.setOrientation(LinearLayout.VERTICAL);
         sideDrawerPanel.setGravity(Gravity.CENTER_HORIZONTAL);
-        sideDrawerPanel.setBackground(createBorderedRoundedDrawable(AppTheme.card(), AppTheme.outline(), dp(1), 0));
+        sideDrawerPanel.setBackground(drawerBackground());
         sideDrawerPanel.setPadding(0, dp(24), 0, dp(24));
         sideDrawerPanel.setVisibility(View.GONE);
         sideDrawerPanel.setClickable(true);
@@ -4281,7 +4281,8 @@ public final class FishbowlActivity extends AppCompatActivity
         final float[] downX = new float[1];
         sideDrawerPanel.setOnTouchListener((v, ev) -> {
             if (ev.getAction() == android.view.MotionEvent.ACTION_DOWN) downX[0] = ev.getRawX();
-            else if (ev.getAction() == android.view.MotionEvent.ACTION_MOVE && ev.getRawX() - downX[0] < -dp(36)) {
+            else if (ev.getAction() == android.view.MotionEvent.ACTION_MOVE
+                    && (ev.getRawX() - downX[0]) * drawerOffscreenSign() > dp(36)) {
                 closeSideDrawer();
                 return true;
             }
@@ -4291,6 +4292,28 @@ public final class FishbowlActivity extends AppCompatActivity
         plp.gravity = Gravity.START;
         shell.addView(sideDrawerPanel, plp);
         rebuildDrawerItems();
+    }
+
+    private boolean isRtlLayout() {
+        return getResources().getConfiguration().getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+    }
+
+    /** Direction the drawer slides toward when hidden: -1 = off the left edge (LTR), +1 = off the right edge (RTL). */
+    private int drawerOffscreenSign() {
+        return isRtlLayout() ? 1 : -1;
+    }
+
+    /** Card-coloured panel whose rounded corners and hairline face the content, in both LTR and RTL. */
+    private android.graphics.drawable.Drawable drawerBackground() {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(AppTheme.card());
+        float r = dp(20);
+        // corner order: top-left, top-right, bottom-right, bottom-left (x,y pairs)
+        g.setCornerRadii(isRtlLayout()
+                ? new float[]{r, r, 0, 0, 0, 0, r, r}
+                : new float[]{0, 0, r, r, r, r, 0, 0});
+        g.setStroke(dp(1), AppTheme.outline());
+        return g;
     }
 
     private void applyDrawerInsets(int top, int bottom) {
@@ -4351,7 +4374,7 @@ public final class FishbowlActivity extends AppCompatActivity
         updateDrawerSelection();
         sideDrawerScrim.setVisibility(View.VISIBLE);
         sideDrawerPanel.setVisibility(View.VISIBLE);
-        sideDrawerPanel.setTranslationX(-dp(68));
+        sideDrawerPanel.setTranslationX(drawerOffscreenSign() * dp(68));
         sideDrawerScrim.animate().alpha(1f).setDuration(200).start();
         sideDrawerPanel.animate().translationX(0f).setDuration(220)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
@@ -4363,7 +4386,7 @@ public final class FishbowlActivity extends AppCompatActivity
         sideDrawerScrim.animate().alpha(0f).setDuration(180).withEndAction(() -> {
             if (!sideDrawerOpen) sideDrawerScrim.setVisibility(View.GONE);
         }).start();
-        sideDrawerPanel.animate().translationX(-dp(68)).setDuration(180).withEndAction(() -> {
+        sideDrawerPanel.animate().translationX(drawerOffscreenSign() * dp(68)).setDuration(180).withEndAction(() -> {
             if (!sideDrawerOpen) sideDrawerPanel.setVisibility(View.GONE);
         }).start();
     }
