@@ -1,4 +1,13 @@
-What's new in 2.0.4-beta.6 (beta)
+What's new in 2.0.4-beta.7 (beta)
+- Sonarr tab is now a full Sonarr client (inspired by nzb360):
+  - SERIES: browse your library with posters, filter, open any series (seasons and episodes), monitor / unmonitor series, seasons and episodes, SEARCH / REFRESH / RESCAN, delete downloaded episode files, delete a series (optionally with files).
+  - ADD: search TheTVDB and add a series (root folder, quality profile, monitor mode, series type, season folders, search for missing).
+  - INTERACTIVE SEARCH: pick and grab a specific release for an episode or a whole season.
+  - CALENDAR, QUEUE (live progress, remove / blocklist), HISTORY, WANTED (search one or all missing).
+  - SYSTEM: version, health warnings, disk space, root folders (add / remove), quality profiles, indexers, download clients, RSS sync / refresh / rescan / backup.
+  - AUTO: the automatic missing-episode search is still there.
+
+From 2.0.4-beta.6:
 - Update bar at the top of the app: while an update downloads it shows the live percentage; when ready it shows an INSTALL button. It stays on screen until you close it with the X.
 
 From 2.0.4-beta.5:
