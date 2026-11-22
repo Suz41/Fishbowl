@@ -33,7 +33,7 @@ class ServiceHealthMonitor @JvmOverloads constructor(
      *
      * - Transmission: Returns 409 Conflict as a standard CSRF token challenge on its RPC/web endpoint,
      *   which confirms the daemon is active, listening, and responsive. 200..399 are also considered READY.
-     * - Other services (Jellyfin, Radarr, Sonarr, Prowlarr, Seerr, Bazarr, Lidarr, Jackett):
+     * - Other services (Jellyfin, Radarr, Sonarr, Prowlarr, Bazarr, Jackett):
      *   Require HTTP 200..399 to be considered READY.
      *   HTTP 401 (Unauthorized) indicates the API is responding but requires authentication; it is NOT READY.
      *   HTTP 409 on non-Transmission services indicates a conflict error; it is NOT READY.

@@ -42,7 +42,6 @@ object DashboardPresenter {
     @JvmStatic
     fun getServiceBrandColor(serviceId: String?): Int {
         if (serviceId == null) return -1
-        if ("SRR" == serviceId) return parseHexColor("#CCFBFA")
 
         return when (serviceId.lowercase(Locale.ROOT)) {
             "radarr", "rrr" -> parseHexColor("#FF9E20")
@@ -50,9 +49,7 @@ object DashboardPresenter {
             "prowlarr", "prr" -> parseHexColor("#FFFC8C")
             "jackett", "jkt", "jk" -> parseHexColor("#F97316")
             "transmission", "trr" -> parseHexColor("#FF788D")
-            "seerr", "srr", "se", "see" -> parseHexColor("#55A9A0")
             "bazarr", "brr", "bzr" -> parseHexColor("#5D9253")
-            "lidarr", "lrr", "ldr" -> parseHexColor("#769826")
             "flaresolverr", "flr" -> parseHexColor("#34D399")
             "jellyfin", "jfn", "jf" -> parseHexColor("#AB03A9")
             else -> -1

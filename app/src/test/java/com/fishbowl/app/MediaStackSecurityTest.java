@@ -19,9 +19,6 @@ import java.util.Set;
  * Automated security & lifecycle tests for Fishbowl Media Stack subsystem:
  * - Test 1: Strict allowlist directory deletion (preserves unknown/custom directories in services/).
  * - Test 2: TrustedNetworks configuration sanitization enforces loopback-only trust and rejects public/LAN wildcards.
- * - Test 3: Seerr settings.json sanitization generates secure API key and enforces CSRF and proxy security.
- * - Test 4: Seerr settings.json sanitization backs up empty files and restores default secure configuration.
- * - Test 5: Seerr settings.json sanitization preserves malformed JSON, backing up to .corrupted.bak without overwriting.
  * - Test 6: LMK service recovery enforces bounded retries (< 3) and resets counter after confirmed health.
  */
 public class MediaStackSecurityTest {
@@ -75,7 +72,7 @@ public class MediaStackSecurityTest {
         jellyfinDir.mkdirs();
 
         Set<String> allowedCompanions = new HashSet<>(Arrays.asList(
-                "radarr", "sonarr", "prowlarr", "jackett", "transmission", "transmission-daemon", "seerr", "jellyseerr", "bazarr", "lidarr"
+                "radarr", "sonarr", "prowlarr", "jackett", "transmission", "transmission-daemon", "bazarr"
         ));
 
         // Simulate strict cleanup
@@ -107,58 +104,6 @@ public class MediaStackSecurityTest {
         Assert.assertTrue("Must contain IPv4 localhost loopback", trustedNetworks.contains("127.0.0.1/32"));
         Assert.assertTrue("Must contain 192.168.0.0/16 for local LAN auto auth", trustedNetworks.contains("192.168."));
         Assert.assertTrue("Must contain 10.0.0.0/8 for tethering auto auth", trustedNetworks.contains("10.0.0.0"));
-    }
-
-    @Test
-    public void testSanitizeSeerrConfigCreatesDefaultSecureSettings() throws Exception {
-        File seerrConfig = new File(configDir, "seerr_new");
-        seerrConfig.mkdirs();
-
-        MediaServiceManager.sanitizeSeerrConfig(seerrConfig);
-
-        File settingsJson = new File(seerrConfig, "settings.json");
-        Assert.assertTrue("settings.json should be created", settingsJson.exists());
-
-        String content = MediaServiceManager.readTextFile(settingsJson);
-        Assert.assertNotNull(content);
-        Assert.assertTrue("Should contain apiKey", content.contains("\"apiKey\""));
-        Assert.assertTrue("Should contain applicationTitle", content.contains("Fishbowl Requests"));
-        Assert.assertTrue("Should disable trustProxy", content.contains("\"trustProxy\": false") || content.contains("\"trustProxy\":false"));
-        Assert.assertTrue("Should enable csrfProtection", content.contains("\"csrfProtection\": true") || content.contains("\"csrfProtection\":true"));
-    }
-
-    @Test
-    public void testSanitizeSeerrConfigBacksUpAndRestoresEmptyFile() throws Exception {
-        File seerrConfig = new File(configDir, "seerr_empty");
-        seerrConfig.mkdirs();
-        File emptySettings = new File(seerrConfig, "settings.json");
-        emptySettings.createNewFile();
-
-        MediaServiceManager.sanitizeSeerrConfig(seerrConfig);
-
-        File emptyBak = new File(seerrConfig, "settings.json.empty.bak");
-        Assert.assertTrue("Empty backup file must be created", emptyBak.exists());
-
-        String content = MediaServiceManager.readTextFile(emptySettings);
-        Assert.assertTrue("settings.json must be populated with defaults", content.contains("Fishbowl Requests"));
-    }
-
-    @Test
-    public void testSanitizeSeerrConfigProtectsMalformedJsonWithoutOverwriting() throws Exception {
-        File seerrConfig = new File(configDir, "seerr_corrupt");
-        seerrConfig.mkdirs();
-        File corruptSettings = new File(seerrConfig, "settings.json");
-        String brokenJson = "{\"main\": { corrupt invalid json content without closing tags...";
-        MediaServiceManager.writeTextFile(corruptSettings, brokenJson);
-
-        MediaServiceManager.sanitizeSeerrConfig(seerrConfig);
-
-        File corruptBak = new File(seerrConfig, "settings.json.corrupted.bak");
-        Assert.assertTrue("Corrupted backup file must be created", corruptBak.exists());
-
-        // CRITICAL: Original settings.json must NOT be overwritten!
-        String currentContent = new String(java.nio.file.Files.readAllBytes(corruptSettings.toPath()), StandardCharsets.UTF_8);
-        Assert.assertEquals("Malformed settings.json must be preserved verbatim without overwrite", brokenJson, currentContent);
     }
 
     @Test

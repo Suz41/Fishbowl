@@ -67,9 +67,7 @@ public class FishbowlServicesWidgetProvider extends AppWidgetProvider {
 
             // Row 2: Secondary Companion Services & Download Client
             new ServiceEntry("transmission", R.id.svc_container_transmission, R.id.svc_tile_transmission, R.id.svc_icon_transmission, R.id.svc_dot_transmission, 9091, "#FF788D", true),
-            new ServiceEntry("seerr",        R.id.svc_container_seerr,        R.id.svc_tile_seerr,        R.id.svc_icon_seerr,        R.id.svc_dot_seerr,        5055, "#55A9A0", true),
             new ServiceEntry("bazarr",       R.id.svc_container_bazarr,       R.id.svc_tile_bazarr,       R.id.svc_icon_bazarr,       R.id.svc_dot_bazarr,       6767, "#5D9253", true),
-            new ServiceEntry("lidarr",       R.id.svc_container_lidarr,       R.id.svc_tile_lidarr,       R.id.svc_icon_lidarr,       R.id.svc_dot_lidarr,       8686, "#769826", true)
     };
 
     @Override

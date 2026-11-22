@@ -1027,12 +1027,8 @@ public final class UpdateManager {
                 "Current release up to date (.NET 10 ARM64 Torznab multi-tracker provider)."));
         list.add(new ServiceVersionInfo("transmission", "Transmission", "4.1.4", "4.1.4", false,
                 "Active native BitTorrent client v4.1.4 up to date."));
-        list.add(new ServiceVersionInfo("seerr", "Seerr Discovery", "2.2.0", "2.2.0", false,
-                "Node.js 22 LTS runtime request engine active."));
         list.add(new ServiceVersionInfo("bazarr", "Bazarr", "1.4.3", "1.4.3", false,
                 "Python 3.12 Bionic runtime supervisor active."));
-        list.add(new ServiceVersionInfo("lidarr", "Lidarr", "2.8.2", "2.8.2", false,
-                "Current release up to date (.NET 10 ARM64)."));
         return list;
     }
 

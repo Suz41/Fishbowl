@@ -1,5 +1,10 @@
-What's new in 2.0.4-beta.10 (beta)
-- The side drawer now lists every service icon (Radarr, Prowlarr, Transmission, Lidarr, Jackett, Bazarr, Seerr) under Jellyfin and Sonarr. Their pages are empty placeholders for now ("Coming soon") and will be filled in later updates.
+What's new in 2.0.4-beta.11 (beta)
+- Swipe from the screen edge (left edge in English, right edge in Arabic) to open the side drawer; swipe back to close it.
+- Seerr and Lidarr were removed from the app completely (services, widget, storage, settings, licences). The drawer now lists Radarr, Prowlarr, Transmission, Jackett and Bazarr.
+- Home service logos now show their state: faded grey when off, brand-coloured logo with a yellow ring while starting, green ring when running, red ring when failed.
+
+From 2.0.4-beta.10:
+- The side drawer now lists every service icon (Radarr, Prowlarr, Transmission, Lidarr, Jackett, Bazarr, Seerr; Lidarr and Seerr were removed in beta.11) under Jellyfin and Sonarr. Their pages are empty placeholders for now ("Coming soon") and will be filled in later updates.
 
 From 2.0.4-beta.9:
 - Side drawer now works properly in Arabic (RTL): it slides in from the right next to the Menu button, closes by swiping toward the edge, and has rounded corners on the side facing the content.

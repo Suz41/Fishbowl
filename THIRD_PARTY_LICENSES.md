@@ -20,8 +20,6 @@ In accordance with Section 6 of the GNU General Public License v3.0 (*Conveying 
 | **Prowlarr** | `1.21.2` (ARM64) | [Prowlarr/Prowlarr](https://github.com/Prowlarr/Prowlarr) | GNU GPLv3 |
 | **Jackett** | `0.22.x` (ARM64) | [Jackett/Jackett](https://github.com/Jackett/Jackett) | GNU GPLv2 |
 | **Transmission Daemon** | `4.1.4` (ARM64 Bionic) | [transmission/transmission](https://github.com/transmission/transmission) | GNU GPLv2 / GPLv3 |
-| **Seerr (Jellyseerr)** | `2.2.0` (ARM64) | [fallenbagel/jellyseerr](https://github.com/fallenbagel/jellyseerr) | MIT License |
-| **Lidarr** | `2.9.6` (ARM64) | [Lidarr/Lidarr](https://github.com/Lidarr/Lidarr) | GNU GPLv3 |
 | **SQLite3 Database Engine** | `3.46.1` (`libe_sqlite3.so`) | [sqlite/sqlite](https://sqlite.org) | Public Domain |
 | **Fontconfig Engine** | `2.15.0` (`libfontconfig.so`) | [fontconfig/fontconfig](https://gitlab.freedesktop.org/fontconfig/fontconfig) | MIT / Permissive |
 | **FreeType Font Engine** | `2.13.2` (`libfreetype.so`) | [freetype/freetype](https://freetype.org) | FreeType License (FTL) |
@@ -49,20 +47,16 @@ In accordance with Section 6 of the GNU General Public License v3.0 (*Conveying 
 - **License:** GNU General Public License v2.0 (GPLv2)
 - **Source:** <https://github.com/Jackett/Jackett>
 
-### Servarr Automation Stack (Radarr, Sonarr, Prowlarr, Lidarr)
-- **Copyright:** (c) 2010–2026 Sonarr, Radarr, Prowlarr, and Lidarr Contributors
+### Servarr Automation Stack (Radarr, Sonarr, Prowlarr)
+- **Copyright:** (c) 2010–2026 Sonarr, Radarr, and Prowlarr Contributors
 - **License:** GNU General Public License v3.0 (GPLv3)
-- **Source:** <https://github.com/Radarr/Radarr>, <https://github.com/Sonarr/Sonarr>, <https://github.com/Prowlarr/Prowlarr>, <https://github.com/Lidarr/Lidarr>
+- **Source:** <https://github.com/Radarr/Radarr>, <https://github.com/Sonarr/Sonarr>, <https://github.com/Prowlarr/Prowlarr>
 
 ### Transmission BitTorrent Client
 - **Copyright:** (c) 2005–2026 Transmission Project and Contributors
 - **License:** GNU General Public License v2.0 / v3.0
 - **Source:** <https://github.com/transmission/transmission>
 
-### Seerr (Jellyseerr)
-- **Copyright:** (c) 2021–2026 Fallenbagel, Overseerr Contributors
-- **License:** MIT License
-- **Source:** <https://github.com/fallenbagel/jellyseerr>
 
 ### Termux Subsystems & Shared Libraries
 - **Copyright:** (c) Fredrik Fornwall and Termux Contributors

@@ -189,7 +189,7 @@
 
     </LinearLayout>
 
-    <!-- Row 2: Secondary Companion Services (Transmission, Seerr, Bazarr, Lidarr + Spacer) -->
+    <!-- Row 2: Secondary Companion Services (Transmission, Bazarr + Spacers) -->
     <LinearLayout
         android:id="@+id/svc_row_2"
         android:layout_width="match_parent"
@@ -233,40 +233,6 @@
             </FrameLayout>
         </LinearLayout>
 
-        <!-- 7. Seerr -->
-        <LinearLayout
-            android:id="@+id/svc_container_seerr"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_margin="2dp"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical">
-
-            <FrameLayout
-                android:id="@+id/svc_tile_seerr"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@drawable/widget_service_tile_bg">
-
-                <ImageView
-                    android:id="@+id/svc_icon_seerr"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_service_seerr" />
-
-                <ImageView
-                    android:id="@+id/svc_dot_seerr"
-                    android:layout_width="5dp"
-                    android:layout_height="5dp"
-                    android:layout_gravity="top|end"
-                    android:layout_marginEnd="4dp"
-                    android:layout_marginTop="4dp"
-                    android:src="@drawable/widget_status_dot_red" />
-            </FrameLayout>
-        </LinearLayout>
-
         <!-- 8. Bazarr -->
         <LinearLayout
             android:id="@+id/svc_container_bazarr"
@@ -301,43 +267,16 @@
             </FrameLayout>
         </LinearLayout>
 
-        <!-- 9. Lidarr -->
-        <LinearLayout
-            android:id="@+id/svc_container_lidarr"
+        <!-- 10. Spacer FrameLayout to preserve 5-column alignment -->
+        <FrameLayout
+            android:id="@+id/svc_container_spacer"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_margin="2dp"
             android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical">
+            android:visibility="invisible" />
 
-            <FrameLayout
-                android:id="@+id/svc_tile_lidarr"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@drawable/widget_service_tile_bg">
-
-                <ImageView
-                    android:id="@+id/svc_icon_lidarr"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_service_lidarr" />
-
-                <ImageView
-                    android:id="@+id/svc_dot_lidarr"
-                    android:layout_width="5dp"
-                    android:layout_height="5dp"
-                    android:layout_gravity="top|end"
-                    android:layout_marginEnd="4dp"
-                    android:layout_marginTop="4dp"
-                    android:src="@drawable/widget_status_dot_red" />
-            </FrameLayout>
-        </LinearLayout>
-
-        <!-- 10. Spacer FrameLayout to preserve 5-column alignment -->
         <FrameLayout
-            android:id="@+id/svc_container_spacer"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_margin="2dp"

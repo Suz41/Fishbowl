@@ -39,7 +39,7 @@ import java.net.InetAddress;
 
 /**
  * Phase 12: Playback & Streaming Performance Hardened Jellyfin Activity.
- * Also supports generic in-app service Web UI loading (Radarr, Sonarr, Prowlarr, Transmission, Seerr).
+ * Also supports generic in-app service Web UI loading (Radarr, Sonarr, Prowlarr, Transmission).
  */
 public final class JellyfinWebActivity extends AppCompatActivity implements JellyfinController.Listener {
 
@@ -441,9 +441,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
             else if (customUrl.contains(":8989")) serviceId = "sonarr";
             else if (customUrl.contains(":9696")) serviceId = "prowlarr";
             else if (customUrl.contains(":9091")) serviceId = "transmission";
-            else if (customUrl.contains(":5055")) serviceId = "seerr";
             else if (customUrl.contains(":6767")) serviceId = "bazarr";
-            else if (customUrl.contains(":8686")) serviceId = "lidarr";
             else if (customUrl.contains(":9117")) serviceId = "jackett";
         }
 

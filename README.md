@@ -26,7 +26,7 @@ Fishbowl hosts Jellyfin Server 12.4.0 directly on ARM64 Android hardware using M
 
 - **Unprivileged Execution:** Runs entirely in standard user space without requiring root or unlocked bootloaders.
 - **Native .NET 10 Engine:** Optimized ARM64 JIT compilation tailored for Android Bionic runtime environments.
-- **Integrated Automation Stack:** Modular lifecycle management for Radarr, Sonarr, Prowlarr, Jackett, Transmission, Bazarr, Seerr, and Lidarr.
+- **Integrated Automation Stack:** Modular lifecycle management for Radarr, Sonarr, Prowlarr, Jackett, Transmission, and Bazarr.
 - **Hardware-Backed Protection:** Authenticated AES-256-GCM credential encryption via AndroidKeyStore.
 - **Crash-Resilient Storage:** Safe atomic transactions, non-destructive quarantine with 7-day retention, and PRAGMA integrity-validated backups.
 - **Zero Cloud Reliance:** 100% offline, local-network operational, with zero telemetry or tracking.
@@ -46,8 +46,6 @@ All daemons bind to loopback and the active local LAN interface:
 | **Jackett** | `9117` | .NET 10.0 ARM64 | Torznab indexer translator |
 | **Transmission** | `9091` | Native C (Bionic) | Lightweight BitTorrent client |
 | **Bazarr** | `6767` | Python 3.14 | Subtitle downloader and synchronizer |
-| **Seerr** | `5055` | Node.js LTS | Media discovery and requests portal |
-| **Lidarr** | `8686` | .NET 10.0 ARM64 | Music library automation |
 
 ---
 
@@ -131,10 +129,9 @@ cd Fishbowl
 Fishbowl is made possible by the dedicated work of the open-source community:
 
 - **[Jellyfin Project](https://jellyfin.org):** For the free software media system and cross-platform streaming server.
-- **[Servarr Community](https://wiki.servarr.com):** For Radarr, Sonarr, Prowlarr, and Lidarr media collection managers.
+- **[Servarr Community](https://wiki.servarr.com):** For Radarr, Sonarr, and Prowlarr media collection managers.
 - **[Transmission Project](https://transmissionbt.com):** For the fast, lightweight, and resource-efficient BitTorrent daemon.
 - **[Bazarr Project](https://www.bazarr.media):** For the subtitle management and synchronization engine.
-- **[Jellyseerr Project](https://github.com/Fallenbagel/jellyseerr):** For the discovery and media request management portal.
 - **[Jackett Project](https://github.com/Jackett/Jackett):** For the Torznab proxy translation services.
 - **[Termux Project](https://termux.dev):** For foundational Android userland and POSIX terminal execution tooling.
 - **[Microsoft .NET](https://dotnet.microsoft.com):** For high-performance ARM64 Linux and Android runtime environments.

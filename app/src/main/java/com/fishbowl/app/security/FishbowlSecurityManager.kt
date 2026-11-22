@@ -84,14 +84,6 @@ object FishbowlSecurityManager {
             roleDescription = "High-performance BitTorrent download client with RPC control"
         ),
         ServiceSecurityProfile(
-            serviceId = "seerr",
-            displayName = "Jellyseerr Media Discovery",
-            defaultPort = 5055,
-            defaultPath = "/",
-            authMode = "Jellyfin SSO / Local Admin",
-            roleDescription = "Interactive media request, discovery, and recommendation portal"
-        ),
-        ServiceSecurityProfile(
             serviceId = "bazarr",
             displayName = "Bazarr Subtitle Companion",
             defaultPort = 6767,
@@ -106,14 +98,6 @@ object FishbowlSecurityManager {
             defaultPath = "/",
             authMode = "Admin API Key",
             roleDescription = "Legacy torrent tracker scraper and indexer bridge"
-        ),
-        ServiceSecurityProfile(
-            serviceId = "lidarr",
-            displayName = "Lidarr Music Automator",
-            defaultPort = 8686,
-            defaultPath = "/",
-            authMode = "API Key & Web Forms Auth",
-            roleDescription = "Music album tracking, downloading, and library organization"
         )
     )
 

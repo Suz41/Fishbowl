@@ -34,7 +34,7 @@ import java.util.Set;
  *
  * Keeps Fishbowl media server process alive across all Android devices & OEMs.
  * Holds PARTIAL_WAKE_LOCK as long as ANY service (Jellyfin, Transmission, Radarr,
- * Sonarr, Prowlarr, Seerr) is running or active.
+ * Sonarr, Prowlarr) is running or active.
  * Activity does not own service lifetime.
  */
 public class JellyfinServerService extends Service implements JellyfinController.Listener, MediaServiceManager.ServiceListener {

@@ -2730,7 +2730,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (!isMovieStreamerModeEnabled() && isMediaStackEnabled()) {
             MediaServiceManager mgr = MediaServiceManager.getInstance(this);
             String[] preferredOrder = new String[] {
-                    "radarr", "sonarr", "prowlarr", "jackett", "transmission", "seerr", "bazarr", "lidarr"
+                    "radarr", "sonarr", "prowlarr", "jackett", "transmission", "bazarr"
             };
             for (String sid : preferredOrder) {
                 ManagedService s = mgr.getService(sid);
@@ -2870,25 +2870,25 @@ public final class FishbowlActivity extends AppCompatActivity
             ImageView jIcon = serviceTileMap.get("jellyfin");
             if (jIcon != null) {
                 JellyfinController.State js = controller != null ? controller.getState() : JellyfinController.State.STOPPED;
-                int jColor;
+                int jCat;
                 switch (js) {
                     case RUNNING:
-                        jColor = getServiceBrandColor("jellyfin");
+                        jCat = 2;
                         break;
                     case STARTING:
                     case INITIALIZING:
-                        jColor = getWarningColor();
+                        jCat = 1;
                         break;
                     case CRASHED:
                     case FAILED:
                     case CRASH_LOOP:
-                        jColor = getDangerColor();
+                        jCat = 3;
                         break;
                     default:
-                        jColor = AppTheme.text();
+                        jCat = 0;
                         break;
                 }
-                jIcon.setColorFilter(jColor);
+                applyTileState(jIcon, jCat, getServiceBrandColor("jellyfin"));
             }
 
             // Other Services Tiles (Brand-colored typography glyphs)
@@ -2896,10 +2896,64 @@ public final class FishbowlActivity extends AppCompatActivity
                 if ("jellyfin".equalsIgnoreCase(s.getId())) continue;
                 ImageView icon = serviceTileMap.get(s.getId());
                 if (icon != null) {
-                    icon.setColorFilter(getServiceBrandTintColor(s.getId(), s.getState()));
+                    applyTileState(icon, tileCategory(s.getState()), getServiceBrandColor(s.getId()));
                 }
             }
         });
+    }
+
+    /** 0 = off, 1 = starting, 2 = running OK, 3 = failed. */
+    private int tileCategory(com.fishbowl.app.model.ServiceState state) {
+        if (state == null) return 0;
+        switch (state) {
+            case RUNNING:
+            case API_READY:
+                return 2;
+            case STARTING:
+            case PROCESS_READY:
+            case SOCKET_READY:
+            case RECOVERING:
+            case INSTALLING:
+            case UPDATING:
+                return 1;
+            case FAILED:
+            case ERROR:
+            case CRASH_LOOP_PROTECTION:
+            case UNHEALTHY:
+                return 3;
+            default:
+                return 0;
+        }
+    }
+
+    /** Home logo state: faded grey when off; brand-coloured logo inside a yellow / green / red ring otherwise. */
+    private void applyTileState(ImageView icon, int category, int brand) {
+        int ring;
+        switch (category) {
+            case 1: ring = getWarningColor(); break;
+            case 2: ring = AppTheme.success(); break;
+            case 3: ring = getDangerColor(); break;
+            default: ring = 0; break;
+        }
+        if (category == 0) {
+            icon.setColorFilter(AppTheme.textMuted());
+            icon.setAlpha(0.45f);
+        } else {
+            icon.setColorFilter(brand);
+            icon.setAlpha(1f);
+        }
+        View tile = icon.getParent() instanceof View ? (View) icon.getParent() : null;
+        if (tile == null) return;
+        if (category == 0) {
+            tile.setBackground(null);
+        } else {
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            g.setColor((ring & 0x00FFFFFF) | 0x26000000);
+            g.setStroke(dp(2), ring);
+            tile.setBackground(g);
+            tile.setElevation(category == 1 ? dp(2) : dp(3));
+        }
     }
 
     private int getServiceStateTintColor(com.fishbowl.app.model.ServiceState state) {
@@ -2946,9 +3000,7 @@ public final class FishbowlActivity extends AppCompatActivity
             case "jkt":
             case "jk":           return R.drawable.ic_service_jackett;
             case "transmission": return R.drawable.ic_service_transmission;
-            case "seerr":        return R.drawable.ic_service_seerr;
             case "bazarr":       return R.drawable.ic_service_bazarr;
-            case "lidarr":       return R.drawable.ic_service_lidarr;
             case "jellyfin":
             default:             return R.drawable.ic_service_jellyfin;
         }
@@ -4041,8 +4093,8 @@ public final class FishbowlActivity extends AppCompatActivity
         // Determine service tag from line or fallback
         String serviceTag = defaultServiceTag;
         if (line.startsWith("[JELLYFIN]") || line.startsWith("[RADARR]") || line.startsWith("[SONARR]")
-                || line.startsWith("[PROWLARR]") || line.startsWith("[JACKETT]") || line.startsWith("[TRANSMISSION]") || line.startsWith("[SEERR]")
-                || line.startsWith("[BAZARR]") || line.startsWith("[LIDARR]")) {
+                || line.startsWith("[PROWLARR]") || line.startsWith("[JACKETT]") || line.startsWith("[TRANSMISSION]")
+                || line.startsWith("[BAZARR]")) {
             int endTag = line.indexOf(']');
             if (endTag > 0) {
                 serviceTag = line.substring(1, endTag).toUpperCase(Locale.ROOT);
@@ -4274,10 +4326,10 @@ public final class FishbowlActivity extends AppCompatActivity
     private boolean sideDrawerOpen = false;
 
     private static final int PLACEHOLDER_TAB_BASE = 10;
-    private static final String[] PLACEHOLDER_NAMES = {"Radarr", "Prowlarr", "Transmission", "Lidarr", "Jackett", "Bazarr", "Seerr"};
+    private static final String[] PLACEHOLDER_NAMES = {"Radarr", "Prowlarr", "Transmission", "Jackett", "Bazarr"};
     private static final int[] PLACEHOLDER_ICONS = {R.drawable.ic_service_radarr, R.drawable.ic_service_prowlarr,
-            R.drawable.ic_service_transmission, R.drawable.ic_service_lidarr, R.drawable.ic_service_jackett,
-            R.drawable.ic_service_bazarr, R.drawable.ic_service_seerr};
+            R.drawable.ic_service_transmission, R.drawable.ic_service_jackett,
+            R.drawable.ic_service_bazarr};
     private View cachedPlaceholderView;
     private ImageView placeholderIcon;
     private TextView placeholderTitle;
@@ -4438,6 +4490,63 @@ public final class FishbowlActivity extends AppCompatActivity
             ImageView ic = c.findViewWithTag("icon");
             if (ic != null) ic.setColorFilter(sel ? AppTheme.onAccentContainer() : AppTheme.textSecondary());
         }
+    }
+
+    private float edgeDownX, edgeDownY;
+    private boolean edgeTracking = false;
+
+    /** Edge swipe: drag inward from the screen's start edge (left in LTR, right in RTL) to open the drawer; swipe back to close. */
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        try {
+            if (sideDrawerPanel != null) {
+                int w = getResources().getDisplayMetrics().widthPixels;
+                int slop = android.view.ViewConfiguration.get(this).getScaledTouchSlop();
+                boolean rtl = isRtlLayout();
+                switch (ev.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN: {
+                        float x = ev.getRawX();
+                        boolean atEdge = rtl ? x >= w - dp(24) : x <= dp(24);
+                        edgeTracking = sideDrawerOpen || atEdge;
+                        edgeDownX = x;
+                        edgeDownY = ev.getRawY();
+                        break;
+                    }
+                    case android.view.MotionEvent.ACTION_MOVE: {
+                        if (!edgeTracking) break;
+                        float dx = ev.getRawX() - edgeDownX;
+                        float dy = ev.getRawY() - edgeDownY;
+                        if (Math.abs(dx) > slop * 3 && Math.abs(dx) > Math.abs(dy) * 2) {
+                            boolean inward = rtl ? dx < 0 : dx > 0;
+                            edgeTracking = false;
+                            if (!sideDrawerOpen && inward) {
+                                openSideDrawer();
+                                android.view.MotionEvent c = android.view.MotionEvent.obtain(ev);
+                                c.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                                super.dispatchTouchEvent(c);
+                                c.recycle();
+                                return true;
+                            } else if (sideDrawerOpen && !inward) {
+                                closeSideDrawer();
+                                android.view.MotionEvent c = android.view.MotionEvent.obtain(ev);
+                                c.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                                super.dispatchTouchEvent(c);
+                                c.recycle();
+                                return true;
+                            }
+                        }
+                        break;
+                    }
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        edgeTracking = false;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return super.dispatchTouchEvent(ev);
     }
 
     private void toggleSideDrawer() {
@@ -5688,15 +5797,6 @@ public final class FishbowlActivity extends AppCompatActivity
         } else if ("transmission".equalsIgnoreCase(id)) {
             credVal = "Username: fishbowl  |  Password: fishbowl";
             copyCredVal = "User: fishbowl | Password: fishbowl";
-        } else if ("seerr".equalsIgnoreCase(id)) {
-            String seerrKey = MediaServiceManager.getInstance(this).getServiceApiKey("seerr");
-            if (seerrKey != null && !seerrKey.trim().isEmpty()) {
-                credVal = "API Key: " + seerrKey + "\n(Or Jellyfin SSO Admin user)";
-                copyCredVal = seerrKey;
-            } else {
-                credVal = "Jellyfin Single Sign-On (Admin user)";
-                copyCredVal = "http://127.0.0.1:5055";
-            }
         } else {
             String apiKey = MediaServiceManager.getInstance(this).getServiceApiKey(id);
             if (apiKey != null && !apiKey.isEmpty()) {
@@ -5773,8 +5873,6 @@ public final class FishbowlActivity extends AppCompatActivity
             mediaTargetDir = MediaStorageManager.getInstance(this).getMoviesDir();
         } else if ("sonarr".equalsIgnoreCase(id)) {
             mediaTargetDir = MediaStorageManager.getInstance(this).getTvDir();
-        } else if ("lidarr".equalsIgnoreCase(id)) {
-            mediaTargetDir = MediaStorageManager.getInstance(this).getMusicDir();
         } else if ("transmission".equalsIgnoreCase(id)) {
             mediaTargetDir = MediaStorageManager.getInstance(this).getDownloadsDir();
         } else if ("jellyfin".equalsIgnoreCase(id)) {
@@ -6365,7 +6463,7 @@ public final class FishbowlActivity extends AppCompatActivity
         // 4. Runtime Environment Check
         File prefix = TermuxConstants.TERMUX_PREFIX_DIR;
         String id = svc.getId().toLowerCase(Locale.ROOT);
-        if ("radarr".equals(id) || "sonarr".equals(id) || "prowlarr".equals(id) || "lidarr".equals(id) || "jackett".equals(id)) {
+        if ("radarr".equals(id) || "sonarr".equals(id) || "prowlarr".equals(id) || "jackett".equals(id)) {
             File dotnet = new File(prefix, "lib/dotnet/dotnet");
             if (!dotnet.exists()) dotnet = new File(prefix, "bin/dotnet");
             if (dotnet.exists()) {
@@ -6380,13 +6478,6 @@ public final class FishbowlActivity extends AppCompatActivity
                 checks.add("[OK] Runtime: Python 3 Installed");
             } else {
                 checks.add("[WARN] Runtime: Python 3 needed for execution");
-            }
-        } else if ("seerr".equals(id)) {
-            File node = new File(prefix, "bin/node");
-            if (node.exists()) {
-                checks.add("[OK] Runtime: Node.js LTS Installed");
-            } else {
-                checks.add("[OK] Runtime: Embedded Node.js Engine Ready");
             }
         } else if ("transmission".equals(id)) {
             checks.add("[OK] Runtime: Native ARM64 Bionic Ready");
@@ -6925,7 +7016,6 @@ public final class FishbowlActivity extends AppCompatActivity
         if ("radarr".equalsIgnoreCase(id)) return fetchGitHubApiAssetUrl("Radarr/Radarr", "linux-core-arm64.tar.gz");
         if ("sonarr".equalsIgnoreCase(id)) return fetchGitHubApiAssetUrl("Sonarr/Sonarr", "linux-arm64.tar.gz");
         if ("prowlarr".equalsIgnoreCase(id)) return fetchGitHubApiAssetUrl("Prowlarr/Prowlarr", "linux-core-arm64.tar.gz");
-        if ("lidarr".equalsIgnoreCase(id)) return fetchGitHubApiAssetUrl("Lidarr/Lidarr", "linux-core-arm64.tar.gz");
         if ("jackett".equalsIgnoreCase(id)) return fetchGitHubApiAssetUrl("Jackett/Jackett", "LinuxARM64.tar.gz");
         if ("bazarr".equalsIgnoreCase(id)) return fetchGitHubApiAssetUrl("morpheus65535/bazarr", "bazarr.zip");
         return null;
@@ -7681,42 +7771,6 @@ public final class FishbowlActivity extends AppCompatActivity
 
         String id = svc.getId().toLowerCase(Locale.ROOT);
 
-        if ("seerr".equalsIgnoreCase(id)) {
-            File nodeBin = new File(prefix, "bin/node");
-            File libssl = new File(prefix, "lib/libssl.so.3");
-            ensureIcuSymlinks(prefix);
-            ensureLibrarySymlinks(prefix);
-            File libicu79 = new File(prefix, "lib/libicui18n.so.79");
-            File libicu79Full = new File(prefix, "lib/libicui18n.so.79.1");
-            if (!nodeBin.exists() || !libssl.exists() || (!libicu79.exists() && !libicu79Full.exists())) {
-                String[] nodeDeps = {"libc++", "zlib", "openssl", "c-ares", "libicu", "libsqlite", "nodejs-lts"};
-                for (String dep : nodeDeps) {
-                    if (progress != null && progress.isCancelled()) {
-                        throw new InterruptedException("Installation cancelled");
-                    }
-                    downloadAndInstallDebPackage(dep, prefix, progress, "Installing Node.js runtime (" + dep + ")...");
-                }
-                ensureIcuSymlinks(prefix);
-                ensureLibrarySymlinks(prefix);
-                if (nodeBin.exists()) {
-                    nodeBin.setExecutable(true, false);
-                    try { android.system.Os.chmod(nodeBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                }
-            }
-
-            if (progress != null && progress.isCancelled()) {
-                throw new InterruptedException("Installation cancelled");
-            }
-
-            runOnUiThread(() -> {
-                if (progress != null) progress.setMessage(I18n.tr("Deploying Seerr Request Engine..."));
-            });
-            MediaServiceManager.getInstance(this).deploySeerrService(true);
-            MediaServiceManager.getInstance(this).autoWireStack(null);
-            svc.reconcileInstalledState();
-            return;
-        }
-
         if ("bazarr".equalsIgnoreCase(id)) {
             ensurePythonSymlinks(prefix);
             ensureLibrarySymlinks(prefix);
@@ -7835,7 +7889,7 @@ public final class FishbowlActivity extends AppCompatActivity
             return;
         }
 
-        // Servarr applications (.NET 10.0 ARM64): Radarr, Sonarr, Prowlarr, Lidarr, Jackett
+        // Servarr applications (.NET 10.0 ARM64): Radarr, Sonarr, Prowlarr, Jackett
         String downloadUrl;
         if ("sonarr".equalsIgnoreCase(id)) {
             downloadUrl = "https://services.sonarr.tv/v1/download/main/latest?version=4&os=linux&arch=arm64";
@@ -7843,8 +7897,6 @@ public final class FishbowlActivity extends AppCompatActivity
             downloadUrl = "https://prowlarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
         } else if ("radarr".equalsIgnoreCase(id)) {
             downloadUrl = "https://radarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
-        } else if ("lidarr".equalsIgnoreCase(id)) {
-            downloadUrl = "https://lidarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
         } else if ("jackett".equalsIgnoreCase(id)) {
             downloadUrl = "https://github.com/Jackett/Jackett/releases/latest/download/Jackett.Binaries.LinuxARM64.tar.gz";
         } else {
@@ -8661,10 +8713,10 @@ public final class FishbowlActivity extends AppCompatActivity
         TextView what = new TextView(this);
         what.setText("What gets synchronized:\n"
                 + "• Download folders and media library folders (Movies / Series / Music)\n"
-                + "• Transmission as the download client in Radarr, Sonarr and Lidarr\n"
-                + "• Prowlarr/Jackett indexers pushed to Radarr, Sonarr and Lidarr\n"
-                + "• Existing media imported into Radarr / Sonarr / Lidarr\n"
-                + "• API keys, Bazarr subtitles and Seerr links\n\n"
+                + "• Transmission as the download client in Radarr and Sonarr\n"
+                + "• Prowlarr/Jackett indexers pushed to Radarr and Sonarr\n"
+                + "• Existing media imported into Radarr / Sonarr\n"
+                + "• API keys and Bazarr subtitles links\n\n"
                 + "Only services that are installed AND running are synchronized.");
         what.setTextSize(12f);
         what.setTextColor(AppTheme.textSecondary());
@@ -8684,8 +8736,8 @@ public final class FishbowlActivity extends AppCompatActivity
         final Dialog[] dRef = new Dialog[1];
         dRef[0] = showOledDialog("Sync Stack", "Live progress", sv, null, 0, null, "CLOSE", null);
 
-        String[][] known = {{"Transmission","transmission"},{"Radarr","radarr"},{"Sonarr","sonarr"},{"Lidarr","lidarr"},
-                {"Prowlarr","prowlarr"},{"Jackett","jackett"},{"Bazarr","bazarr"},{"Seerr","seerr"}};
+        String[][] known = {{"Transmission","transmission"},{"Radarr","radarr"},{"Sonarr","sonarr"},
+                {"Prowlarr","prowlarr"},{"Jackett","jackett"},{"Bazarr","bazarr"}};
         for (String[] k : known) {
             try {
                 ManagedService svc = mgr.getService(k[1]);
@@ -9568,14 +9620,12 @@ public final class FishbowlActivity extends AppCompatActivity
                 long sonarrBytes = calculateDirSize(new File(servicesDir, "sonarr"));
                 long prowlarrBytes = calculateDirSize(new File(servicesDir, "prowlarr"));
                 long jackettBytes = calculateDirSize(new File(servicesDir, "jackett"));
-                long lidarrBytes = calculateDirSize(new File(servicesDir, "lidarr"));
                 long bazarrBytes = calculateDirSize(new File(servicesDir, "bazarr"));
-                long seerrBytes = calculateDirSize(new File(servicesDir, "seerr"));
 
                 File radarrBak = new File(servicesDir, "radarr.bak");
                 long radarrBakBytes = radarrBak.exists() ? calculateDirSize(radarrBak) : 0;
 
-                long totalBytes = usrBytes + radarrBytes + sonarrBytes + prowlarrBytes + jackettBytes + lidarrBytes + bazarrBytes + seerrBytes + radarrBakBytes;
+                long totalBytes = usrBytes + radarrBytes + sonarrBytes + prowlarrBytes + jackettBytes + bazarrBytes + radarrBakBytes;
 
                 runOnUiThread(() -> {
                     progress.dismiss();
@@ -9629,16 +9679,8 @@ public final class FishbowlActivity extends AppCompatActivity
                         content.addView(createStorageBreakdownItem(AppTheme.warning(), "Jackett (Indexer Proxy)", "/services/jackett", jackettBytes, totalBytes));
                         content.addView(createSettingsDivider());
                     }
-                    if (lidarrBytes > 0) {
-                        content.addView(createStorageBreakdownItem(Color.parseColor("#769826"), "Lidarr (Music Manager)", "/services/lidarr", lidarrBytes, totalBytes));
-                        content.addView(createSettingsDivider());
-                    }
                     if (bazarrBytes > 0) {
                         content.addView(createStorageBreakdownItem(Color.parseColor("#5D9253"), "Bazarr (Subtitles Engine)", "/services/bazarr", bazarrBytes, totalBytes));
-                        content.addView(createSettingsDivider());
-                    }
-                    if (seerrBytes > 0) {
-                        content.addView(createStorageBreakdownItem(Color.parseColor("#55A9A0"), "Seerr (Media Requests)", "/services/seerr", seerrBytes, totalBytes));
                         content.addView(createSettingsDivider());
                     }
 
@@ -9984,7 +10026,7 @@ public final class FishbowlActivity extends AppCompatActivity
         msTextCol.addView(msTitle);
 
         TextView msSub = new TextView(this);
-        msSub.setText("Enable Radarr, Sonarr, Seerr, Prowlarr & companion services. Disable for Jellyfin-only mode to save storage.");
+        msSub.setText("Enable Radarr, Sonarr, Prowlarr & companion services. Disable for Jellyfin-only mode to save storage.");
         msSub.setTextSize(11f);
         msSub.setTextColor(AppTheme.textMuted());
         msSub.setPadding(0, dp(2), 0, 0);
@@ -11942,11 +11984,9 @@ public final class FishbowlActivity extends AppCompatActivity
         content.addView(createSettingsDivider());
         content.addView(buildSpecRow("Termux Android Environment", "Apache License 2.0"));
         content.addView(createSettingsDivider());
-        content.addView(buildSpecRow("Servarr Stack (Radarr/Sonarr/Lidarr/Prowlarr)", "GNU GPL v3.0"));
+        content.addView(buildSpecRow("Servarr Stack (Radarr/Sonarr/Prowlarr)", "GNU GPL v3.0"));
         content.addView(createSettingsDivider());
         content.addView(buildSpecRow("Bazarr Subtitle Manager", "GNU GPL v3.0"));
-        content.addView(createSettingsDivider());
-        content.addView(buildSpecRow("Jellyseerr Media Requests", "MIT License"));
         content.addView(createSettingsDivider());
         content.addView(buildSpecRow("FlareSolverr Cloudflare Proxy", "MIT License"));
         content.addView(createSettingsDivider());
@@ -12012,14 +12052,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 + "Licensed under the GNU General Public License v2.0.\n\n"
                 + "7. Termux Android Environment (Apache-2.0)\n"
                 + "Copyright (c) Termux Open Source Project\n\n"
-                + "8. Servarr Stack (Radarr, Sonarr, Lidarr, Prowlarr) (GPL-3.0)\n"
+                + "8. Servarr Stack (Radarr, Sonarr, Prowlarr) (GPL-3.0)\n"
                 + "Copyright (c) Servarr Development Team\n\n"
                 + "9. Bazarr Subtitles (GPL-3.0)\n"
                 + "Copyright (c) Bazarr Contributors\n"
                 + "Licensed under the GNU General Public License v3.0.\n\n"
-                + "10. Jellyseerr / Overseerr (MIT)\n"
-                + "Copyright (c) Overseerr & Jellyseerr Contributors\n"
-                + "Licensed under the MIT License.\n\n"
                 + "11. FlareSolverr Proxy (MIT)\n"
                 + "Copyright (c) FlareSolverr Contributors\n"
                 + "Licensed under the MIT License.\n\n"

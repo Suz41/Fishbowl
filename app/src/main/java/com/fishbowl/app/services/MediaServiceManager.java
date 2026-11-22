@@ -258,7 +258,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         Log.i(TAG, "[LMKRecovery] Scheduling staggered background cold-start for persisted services: " + active);
         serviceExecutor.execute(() -> {
             try {
-                String[] startOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
+                String[] startOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "bazarr"};
                 for (String sid : startOrder) {
                     if (!active.contains(sid)) continue;
                     try {
@@ -311,7 +311,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             File home = TermuxConstants.TERMUX_HOME_DIR;
             File servicesDir = new File(home, "services");
             Set<String> allowedCompanions = new HashSet<>(Arrays.asList(
-                    "radarr", "sonarr", "prowlarr", "jackett", "transmission", "transmission-daemon", "seerr", "jellyseerr", "bazarr", "lidarr"
+                    "radarr", "sonarr", "prowlarr", "jackett", "transmission", "transmission-daemon", "bazarr"
             ));
             if (servicesDir.exists()) {
                 File[] subs = servicesDir.listFiles();
@@ -331,7 +331,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             File configDir = new File(home, ".config");
             if (configDir.exists()) {
                 String canonicalConfig = configDir.getCanonicalPath();
-                String[] compConfigs = {"radarr", "sonarr", "prowlarr", "jackett", "transmission-daemon", "seerr", "bazarr", "lidarr", "Radarr", "Sonarr", "Prowlarr", "Jackett", "Lidarr"};
+                String[] compConfigs = {"radarr", "sonarr", "prowlarr", "jackett", "transmission-daemon", "bazarr", "Radarr", "Sonarr", "Prowlarr", "Jackett"};
                 for (String c : compConfigs) {
                     File cf = new File(configDir, c);
                     if (cf.exists()) {
@@ -393,8 +393,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     private MediaServiceManager(Context context) {
         this.appContext = context;
         registerDefaultManifests();
-        deploySeerrServiceIfNeeded();
-        deployFpcalcIfNeeded();
         bridgeJellyfinController();
         reconcileRunningServices();
         startDeduplicationWatcher();
@@ -600,28 +598,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         );
         services.put(transmission.getId(), new ManagedService(transmission));
 
-        // 6. Requests: Seerr (Jellyseerr / Overseerr)
-        ServiceManifest seerr = new ServiceManifest(
-                "seerr",
-                "Seerr",
-                "Requests",
-                "2.2.0",
-                "Unified media request, discovery, and library management system for Jellyfin.",
-                5055,
-                "/api/v1/status",
-                "/",
-                new File(home, "services/seerr").getAbsolutePath(),
-                new File(home, "services/seerr/dist/index.js").getAbsolutePath(),
-                new File(home, ".config/seerr").getAbsolutePath(),
-                new File(home, ".config/seerr").getAbsolutePath(),
-                new File(home, ".config/seerr/logs").getAbsolutePath(),
-                "Node.js LTS (ARM64)",
-                false,
-                150,
-                24
-        );
-        services.put(seerr.getId(), new ManagedService(seerr));
-
         // 7. Subtitles: Bazarr (Optional / On-Demand Subtitle Automation)
         ServiceManifest bazarr = new ServiceManifest(
                 "bazarr",
@@ -643,28 +619,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 24
         );
         services.put(bazarr.getId(), new ManagedService(bazarr));
-
-        // 8. Music Automation: Lidarr (Optional / On-Demand Music Manager)
-        ServiceManifest lidarr = new ServiceManifest(
-                "lidarr",
-                "Lidarr",
-                "Music",
-                "2.8.2",
-                "Music collection manager and downloader for Usenet and BitTorrent.",
-                8686,
-                "/api/v1/system/status",
-                "/",
-                new File(home, "services/lidarr").getAbsolutePath(),
-                new File(home, "services/lidarr/Lidarr.dll").getAbsolutePath(),
-                new File(home, ".config/Lidarr").getAbsolutePath(),
-                new File(home, ".config/Lidarr").getAbsolutePath(),
-                new File(home, ".config/Lidarr/logs").getAbsolutePath(),
-                ".NET 10.0 ARM64",
-                false,
-                130,
-                24
-        );
-        services.put(lidarr.getId(), new ManagedService(lidarr));
 
         // 9. Indexers: Jackett (Torrent Tracker Proxy)
         ServiceManifest jackett = new ServiceManifest(
@@ -689,10 +643,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         services.put(jackett.getId(), new ManagedService(jackett));
     }
 
-    public synchronized void deploySeerrServiceIfNeeded() {
-        deploySeerrService(false);
-    }
-
     private byte[] readAssetQuietly(String assetPath) {
         try (java.io.InputStream in = appContext.getAssets().open(assetPath)) {
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
@@ -704,110 +654,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             return baos.toByteArray();
         } catch (Throwable t) {
             return null;
-        }
-    }
-
-    public synchronized void deploySeerrService(boolean forceInstall) {
-        try {
-            File home = TermuxConstants.TERMUX_HOME_DIR;
-            File seerrDist = new File(home, "services/seerr/dist");
-            File targetJs = new File(seerrDist, "index.js");
-            File targetHtml = new File(seerrDist, "index.html");
-
-            // Never auto-deploy on fresh launch unless explicitly requested or already installed
-            if (!forceInstall && !targetJs.exists()) {
-                return;
-            }
-
-            byte[] assetJs = readAssetQuietly("seerr/index.js");
-            byte[] assetHtml = readAssetQuietly("seerr/index.html");
-
-            boolean jsNeedsUpdate = assetJs != null && (forceInstall || !targetJs.exists() || targetJs.length() != assetJs.length);
-            boolean htmlNeedsUpdate = assetHtml != null && (forceInstall || !targetHtml.exists() || targetHtml.length() != assetHtml.length);
-
-            if (jsNeedsUpdate || htmlNeedsUpdate) {
-                seerrDist.mkdirs();
-                File configDir = new File(home, ".config/seerr");
-                configDir.mkdirs();
-
-                if (assetJs != null) {
-                    try (java.io.FileOutputStream out = new java.io.FileOutputStream(targetJs)) {
-                        out.write(assetJs);
-                    }
-                }
-                if (assetHtml != null) {
-                    try (java.io.FileOutputStream out = new java.io.FileOutputStream(targetHtml)) {
-                        out.write(assetHtml);
-                    }
-                }
-                Log.d(TAG, "Seerr service & modern UI assets successfully deployed to: " + seerrDist.getAbsolutePath());
-                ManagedService seerr = services.get("seerr");
-                if (seerr != null && seerr.isRunning()) {
-                    stopService("seerr");
-                    mainHandler.postDelayed(() -> startService("seerr"), 1000);
-                }
-            }
-
-            ManagedService seerr = services.get("seerr");
-            if (seerr != null) {
-                seerr.reconcileInstalledState();
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to deploy Seerr service from assets", e);
-        }
-    }
-
-    public synchronized void deployFpcalcIfNeeded() {
-        try {
-            File prefix = TermuxConstants.TERMUX_PREFIX_DIR;
-            File prefixBin = new File(prefix, "bin");
-            if (!prefixBin.exists()) prefixBin.mkdirs();
-            File targetPrefix = new File(prefixBin, "fpcalc");
-
-            File home = TermuxConstants.TERMUX_HOME_DIR;
-            File lidarrDir = new File(home, "services/lidarr");
-            File targetLidarr = new File(lidarrDir, "fpcalc");
-
-            byte[] assetBytes = null;
-            try (java.io.InputStream in = appContext.getAssets().open("fpcalc")) {
-                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                byte[] buf = new byte[8192];
-                int r;
-                while ((r = in.read(buf)) != -1) {
-                    baos.write(buf, 0, r);
-                }
-                assetBytes = baos.toByteArray();
-            } catch (Throwable t) {
-                Log.w(TAG, "Could not read fpcalc asset: " + t.getMessage());
-            }
-
-            if (assetBytes != null && assetBytes.length > 0) {
-                if (!targetPrefix.exists() || targetPrefix.length() != assetBytes.length) {
-                    try (FileOutputStream out = new FileOutputStream(targetPrefix)) {
-                        out.write(assetBytes);
-                    }
-                    targetPrefix.setExecutable(true, false);
-                    targetPrefix.setReadable(true, false);
-                    try {
-                        android.system.Os.chmod(targetPrefix.getAbsolutePath(), 0755);
-                    } catch (Throwable ignored) {}
-                    Log.i(TAG, "Deployed fpcalc binary to: " + targetPrefix.getAbsolutePath());
-                }
-
-                if (lidarrDir.exists() && (!targetLidarr.exists() || targetLidarr.length() != assetBytes.length)) {
-                    try (FileOutputStream out = new FileOutputStream(targetLidarr)) {
-                        out.write(assetBytes);
-                    }
-                    targetLidarr.setExecutable(true, false);
-                    targetLidarr.setReadable(true, false);
-                    try {
-                        android.system.Os.chmod(targetLidarr.getAbsolutePath(), 0755);
-                    } catch (Throwable ignored) {}
-                    Log.i(TAG, "Deployed fpcalc binary to: " + targetLidarr.getAbsolutePath());
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to deploy fpcalc from assets", e);
         }
     }
 
@@ -1168,7 +1014,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                             "-p", String.valueOf(port)
                     );
                 } else if (targetDllOrBin.getName().endsWith(".dll")) {
-                    // Servarr .NET application (Radarr, Sonarr, Prowlarr, Lidarr)
+                    // Servarr .NET application (Radarr, Sonarr, Prowlarr)
                     prepareServarrRuntimeConfig(targetDllOrBin);
 
                     if (dotnet.exists()) {
@@ -1185,7 +1031,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                             "--data=" + dataDir.getAbsolutePath()
                     );
                 } else if (targetDllOrBin.getName().endsWith(".js")) {
-                    // Node.js application (Seerr)
+                    // Node.js application
                     File nodeBin = new File(prefix, "bin/node");
                     if (!nodeBin.exists()) {
                         ms.setLastError("NOT_INSTALLED: Node.js runtime not found in " + prefix.getAbsolutePath() + "/bin");
@@ -1291,14 +1137,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 if ("transmission".equalsIgnoreCase(id)) {
                     env.put("TRANSMISSION_WEB_HOME", new File(prefix, "share/transmission/public_html").getAbsolutePath());
                 }
-                if ("seerr".equalsIgnoreCase(id)) {
-                    env.put("PORT", String.valueOf(ms.getManifest().getDefaultPort()));
-                    env.put("CONFIG_DIRECTORY", configDir.getAbsolutePath());
-                    env.put("NODE_ENV", "production");
-                    env.put("OPENSSL_CONF", "/dev/null");
-                    env.put("SSL_CERT_FILE", new File(prefix, "etc/tls/cert.pem").getAbsolutePath());
-                    env.put("NODE_OPTIONS", "--max-old-space-size=256");
-                }
                 if ("bazarr".equalsIgnoreCase(id)) {
                     env.put("PYTHONOPTIMIZE", "1");
                     env.put("PYTHONUNBUFFERED", "1");
@@ -1312,9 +1150,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 } else if ("prowlarr".equalsIgnoreCase(id)) {
                     env.put("PROWLARR__SERVER__ALLOWEDHOSTS", "*");
                     env.put("PROWLARR__SERVER__TRUSTEDNETWORKS", "127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12");
-                } else if ("lidarr".equalsIgnoreCase(id)) {
-                    env.put("LIDARR__SERVER__ALLOWEDHOSTS", "*");
-                    env.put("LIDARR__SERVER__TRUSTEDNETWORKS", "127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12");
                 } else if ("jackett".equalsIgnoreCase(id)) {
                     env.put("JACKETT_PORT", String.valueOf(port));
                     env.put("JACKETT_DATA_FOLDER", dataDir.getAbsolutePath());
@@ -2023,8 +1858,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         if ("bazarr".equalsIgnoreCase(id)) {
             killProcessByPattern("bazarr");
             killProcessByPattern("main.py");
-        } else if ("seerr".equalsIgnoreCase(id)) {
-            killProcessByPattern("seerr");
         }
     }
 
@@ -2214,9 +2047,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             } else if ("prowlarr".equalsIgnoreCase(serviceId)) {
                 killProcessByPattern("Prowlarr.dll");
                 killProcessByPattern("prowlarr");
-            } else if ("lidarr".equalsIgnoreCase(serviceId)) {
-                killProcessByPattern("Lidarr.dll");
-                killProcessByPattern("lidarr");
             } else if ("jackett".equalsIgnoreCase(serviceId)) {
                 killProcessByPattern("jackett");
                 killProcessByPattern("Jackett.dll");
@@ -2226,9 +2056,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 killProcessByPattern("main.py");
             } else if ("transmission".equalsIgnoreCase(serviceId)) {
                 killProcessByPattern("transmission-daemon");
-            } else if ("seerr".equalsIgnoreCase(serviceId)) {
-                killProcessByPattern("seerr");
-                killProcessByPattern("dist/index.js");
             }
         }
 
@@ -2260,8 +2087,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
 
     public int reclaimAllZombiePorts() {
         int reclaimedCount = 0;
-        int[] ports = {8096, 7878, 8989, 9696, 9117, 9091, 5055, 6767, 8686};
-        String[] ids = {"jellyfin", "radarr", "sonarr", "prowlarr", "jackett", "transmission", "seerr", "bazarr", "lidarr"};
+        int[] ports = {8096, 7878, 8989, 9696, 9117, 9091, 6767};
+        String[] ids = {"jellyfin", "radarr", "sonarr", "prowlarr", "jackett", "transmission", "bazarr"};
         for (int i = 0; i < ports.length; i++) {
             int port = ports[i];
             String id = ids[i];
@@ -2448,7 +2275,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             File configDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/" + baseName);
             if (!configDir.exists()) configDir.mkdirs();
             File configXml = new File(configDir, "config.xml");
-            int servarrPort = "radarr".equalsIgnoreCase(baseName) ? 7878 : ("sonarr".equalsIgnoreCase(baseName) ? 8989 : ("lidarr".equalsIgnoreCase(baseName) ? 8686 : 9696));
+            int servarrPort = "radarr".equalsIgnoreCase(baseName) ? 7878 : ("sonarr".equalsIgnoreCase(baseName) ? 8989 : 9696);
             if (configXml.exists()) {
                 sanitizeConfigXml(configXml);
             } else {
@@ -2458,9 +2285,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             // 7. Ensure FFmpeg & FFProbe wrappers are deployed and dynamic libs symlinked
             deployFfmpegWrappersAndSymlinks(parent);
 
-            if ("lidarr".equalsIgnoreCase(baseName)) {
-                deployFpcalcIfNeeded();
-            }
 
             // 8. Ensure appsettings.json has FFOptions.BinaryFolder configured
             ensureServarrAppSettings(configDir);
@@ -2581,11 +2405,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             sanitizeTransmissionConfig(new File(home, ".config/transmission-daemon"));
             return;
         }
-        if ("seerr".equalsIgnoreCase(serviceId)) {
-            File seerrConfigDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/seerr");
-            sanitizeSeerrConfig(seerrConfigDir);
-            return;
-        }
         if ("bazarr".equalsIgnoreCase(serviceId)) {
             File bazarrConfigDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/bazarr");
             sanitizeBazarrConfig(bazarrConfigDir);
@@ -2601,7 +2420,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         if ("radarr".equalsIgnoreCase(serviceId)) { baseName = "Radarr"; port = 7878; }
         else if ("sonarr".equalsIgnoreCase(serviceId)) { baseName = "Sonarr"; port = 8989; }
         else if ("prowlarr".equalsIgnoreCase(serviceId)) { baseName = "Prowlarr"; port = 9696; }
-        else if ("lidarr".equalsIgnoreCase(serviceId)) { baseName = "Lidarr"; port = 8686; }
         if (baseName != null) {
             File configDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/" + baseName);
             if (!configDir.exists()) configDir.mkdirs();
@@ -2611,76 +2429,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             } else {
                 createInitialConfigXml(configXml, baseName, port);
             }
-        }
-    }
-
-    public static void sanitizeSeerrConfig(File seerrConfigDir) {
-        if (seerrConfigDir == null) return;
-        try {
-            if (!seerrConfigDir.exists()) seerrConfigDir.mkdirs();
-            File settingsJson = new File(seerrConfigDir, "settings.json");
-            if (!settingsJson.exists()) {
-                org.json.JSONObject root = new org.json.JSONObject();
-                org.json.JSONObject main = new org.json.JSONObject();
-                main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
-                main.put("applicationTitle", "Jellyarr Requests");
-                main.put("applicationUrl", "http://127.0.0.1:5055");
-                main.put("trustProxy", false);
-                main.put("csrfProtection", true);
-                root.put("main", main);
-                writeTextFile(settingsJson, root.toString(2));
-                Log.i(TAG, "[ConfigSanitizer] Created new Seerr settings.json with secure API credentials.");
-                return;
-            }
-
-            String text = readTextFile(settingsJson);
-            if (text == null || text.trim().isEmpty()) {
-                File emptyBak = new File(seerrConfigDir, "settings.json.empty.bak");
-                copyFile(settingsJson, emptyBak);
-                org.json.JSONObject root = new org.json.JSONObject();
-                org.json.JSONObject main = new org.json.JSONObject();
-                main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
-                main.put("applicationTitle", "Jellyarr Requests");
-                main.put("applicationUrl", "http://127.0.0.1:5055");
-                main.put("trustProxy", false);
-                main.put("csrfProtection", true);
-                root.put("main", main);
-                writeTextFile(settingsJson, root.toString(2));
-                Log.w(TAG, "[ConfigSanitizer] Empty Seerr settings.json detected; backed up and initialized defaults.");
-                return;
-            }
-
-            org.json.JSONObject root;
-            try {
-                root = new org.json.JSONObject(text);
-            } catch (Throwable parseError) {
-                // Malformed JSON: NEVER overwrite malformed user configuration!
-                File corruptedBak = new File(seerrConfigDir, "settings.json.corrupted.bak");
-                copyFile(settingsJson, corruptedBak);
-                Log.e(TAG, "[ConfigSanitizer] WARNING: Seerr settings.json is malformed JSON! Preserving original file. Backup created: " +
-                        corruptedBak.getName() + ". Error: " + parseError.getMessage());
-                return;
-            }
-
-            File bak = new File(seerrConfigDir, "settings.json.bak");
-            copyFile(settingsJson, bak);
-
-            org.json.JSONObject main = root.optJSONObject("main");
-            if (main == null) {
-                main = new org.json.JSONObject();
-                root.put("main", main);
-            }
-            if (!main.has("apiKey") || main.optString("apiKey", "").trim().isEmpty()) {
-                main.put("apiKey", java.util.UUID.randomUUID().toString().replace("-", ""));
-            }
-            main.put("applicationTitle", "Jellyarr Requests");
-            main.put("applicationUrl", "http://127.0.0.1:5055");
-            main.put("trustProxy", false);
-            main.put("csrfProtection", true);
-            writeTextFile(settingsJson, root.toString(2));
-            Log.i(TAG, "[ConfigSanitizer] Sanitized Seerr settings.json with secure API authentication.");
-        } catch (Throwable t) {
-            Log.w(TAG, "[ConfigSanitizer] Error sanitizing Seerr config: " + t.getMessage());
         }
     }
 
@@ -3267,12 +3015,12 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     /**
      * Starts all installed services in dependency order:
      * 1. Jellyfin (via JellyfinController) 2. Prowlarr 3. Radarr 4. Sonarr
-     * 5. Transmission 6. Seerr
+     * 5. Transmission 6. Bazarr
      */
     public void startAllServices() {
         serviceExecutor.execute(() -> {
             ensureForegroundServiceActive();
-            String[] startOrder = {"jellyfin", "transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
+            String[] startOrder = {"jellyfin", "transmission", "prowlarr", "jackett", "radarr", "sonarr", "bazarr"};
             for (String id : startOrder) {
                 ManagedService svc = services.get(id);
                 if (svc != null && svc.isEnabled() && !svc.isBlocked() && svc.isInstalled() && !svc.isRunning()) {
@@ -3316,13 +3064,13 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     }
 
     /**
-     * Starts ONLY companion media stack services (Radarr, Sonarr, Prowlarr, Transmission, Seerr, Bazarr).
+     * Starts ONLY companion media stack services (Radarr, Sonarr, Prowlarr, Transmission, Bazarr).
      * Strictly does NOT start Jellyfin core server.
      */
     public void startCompanionServices() {
         serviceExecutor.execute(() -> {
             ensureForegroundServiceActive();
-            String[] startOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
+            String[] startOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "bazarr"};
             for (String id : startOrder) {
                 ManagedService svc = services.get(id);
                 if (svc != null && svc.isEnabled() && !svc.isBlocked() && svc.isInstalled() && !svc.isRunning()) {
@@ -3344,7 +3092,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
      * Strictly does NOT stop Jellyfin core server.
      */
     public void stopCompanionServices() {
-        for (String cid : new String[]{"transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"}) {
+        for (String cid : new String[]{"transmission", "prowlarr", "jackett", "radarr", "sonarr", "bazarr"}) {
             recordServiceActive(cid, false);
         }
         serviceExecutor.execute(() -> {
@@ -3385,7 +3133,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             }
 
             // 2. Selectively restore only companion services present in targetIds
-            String[] companionOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "lidarr", "seerr", "bazarr"};
+            String[] companionOrder = {"transmission", "prowlarr", "jackett", "radarr", "sonarr", "bazarr"};
             for (String id : companionOrder) {
                 if (!targetIds.contains(id)) continue;
                 ManagedService svc = services.get(id);
@@ -3456,12 +3204,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     ok = wireProwlarr(log);
                 } else if ("transmission".equalsIgnoreCase(serviceId)) {
                     ok = wireTransmission(log);
-                } else if ("lidarr".equalsIgnoreCase(serviceId)) {
-                    ok = wireLidarr(log);
                 } else if ("bazarr".equalsIgnoreCase(serviceId)) {
                     ok = wireBazarr(log);
-                } else if ("seerr".equalsIgnoreCase(serviceId)) {
-                    ok = wireSeerr(log);
                 } else if ("jackett".equalsIgnoreCase(serviceId)) {
                     ok = wireJackett(log);
                 }
@@ -4154,70 +3898,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         }
     }
 
-    public boolean wireLidarr(StringBuilder log) {
-        if (!isPortOccupied(8686)) {
-            log.append("[SKIP] Lidarr is not running (Port 8686 offline)\n");
-            return false;
-        }
-        String lidarrKey = getServiceApiKey("lidarr");
-        if (lidarrKey == null) {
-            log.append("[FAIL] Could not read Lidarr API key\n");
-            return false;
-        }
-        File music = MediaStorageManager.getInstance(appContext).getMusicDir();
-        if (!music.exists()) music.mkdirs();
-
-        deployFpcalcIfNeeded();
-
-        // 1. Root folder configuration
-        if (!hasRootFolder(8686, lidarrKey, music.getAbsolutePath())) {
-            String rootPayload = "{\"name\":\"Music\",\"path\":\"" + music.getAbsolutePath() + "\",\"defaultMetadataProfileId\":1,\"defaultQualityProfileId\":1}";
-            if (postJson("http://127.0.0.1:8686/api/v1/rootfolder?apiKey=" + lidarrKey, rootPayload)) {
-                log.append("[OK] Lidarr root folder linked -> ").append(music.getAbsolutePath()).append("\n");
-            } else {
-                log.append("[WARN] Lidarr root folder linking pending\n");
-            }
-        } else {
-            log.append("[OK] Lidarr root folder verified -> ").append(music.getAbsolutePath()).append("\n");
-        }
-
-        // 2. Discover and auto-import existing music from disk
-        scanAndImportExistingMusic(8686, lidarrKey, music, log);
-
-        // 3. Configure Media Management (skip free space check for Android FUSE)
-        configureMediaManagement(8686, lidarrKey, MediaStorageManager.getInstance(appContext).isHardlinkSupported());
-
-        // 4. Link Transmission if running
-        if (isPortOccupied(9091)) {
-            ensureTransmissionClient(8686, lidarrKey, "lidarr", log);
-        }
-
-        // 5. Link into Prowlarr if running
-        if (isPortOccupied(9696)) {
-            String prowlarrKey = getServiceApiKey("prowlarr");
-            if (prowlarrKey != null) {
-                if (!hasProwlarrApp(prowlarrKey, "Lidarr")) {
-                    String body = buildProwlarrAppJson("Lidarr", "http://127.0.0.1:8686", lidarrKey, "LidarrSettings");
-                    if (postJson("http://127.0.0.1:9696/api/v1/applications?apiKey=" + prowlarrKey, body)) {
-                        log.append("[OK] Lidarr registered in Prowlarr\n");
-                        postJson("http://127.0.0.1:9696/api/v1/command?apiKey=" + prowlarrKey, "{\"name\":\"ApplicationIndexerSync\"}");
-                    }
-                } else {
-                    log.append("[OK] Lidarr verified in Prowlarr\n");
-                }
-            }
-        }
-
-        // 5b. Link Jackett Torznab if running
-        if (isPortOccupied(9117)) {
-            String jackettKey = getServiceApiKey("jackett");
-            if (jackettKey != null) {
-                ensureJackettInLidarr(lidarrKey, jackettKey, log);
-            }
-        }
-        return true;
-    }
-
     public boolean wireProwlarr(StringBuilder log) {
         if (!isPortOccupied(9696)) {
             log.append("[SKIP] Prowlarr is not running (Port 9696 offline)\n");
@@ -4250,15 +3930,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             }
         }
 
-        // Link into Lidarr if running
-        if (isPortOccupied(8686)) {
-            String lidarrKey = getServiceApiKey("lidarr");
-            if (lidarrKey != null) {
-                ensureProwlarrApp(prowlarrKey, "Lidarr", "http://127.0.0.1:8686", lidarrKey, "LidarrSettings");
-                log.append("[OK] Lidarr configured in Prowlarr (fullSync)\n");
-            }
-        }
-
         // Ensure obsolete Byparr proxy is purged from Prowlarr
         removeProwlarrProxy(prowlarrKey, "Byparr");
 
@@ -4287,7 +3958,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             }
         }
 
-        // Trigger sync command to push indexers to Radarr, Sonarr, and Lidarr
+        // Trigger sync command to push indexers to Radarr and Sonarr
         postJson("http://127.0.0.1:9696/api/v1/command?apiKey=" + prowlarrKey, "{\"name\":\"ApplicationIndexerSync\"}");
         log.append("[OK] ApplicationIndexerSync triggered\n");
         return true;
@@ -4317,13 +3988,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             }
         }
 
-        // Link into Lidarr if running
-        if (isPortOccupied(8686)) {
-            String lidarrKey = getServiceApiKey("lidarr");
-            if (lidarrKey != null) {
-                ensureTransmissionClient(8686, lidarrKey, "lidarr", log);
-            }
-        }
         return true;
     }
 
@@ -4349,12 +4013,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             String sonarrKey = getServiceApiKey("sonarr");
             if (sonarrKey != null) {
                 ensureJackettInSonarr(sonarrKey, jackettKey, log);
-            }
-        }
-        if (isPortOccupied(8686)) {
-            String lidarrKey = getServiceApiKey("lidarr");
-            if (lidarrKey != null) {
-                ensureJackettInLidarr(lidarrKey, jackettKey, log);
             }
         }
         if (isPortOccupied(9696)) {
@@ -4616,62 +4274,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         }
     }
 
-    private void ensureJackettInLidarr(String lidarrKey, String jackettKey, StringBuilder log) {
-        try {
-            String existing = httpGet("http://127.0.0.1:8686/api/v1/indexer?apiKey=" + lidarrKey);
-            cleanupLegacyJackettAllIndexer(8686, lidarrKey, existing);
-
-            List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
-            int addedCount = 0;
-            int verifiedCount = 0;
-
-            for (JackettIndexerInfo info : indexers) {
-                if (!info.supportsMusic) continue;
-
-                String targetUrl = "http://127.0.0.1:9117/api/v2.0/indexers/" + info.id + "/results/torznab/";
-                String targetName = info.displayName + " (Jackett)";
-
-                if (existing != null && (existing.contains(targetUrl) || existing.contains("\"" + targetName + "\""))) {
-                    verifiedCount++;
-                    continue;
-                }
-
-                try {
-                    org.json.JSONObject idx = new org.json.JSONObject();
-                    idx.put("name", targetName);
-                    idx.put("enableAutomaticSearch", true);
-                    idx.put("enableInteractiveSearch", true);
-                    idx.put("supportsRss", true);
-                    idx.put("supportsSearch", true);
-                    idx.put("protocol", "torrent");
-                    idx.put("priority", 25);
-                    idx.put("configContract", "TorznabSettings");
-                    idx.put("implementation", "Torznab");
-                    org.json.JSONArray fields = new org.json.JSONArray();
-                    fields.put(new org.json.JSONObject().put("name", "baseUrl").put("value", targetUrl));
-                    fields.put(new org.json.JSONObject().put("name", "apiPath").put("value", "/api"));
-                    fields.put(new org.json.JSONObject().put("name", "apiKey").put("value", jackettKey));
-                    org.json.JSONArray cats = new org.json.JSONArray();
-                    cats.put(3000).put(3010).put(3020).put(3030).put(3040);
-                    fields.put(new org.json.JSONObject().put("name", "categories").put("value", cats));
-                    idx.put("fields", fields);
-
-                    if (postJson("http://127.0.0.1:8686/api/v1/indexer?apiKey=" + lidarrKey, idx.toString(), 20000)) {
-                        addedCount++;
-                        log.append("[OK] Jackett indexer linked into Lidarr: ").append(info.displayName).append("\n");
-                    }
-                } catch (Throwable it) {
-                    Log.w(TAG, "[AutoWire] Lidarr Jackett link notice for " + info.id + ": " + it.getMessage());
-                }
-            }
-            if (verifiedCount > 0) {
-                log.append("[OK] ").append(verifiedCount).append(" Jackett indexer(s) active in Lidarr\n");
-            }
-        } catch (Throwable t) {
-            log.append("[WARN] Lidarr Jackett linking notice: ").append(t.getMessage()).append("\n");
-        }
-    }
-
     private void ensureJackettInProwlarr(String prowlarrKey, String jackettKey, StringBuilder log) {
         try {
             String existing = httpGet("http://127.0.0.1:9696/api/v1/indexer?apiKey=" + prowlarrKey);
@@ -4733,15 +4335,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             postJson("http://127.0.0.1:6767/api/system/tasks?apiKey=" + bazarrKey, "{\"action\":\"sync_movies\"}");
         }
         log.append("[OK] Bazarr configuration sanitized and synchronized\n");
-        return true;
-    }
-
-    public boolean wireSeerr(StringBuilder log) {
-        if (!isPortOccupied(5055)) {
-            log.append("[SKIP] Seerr is not running (Port 5055 offline)\n");
-            return false;
-        }
-        log.append("[OK] Seerr request engine verified on port 5055\n");
         return true;
     }
 
@@ -4904,63 +4497,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         }
     }
 
-    private void scanAndImportExistingMusic(int port, String apiKey, File musicDir, StringBuilder log) {
-        try {
-            postJson("http://127.0.0.1:" + port + "/api/v1/command?apiKey=" + apiKey,
-                    "{\"name\":\"DownloadedAlbumsScan\",\"path\":\"" + musicDir.getAbsolutePath() + "\"}");
-            postJson("http://127.0.0.1:" + port + "/api/v1/command?apiKey=" + apiKey,
-                    "{\"name\":\"RescanArtist\"}");
-
-            File[] artistFolders = musicDir.listFiles(File::isDirectory);
-            if (artistFolders == null || artistFolders.length == 0) return;
-
-            String existingArtistsJson = httpGet("http://127.0.0.1:" + port + "/api/v1/artist?apiKey=" + apiKey);
-            Set<String> trackedArtists = new HashSet<>();
-            if (existingArtistsJson != null && existingArtistsJson.startsWith("[")) {
-                JSONArray exArr = new JSONArray(existingArtistsJson);
-                for (int i = 0; i < exArr.length(); i++) {
-                    JSONObject a = exArr.getJSONObject(i);
-                    String t = a.optString("artistName", "").toLowerCase(Locale.ROOT);
-                    if (!t.isEmpty()) trackedArtists.add(t);
-                }
-            }
-
-            int imported = 0;
-            for (File folder : artistFolders) {
-                String artistName = folder.getName().trim();
-                if (trackedArtists.contains(artistName.toLowerCase(Locale.ROOT))) continue;
-
-                String query = URLEncoder.encode(artistName, "UTF-8");
-                String lookupJson = httpGet("http://127.0.0.1:" + port + "/api/v1/artist/lookup?term=" + query + "&apiKey=" + apiKey);
-                if (lookupJson != null && lookupJson.startsWith("[")) {
-                    JSONArray results = new JSONArray(lookupJson);
-                    if (results.length() > 0) {
-                        JSONObject artist = results.getJSONObject(0);
-                        artist.put("rootFolderPath", musicDir.getAbsolutePath());
-                        artist.put("path", folder.getAbsolutePath());
-                        artist.put("monitored", true);
-                        JSONObject addOpts = new JSONObject();
-                        addOpts.put("searchForMissingAlbums", false);
-                        addOpts.put("monitor", "all");
-                        artist.put("addOptions", addOpts);
-
-                        if (postJson("http://127.0.0.1:" + port + "/api/v1/artist?apiKey=" + apiKey, artist.toString())) {
-                            imported++;
-                            log.append("[OK] Imported artist: ").append(artist.optString("artistName")).append("\n");
-                            trackedArtists.add(artistName.toLowerCase(Locale.ROOT));
-                        }
-                    }
-                }
-            }
-            if (imported > 0) {
-                log.append("[OK] Auto-imported ").append(imported).append(" existing artist(s) into Lidarr\n");
-                postJson("http://127.0.0.1:" + port + "/api/v1/command?apiKey=" + apiKey, "{\"name\":\"RescanArtist\"}");
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "[AutoWire] scanAndImportExistingMusic warning: " + t.getMessage());
-        }
-    }
-
     public interface AutoWireProgress { void onStep(String line); }
 
     private void wireStep(AutoWireProgress pr, String line) {
@@ -5009,15 +4545,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     wireStep(progress, "✓ Sonarr synchronized");
                 }
 
-                ManagedService lidarr = getService("lidarr");
-                if (lidarr != null && lidarr.isInstalled() && isPortOccupied(8686)) {
-                    ensureServiceConfigSanitized("lidarr");
-                    wireStep(progress, "… Syncing Lidarr");
-                    wireLidarr(log);
-                    wiredServices.add("Lidarr");
-                    wireStep(progress, "✓ Lidarr synchronized");
-                }
-
                 ManagedService prowlarr = getService("prowlarr");
                 if (prowlarr != null && prowlarr.isInstalled() && isPortOccupied(9696)) {
                     ensureServiceConfigSanitized("prowlarr");
@@ -5043,15 +4570,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     wireBazarr(log);
                     wiredServices.add("Bazarr");
                     wireStep(progress, "✓ Bazarr synchronized");
-                }
-
-                ManagedService seerr = getService("seerr");
-                if (seerr != null && seerr.isInstalled() && isPortOccupied(5055)) {
-                    ensureServiceConfigSanitized("seerr");
-                    wireStep(progress, "… Syncing Seerr");
-                    wireSeerr(log);
-                    wiredServices.add("Seerr");
-                    wireStep(progress, "✓ Seerr synchronized");
                 }
 
                 String summaryMsg = !wiredServices.isEmpty()
@@ -5144,7 +4662,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
 
             if (added > 0) {
                 postJson("http://127.0.0.1:9696/api/v1/command?apiKey=" + prowlarrKey, "{\"name\":\"ApplicationIndexerSync\"}");
-                log.append("[OK] Synced indexers into Radarr, Sonarr & Lidarr\n");
+                log.append("[OK] Synced indexers into Radarr & Sonarr\n");
                 return true;
             } else {
                 log.append("[OK] All recommended indexers present\n");
@@ -5231,7 +4749,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         if ("radarr".equals(id)) return readApiKey(new File(home, ".config/Radarr/config.xml"));
         if ("sonarr".equals(id)) return readApiKey(new File(home, ".config/Sonarr/config.xml"));
         if ("prowlarr".equals(id)) return readApiKey(new File(home, ".config/Prowlarr/config.xml"));
-        if ("lidarr".equals(id)) return readApiKey(new File(home, ".config/Lidarr/config.xml"));
         if ("jackett".equals(id)) {
             File cfg = new File(home, ".config/Jackett/ServerConfig.json");
             if (cfg.exists()) {
@@ -5241,47 +4758,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     return obj.optString("APIKey", null);
                 } catch (Exception ignored) {}
             }
-        }
-        if ("seerr".equals(id)) {
-            File[] candidateFiles = new File[] {
-                new File(home, ".config/seerr/settings.json"),
-                new File(home, "services/seerr/config/settings.json"),
-                new File(home, "services/seerr/settings.json"),
-                new File(home, ".config/jellyseerr/settings.json")
-            };
-            for (File cfg : candidateFiles) {
-                if (cfg.exists()) {
-                    try {
-                        String text = readTextFile(cfg);
-                        if (text != null && !text.trim().isEmpty()) {
-                            org.json.JSONObject obj = new org.json.JSONObject(text);
-                            org.json.JSONObject main = obj.optJSONObject("main");
-                            if (main != null && main.has("apiKey")) {
-                                String key = main.optString("apiKey", "").trim();
-                                if (!key.isEmpty()) return key;
-                            }
-                            if (obj.has("apiKey")) {
-                                String key = obj.optString("apiKey", "").trim();
-                                if (!key.isEmpty()) return key;
-                            }
-                        }
-                    } catch (Exception ignored) {}
-                }
-            }
-            try {
-                ensureServiceConfigSanitized("seerr");
-                File cfg = new File(home, ".config/seerr/settings.json");
-                if (cfg.exists()) {
-                    String text = readTextFile(cfg);
-                    if (text != null && !text.trim().isEmpty()) {
-                        org.json.JSONObject obj = new org.json.JSONObject(text);
-                        org.json.JSONObject main = obj.optJSONObject("main");
-                        if (main != null && main.has("apiKey")) {
-                            return main.optString("apiKey", null);
-                        }
-                    }
-                }
-            } catch (Exception ignored) {}
         }
         if ("bazarr".equals(id)) {
             File cfg = new File(home, ".config/bazarr/config/config.yaml");
@@ -5473,14 +4949,11 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
 
     private String buildTransmissionClientJson(String forService) {
         boolean isRadarr = "radarr".equalsIgnoreCase(forService);
-        boolean isLidarr = "lidarr".equalsIgnoreCase(forService);
-        String categoryField = isRadarr ? "movieCategory" : (isLidarr ? "musicCategory" : "tvCategory");
-        String dirField = isRadarr ? "movieDirectory" : (isLidarr ? "musicDirectory" : "tvDirectory");
+        String categoryField = isRadarr ? "movieCategory" : "tvCategory";
+        String dirField = isRadarr ? "movieDirectory" : "tvDirectory";
         String dirVal = isRadarr
                 ? MediaStorageManager.getInstance(appContext).getRadarrDownloadsDir().getAbsolutePath()
-                : (isLidarr
-                ? new File(MediaStorageManager.getInstance(appContext).getDownloadsDir(), "lidarr").getAbsolutePath()
-                : MediaStorageManager.getInstance(appContext).getSonarrDownloadsDir().getAbsolutePath());
+                : MediaStorageManager.getInstance(appContext).getSonarrDownloadsDir().getAbsolutePath();
         return "{\"enable\":true,\"protocol\":\"torrent\",\"priority\":1," +
                "\"removeCompletedDownloads\":true,\"removeFailedDownloads\":true," +
                "\"name\":\"Transmission\",\"implementation\":\"Transmission\"," +
@@ -5511,8 +4984,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                         JSONArray fields = client.optJSONArray("fields");
                         boolean hasDir = false;
                         if (fields != null) {
-                            String dirField = "radarr".equalsIgnoreCase(forService) ? "movieDirectory"
-                                    : ("lidarr".equalsIgnoreCase(forService) ? "musicDirectory" : "tvDirectory");
+                            String dirField = "radarr".equalsIgnoreCase(forService) ? "movieDirectory" : "tvDirectory";
                             for (int j = 0; j < fields.length(); j++) {
                                 JSONObject f = fields.optJSONObject(j);
                                 if (f != null && dirField.equalsIgnoreCase(f.optString("name"))) {
@@ -5552,8 +5024,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         String syncCategories;
         if ("RadarrSettings".equals(configContract)) {
             syncCategories = "[2000,2010,2020,2030,2040,2045,2050,2060,2070,2080,8000]";
-        } else if ("LidarrSettings".equals(configContract)) {
-            syncCategories = "[3000,3010,3020,3030,3040]";
         } else {
             syncCategories = "[5000,5010,5020,5030,5040,5045,5050,5060,5070,5080,8000]";
         }

@@ -43,11 +43,6 @@ public class ManagedService {
             File f = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/transmission-daemon");
             return f.exists();
         }
-        if ("seerr".equalsIgnoreCase(manifest.getId())) {
-            File f = new File(manifest.getExecutableOrDllPath());
-            File nodeBin = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/node");
-            return f.exists() && nodeBin.exists();
-        }
         if ("bazarr".equalsIgnoreCase(manifest.getId())) {
             File f1 = manifest.getExecutableOrDllPath() != null ? new File(manifest.getExecutableOrDllPath()) : null;
             File home = TermuxConstants.TERMUX_HOME_DIR;
