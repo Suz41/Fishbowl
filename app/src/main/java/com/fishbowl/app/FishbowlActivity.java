@@ -161,6 +161,12 @@ public final class FishbowlActivity extends AppCompatActivity
     private TransmissionTabView transmissionTabView;
     private static final int TAB_RADARR = 10;
     private static final int TAB_TRANSMISSION = 12;
+    private View cachedProwlarrView;
+    private ProwlarrTabView prowlarrTabView;
+    private View cachedJackettView;
+    private JackettTabView jackettTabView;
+    private static final int TAB_PROWLARR = 11;
+    private static final int TAB_JACKETT = 13;
 
     // Containers
     private LinearLayout rootLayout;
@@ -744,6 +750,12 @@ public final class FishbowlActivity extends AppCompatActivity
         if (activeTab == TAB_TRANSMISSION && transmissionTabView != null && transmissionTabView.onBack()) {
             return;
         }
+        if (activeTab == TAB_PROWLARR && prowlarrTabView != null && prowlarrTabView.onBack()) {
+            return;
+        }
+        if (activeTab == TAB_JACKETT && jackettTabView != null && jackettTabView.onBack()) {
+            return;
+        }
         if (activeTab == 3 && closeSettingsSection()) {
             return;
         }
@@ -941,6 +953,18 @@ public final class FishbowlActivity extends AppCompatActivity
         cachedTransmissionView = transmissionTabView.getView();
         cachedTransmissionView.setVisibility(View.GONE);
         contentContainer.addView(cachedTransmissionView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        prowlarrTabView = new ProwlarrTabView(this);
+        cachedProwlarrView = prowlarrTabView.getView();
+        cachedProwlarrView.setVisibility(View.GONE);
+        contentContainer.addView(cachedProwlarrView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        jackettTabView = new JackettTabView(this);
+        cachedJackettView = jackettTabView.getView();
+        cachedJackettView.setVisibility(View.GONE);
+        contentContainer.addView(cachedJackettView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         cachedPlaceholderView = buildPlaceholderView();
@@ -1144,8 +1168,11 @@ public final class FishbowlActivity extends AppCompatActivity
         if (cachedSonarrView != null) cachedSonarrView.setVisibility(activeTab == 6 ? View.VISIBLE : View.GONE);
         if (cachedRadarrView != null) cachedRadarrView.setVisibility(activeTab == TAB_RADARR ? View.VISIBLE : View.GONE);
         if (cachedTransmissionView != null) cachedTransmissionView.setVisibility(activeTab == TAB_TRANSMISSION ? View.VISIBLE : View.GONE);
+        if (cachedProwlarrView != null) cachedProwlarrView.setVisibility(activeTab == TAB_PROWLARR ? View.VISIBLE : View.GONE);
+        if (cachedJackettView != null) cachedJackettView.setVisibility(activeTab == TAB_JACKETT ? View.VISIBLE : View.GONE);
         if (cachedPlaceholderView != null) {
-            boolean ph = activeTab >= PLACEHOLDER_TAB_BASE && activeTab != TAB_RADARR && activeTab != TAB_TRANSMISSION;
+            boolean ph = activeTab >= PLACEHOLDER_TAB_BASE && activeTab != TAB_RADARR && activeTab != TAB_TRANSMISSION
+                    && activeTab != TAB_PROWLARR && activeTab != TAB_JACKETT;
             cachedPlaceholderView.setVisibility(ph ? View.VISIBLE : View.GONE);
             if (ph) showPlaceholderFor(activeTab);
         }
@@ -1182,6 +1209,10 @@ public final class FishbowlActivity extends AppCompatActivity
             if (radarrTabView != null) radarrTabView.refresh();
         } else if (activeTab == TAB_TRANSMISSION) {
             if (transmissionTabView != null) transmissionTabView.refresh();
+        } else if (activeTab == TAB_PROWLARR) {
+            if (prowlarrTabView != null) prowlarrTabView.refresh();
+        } else if (activeTab == TAB_JACKETT) {
+            if (jackettTabView != null) jackettTabView.refresh();
         } else if (activeTab == 4) {
             refreshUnifiedLogsDisplay();
             if (autoScrollEnabled && logsScrollView != null) {
