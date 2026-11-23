@@ -1987,6 +1987,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         try {
             String rpcUrl = "http://127.0.0.1:9091/transmission/rpc";
             HttpURLConnection conn = (HttpURLConnection) new URL(rpcUrl).openConnection();
+            com.fishbowl.app.UnifiedAccount.authorize(conn, appContext);
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(1500);
             conn.setReadTimeout(1500);
@@ -1998,6 +1999,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 conn.disconnect();
                 if (sid != null) {
                     conn = (HttpURLConnection) new URL(rpcUrl).openConnection();
+                    com.fishbowl.app.UnifiedAccount.authorize(conn, appContext);
                     conn.setRequestMethod("POST");
                     conn.setRequestProperty("X-Transmission-Session-Id", sid);
                     conn.setConnectTimeout(1500);
@@ -2410,7 +2412,12 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 org.json.JSONObject conf = new org.json.JSONObject(sbJson.toString());
                 conf.put("rpc-whitelist-enabled", false);
                 conf.put("rpc-host-whitelist-enabled", false);
-                conf.put("rpc-authentication-required", false);
+                boolean unifiedAuth = com.fishbowl.app.UnifiedAccount.isConfigured(appContext);
+                conf.put("rpc-authentication-required", unifiedAuth);
+                if (unifiedAuth) {
+                    conf.put("rpc-username", com.fishbowl.app.UnifiedAccount.getUsername(appContext));
+                    conf.put("rpc-password", com.fishbowl.app.UnifiedAccount.getPassword(appContext));
+                }
                 conf.put("dht-enabled", true);
                 conf.put("pex-enabled", true);
                 conf.put("lpd-enabled", false);
@@ -4195,6 +4202,12 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         }
     }
 
+    private String transmissionAuthFields() {
+        if (!com.fishbowl.app.UnifiedAccount.isConfigured(appContext)) return "";
+        return ",{\"name\":\"username\",\"value\":" + org.json.JSONObject.quote(com.fishbowl.app.UnifiedAccount.getUsername(appContext)) + "}"
+             + ",{\"name\":\"password\",\"value\":" + org.json.JSONObject.quote(com.fishbowl.app.UnifiedAccount.getPassword(appContext)) + "}";
+    }
+
     private String buildTransmissionClientJson(String forService) {
         boolean isRadarr = "radarr".equalsIgnoreCase(forService);
         String categoryField = isRadarr ? "movieCategory" : "tvCategory";
@@ -4212,7 +4225,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                "{\"name\":\"urlBase\",\"value\":\"/transmission/\"}," +
                "{\"name\":\"" + categoryField + "\",\"value\":\"\"}," +
                "{\"name\":\"" + dirField + "\",\"value\":\"" + dirVal + "\"}," +
-               "{\"name\":\"useSsl\",\"value\":false}]," +
+               "{\"name\":\"useSsl\",\"value\":false}" + transmissionAuthFields() + "]," +
                "\"tags\":[]}";
     }
 

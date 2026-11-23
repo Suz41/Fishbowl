@@ -42,7 +42,7 @@ class ServiceHealthMonitor @JvmOverloads constructor(
         if (statusCode in 200..399) {
             return true
         }
-        if ("transmission".equals(serviceId, ignoreCase = true) && statusCode == 409) {
+        if ("transmission".equals(serviceId, ignoreCase = true) && (statusCode == 409 || statusCode == 401)) {
             return true
         }
         return false

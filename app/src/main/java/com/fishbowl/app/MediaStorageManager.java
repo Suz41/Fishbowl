@@ -1441,6 +1441,7 @@ public final class MediaStorageManager {
 
             String payload = rpcReq.toString();
             conn = (HttpURLConnection) url.openConnection();
+            UnifiedAccount.authorize(conn, appContext);
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(2500);
             conn.setReadTimeout(2500);
@@ -1461,6 +1462,7 @@ public final class MediaStorageManager {
                 if (newSessionId != null && !newSessionId.isEmpty()) {
                     cachedTransmissionSessionId = newSessionId;
                     conn = (HttpURLConnection) url.openConnection();
+            UnifiedAccount.authorize(conn, appContext);
                     conn.setRequestMethod("POST");
                     conn.setConnectTimeout(2500);
                     conn.setReadTimeout(2500);
@@ -1540,6 +1542,7 @@ public final class MediaStorageManager {
 
             String payload = rpcReq.toString();
             conn = (HttpURLConnection) url.openConnection();
+            UnifiedAccount.authorize(conn, appContext);
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(2500);
             conn.setReadTimeout(2500);
@@ -1559,6 +1562,7 @@ public final class MediaStorageManager {
                 if (newSessionId != null && !newSessionId.isEmpty()) {
                     cachedTransmissionSessionId = newSessionId;
                     conn = (HttpURLConnection) url.openConnection();
+            UnifiedAccount.authorize(conn, appContext);
                     conn.setRequestMethod("POST");
                     conn.setConnectTimeout(2500);
                     conn.setReadTimeout(2500);
@@ -1596,6 +1600,7 @@ public final class MediaStorageManager {
 
             for (int attempt = 0; attempt < 2; attempt++) {
                 conn = (HttpURLConnection) url.openConnection();
+            UnifiedAccount.authorize(conn, appContext);
                 conn.setRequestMethod("POST");
                 conn.setConnectTimeout(2500);
                 conn.setReadTimeout(5000);
@@ -1689,6 +1694,7 @@ public final class MediaStorageManager {
 
             String payload = rpcReq.toString();
             conn = (HttpURLConnection) url.openConnection();
+            UnifiedAccount.authorize(conn, appContext);
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(2500);
             conn.setReadTimeout(2500);
@@ -1708,6 +1714,7 @@ public final class MediaStorageManager {
                 if (newSessionId != null && !newSessionId.isEmpty()) {
                     cachedTransmissionSessionId = newSessionId;
                     conn = (HttpURLConnection) url.openConnection();
+            UnifiedAccount.authorize(conn, appContext);
                     conn.setRequestMethod("POST");
                     conn.setConnectTimeout(2500);
                     conn.setReadTimeout(2500);

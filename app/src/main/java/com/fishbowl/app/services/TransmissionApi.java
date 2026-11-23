@@ -65,11 +65,13 @@ public final class TransmissionApi {
     };
 
     private static volatile String sessionId = null;
+    private static volatile Context appCtx = null;
 
     private TransmissionApi() {}
 
     /** Returns a client (no state besides the shared session id; the context is not needed). */
     public static TransmissionApi get(Context ctx) {
+        if (ctx != null) appCtx = ctx.getApplicationContext();
         return new TransmissionApi();
     }
 
@@ -95,8 +97,15 @@ public final class TransmissionApi {
                 conn.setRequestMethod("POST");
                 conn.setDoOutput(true);
                 conn.setRequestProperty("Content-Type", "application/json");
+                String authUser = USER;
+                String authPass = PASS;
+                Context ac = appCtx;
+                if (ac != null && com.fishbowl.app.UnifiedAccount.isConfigured(ac)) {
+                    authUser = com.fishbowl.app.UnifiedAccount.getUsername(ac);
+                    authPass = com.fishbowl.app.UnifiedAccount.getPassword(ac);
+                }
                 conn.setRequestProperty("Authorization", "Basic "
-                        + Base64.encodeToString((USER + ":" + PASS).getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
+                        + Base64.encodeToString((authUser + ":" + authPass).getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
                 String sid = sessionId;
                 if (sid != null) conn.setRequestProperty("X-Transmission-Session-Id", sid);
                 OutputStream os = conn.getOutputStream();

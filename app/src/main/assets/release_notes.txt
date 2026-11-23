@@ -1,4 +1,8 @@
-What's new in 2.0.4-beta.17 (beta)
+What's new in 2.0.4-beta.18 (beta)
+- One account for every service: the same username and password now work for Jellyfin, Sonarr, Radarr, Prowlarr and Transmission. Manage it in Settings > Security & Identity (per-service status, change, apply now, forget).
+- First launch now shows two windows: restore a backup if one is found, then sign in or create the account for all services (you can skip both).
+
+From 2.0.4-beta.17:
 - Tapping a service logo on Home now opens its details window (links, API key, status, Web UI / Stop / Logs / Uninstall) instead of switching it on or off. The window was moved from the Media page.
 - Movie Importer and Media Storage moved from Home to the Media tab as richer cards: live folder usage and free space, staging retention policy, importer statistics, download-detection switches and quick actions.
 - Removed the STOP ALL button from the Media stack (START ALL shows only while nothing is running).

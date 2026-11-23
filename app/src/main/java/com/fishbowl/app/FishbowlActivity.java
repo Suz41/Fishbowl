@@ -641,6 +641,7 @@ public final class FishbowlActivity extends AppCompatActivity
     protected void onResume() {
         super.onResume();
         PasswordResetManager.getInstance(getApplicationContext()).checkOnce();
+        mainHandler.postDelayed(this::maybeRunFirstRunFlow, 1500);
         if (controller != null) {
             controller.reconcileStateAsync();
         }
@@ -6524,6 +6525,393 @@ public final class FishbowlActivity extends AppCompatActivity
         return new CompatibilityReport(ok, checks, failReason);
     }
 
+    // ------------------------------------------------------------------ Unified account (first run + Settings)
+
+    private LinearLayout unifiedAccountBody;
+    private boolean firstRunFlowShowing = false;
+    private long lastUnifiedAutoApply = 0;
+
+    /** Called from onResume: first-run restore + account dialogs, then silent apply of pending services. */
+    private void maybeRunFirstRunFlow() {
+        try {
+            if (isFinishing()) return;
+            if (!UnifiedAccount.isFirstRunDone(this) && !firstRunFlowShowing) {
+                if (UnifiedAccount.isConfigured(this)) {
+                    UnifiedAccount.setFirstRunDone(this);
+                } else {
+                    firstRunFlowShowing = true;
+                    android.content.SharedPreferences sp = getSharedPreferences("fishbowl", MODE_PRIVATE);
+                    List<File> backups = new ArrayList<>();
+                    try {
+                        List<File> found = BackupRestoreManager.listExistingBackups(this);
+                        if (found != null) backups.addAll(found);
+                    } catch (Throwable ignored) {}
+                    java.util.Collections.sort(backups, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+                    if (!sp.getBoolean("first_run_restore_prompted", false) && !backups.isEmpty()) {
+                        showFirstRunRestoreDialog(backups.get(0));
+                    } else {
+                        showUnifiedAccountDialog(true);
+                    }
+                }
+                return;
+            }
+            if (UnifiedAccount.hasPending(this) && !firstRunFlowShowing
+                    && System.currentTimeMillis() - lastUnifiedAutoApply > 45000L) {
+                lastUnifiedAutoApply = System.currentTimeMillis();
+                runUnifiedApply(false, false);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "first-run flow: " + t.getMessage());
+        }
+    }
+
+    private void showFirstRunRestoreDialog(final File backup) {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        d.setCancelable(false);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(20), dp(20), dp(20), dp(18));
+        root.setBackground(createBorderedRoundedDrawable(AppTheme.card(), AppTheme.outline(), dp(1), dp(16)));
+
+        TextView title = new TextView(this);
+        title.setText(I18n.tr("RESTORE A BACKUP?"));
+        title.setTextSize(15f);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        title.setTextColor(AppTheme.text());
+        root.addView(title);
+
+        TextView sub = new TextView(this);
+        sub.setText(I18n.tr("A Jellyarr backup was found on this phone. Restore it to bring back your settings, accounts and library."));
+        sub.setTextSize(12.5f);
+        sub.setTextColor(AppTheme.textSecondary());
+        sub.setPadding(0, dp(8), 0, dp(10));
+        root.addView(sub);
+
+        TextView file = new TextView(this);
+        file.setText(backup.getName() + "\n" + android.text.format.DateFormat.format("yyyy-MM-dd HH:mm", backup.lastModified())
+                + "  •  " + android.text.format.Formatter.formatShortFileSize(this, backup.length()));
+        file.setTextSize(11.5f);
+        file.setTypeface(Typeface.MONOSPACE);
+        file.setTextColor(AppTheme.text());
+        file.setPadding(dp(12), dp(10), dp(12), dp(10));
+        file.setBackground(createBorderedRoundedDrawable(AppTheme.inner(), AppTheme.outline(), dp(1), dp(10)));
+        root.addView(file);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+        rowLp.topMargin = dp(16);
+        row.setLayoutParams(rowLp);
+
+        Button skip = createOutlinePixelButton(I18n.tr("SKIP"), AppTheme.outlineStrong(), AppTheme.textSecondary());
+        skip.setOnClickListener(v -> {
+            getSharedPreferences("fishbowl", MODE_PRIVATE).edit().putBoolean("first_run_restore_prompted", true).apply();
+            d.dismiss();
+            showUnifiedAccountDialog(true);
+        });
+        LinearLayout.LayoutParams l1 = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        l1.setMarginEnd(dp(8));
+        row.addView(skip, l1);
+
+        Button restore = createPixelButton(I18n.tr("RESTORE"), AppTheme.accent(), AppTheme.onAccent());
+        restore.setOnClickListener(v -> {
+            getSharedPreferences("fishbowl", MODE_PRIVATE).edit().putBoolean("first_run_restore_prompted", true).apply();
+            firstRunFlowShowing = false;
+            d.dismiss();
+            confirmAndRestoreFromFile(backup);
+        });
+        row.addView(restore, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        root.addView(row);
+
+        d.setContentView(I18n.attach(root));
+        styleDialogWindow(d);
+        d.show();
+    }
+
+    private void styleDialogWindow(Dialog d) {
+        try {
+            Window w = d.getWindow();
+            if (w != null) {
+                w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                w.setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.92f), ViewGroup.LayoutParams.WRAP_CONTENT);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private EditText accountInput(String hint, boolean password) {
+        EditText e = new EditText(this);
+        e.setHint(I18n.tr(hint));
+        e.setSingleLine(true);
+        e.setTextSize(14f);
+        e.setTextColor(AppTheme.text());
+        e.setHintTextColor(AppTheme.textMuted());
+        e.setPadding(dp(14), dp(10), dp(14), dp(10));
+        e.setBackground(createBorderedRoundedDrawable(AppTheme.inner(), AppTheme.outline(), dp(1), dp(10)));
+        e.setInputType(password
+                ? (android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
+                : (android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = dp(8);
+        e.setLayoutParams(lp);
+        return e;
+    }
+
+    /** Sign in / create account dialog. firstRun = true shows SKIP FOR NOW instead of CANCEL. */
+    private void showUnifiedAccountDialog(final boolean firstRun) {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        d.setCancelable(!firstRun);
+
+        ScrollView sv = new ScrollView(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(20), dp(20), dp(20), dp(18));
+        root.setBackground(createBorderedRoundedDrawable(AppTheme.card(), AppTheme.outline(), dp(1), dp(16)));
+        sv.addView(root);
+
+        TextView title = new TextView(this);
+        title.setText(I18n.tr("ONE ACCOUNT FOR ALL SERVICES"));
+        title.setTextSize(15f);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        title.setTextColor(AppTheme.text());
+        root.addView(title);
+
+        TextView sub = new TextView(this);
+        sub.setText(I18n.tr("The same username and password will be used for Jellyfin, Sonarr, Radarr, Prowlarr and Transmission."));
+        sub.setTextSize(12f);
+        sub.setTextColor(AppTheme.textSecondary());
+        sub.setPadding(0, dp(6), 0, dp(10));
+        root.addView(sub);
+
+        final boolean[] createMode = {true};
+        LinearLayout modes = new LinearLayout(this);
+        modes.setOrientation(LinearLayout.HORIZONTAL);
+        final TextView tCreate = new TextView(this);
+        final TextView tSign = new TextView(this);
+        TextView[] pills = {tCreate, tSign};
+        String[] names = {"CREATE ACCOUNT", "SIGN IN"};
+        for (int i = 0; i < 2; i++) {
+            TextView t = pills[i];
+            t.setText(I18n.tr(names[i]));
+            t.setGravity(Gravity.CENTER);
+            t.setTextSize(11f);
+            t.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(38), 1f);
+            if (i == 0) lp.setMarginEnd(dp(6));
+            modes.addView(t, lp);
+        }
+        root.addView(modes);
+
+        final EditText user = accountInput("Username", false);
+        final EditText pass = accountInput("Password", true);
+        final EditText confirm = accountInput("Confirm password", true);
+        String existing = UnifiedAccount.getUsername(this);
+        if (existing != null && !existing.isEmpty()) user.setText(existing);
+        root.addView(user);
+        root.addView(pass);
+        root.addView(confirm);
+
+        final TextView err = new TextView(this);
+        err.setTextSize(11.5f);
+        err.setTextColor(AppTheme.danger());
+        err.setPadding(0, dp(8), 0, 0);
+        err.setVisibility(View.GONE);
+        root.addView(err);
+
+        final Runnable paint = () -> {
+            for (int i = 0; i < 2; i++) {
+                boolean sel = (i == 0) == createMode[0];
+                pills[i].setTextColor(sel ? AppTheme.onAccent() : AppTheme.textSecondary());
+                pills[i].setBackground(createBorderedRoundedDrawable(
+                        sel ? AppTheme.accent() : AppTheme.inner(), AppTheme.outline(), dp(1), dp(10)));
+            }
+            confirm.setVisibility(createMode[0] ? View.VISIBLE : View.GONE);
+            err.setVisibility(View.GONE);
+        };
+        tCreate.setOnClickListener(v -> { createMode[0] = true; paint.run(); });
+        tSign.setOnClickListener(v -> { createMode[0] = false; paint.run(); });
+        paint.run();
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+        rowLp.topMargin = dp(16);
+        row.setLayoutParams(rowLp);
+
+        Button later = createOutlinePixelButton(I18n.tr(firstRun ? "SKIP FOR NOW" : "CANCEL"),
+                AppTheme.outlineStrong(), AppTheme.textSecondary());
+        later.setOnClickListener(v -> {
+            if (firstRun) UnifiedAccount.setFirstRunDone(this);
+            firstRunFlowShowing = false;
+            d.dismiss();
+        });
+        LinearLayout.LayoutParams l1 = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        l1.setMarginEnd(dp(8));
+        row.addView(later, l1);
+
+        Button go = createPixelButton(I18n.tr("CONTINUE"), AppTheme.accent(), AppTheme.onAccent());
+        go.setOnClickListener(v -> {
+            String u = user.getText().toString().trim();
+            String p = pass.getText().toString();
+            String problem = UnifiedAccount.validate(u, p);
+            if (problem == null && createMode[0] && !p.equals(confirm.getText().toString())) {
+                problem = "Passwords do not match";
+            }
+            if (problem == null && !createMode[0]) {
+                if (!UnifiedAccount.jellyfinHasUser(this, u)) {
+                    problem = "No account with this name was found on this phone. Choose CREATE ACCOUNT.";
+                } else if (!UnifiedAccount.verifyAgainstJellyfin(this, u, p)) {
+                    problem = "Wrong password for this account";
+                }
+            }
+            if (problem != null) {
+                err.setText(I18n.tr(problem));
+                err.setVisibility(View.VISIBLE);
+                return;
+            }
+            UnifiedAccount.save(this, u, p);
+            UnifiedAccount.setFirstRunDone(this);
+            firstRunFlowShowing = false;
+            d.dismiss();
+            Toast.makeText(this, I18n.tr("Applying the account to all services..."), Toast.LENGTH_LONG).show();
+            lastUnifiedAutoApply = System.currentTimeMillis();
+            runUnifiedApply(true, true);
+            renderUnifiedAccountBody();
+        });
+        row.addView(go, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        root.addView(row);
+
+        d.setContentView(I18n.attach(sv));
+        styleDialogWindow(d);
+        d.show();
+    }
+
+    /** Pushes the account to every service on a background thread; force = also re-apply services already OK. */
+    private void runUnifiedApply(final boolean force, final boolean announce) {
+        bgExecutor.execute(() -> {
+            UnifiedAccount.applyAll(this, force, (id, st, msg) -> runOnUiThread(this::renderUnifiedAccountBody));
+            runOnUiThread(() -> {
+                renderUnifiedAccountBody();
+                if (announce) {
+                    int ok = 0;
+                    for (String s : UnifiedAccount.SERVICES) if ("ok".equals(UnifiedAccount.getStatus(this, s))) ok++;
+                    Toast.makeText(this, ok + " / " + UnifiedAccount.SERVICES.length + " " + I18n.tr("services updated"),
+                            Toast.LENGTH_LONG).show();
+                }
+            });
+        });
+    }
+
+    private View buildUnifiedAccountCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(2), dp(2), dp(2), dp(10));
+
+        TextView t = new TextView(this);
+        t.setText("UNIFIED ACCOUNT");
+        styleSectionLabel(t);
+        t.setPadding(0, dp(2), 0, dp(6));
+        card.addView(t);
+
+        unifiedAccountBody = new LinearLayout(this);
+        unifiedAccountBody.setOrientation(LinearLayout.VERTICAL);
+        card.addView(unifiedAccountBody);
+        renderUnifiedAccountBody();
+        return card;
+    }
+
+    private void renderUnifiedAccountBody() {
+        if (unifiedAccountBody == null) return;
+        unifiedAccountBody.removeAllViews();
+        boolean configured = UnifiedAccount.isConfigured(this);
+
+        TextView who = new TextView(this);
+        who.setTextSize(13f);
+        who.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        who.setTextColor(configured ? AppTheme.text() : AppTheme.textMuted());
+        who.setText(configured
+                ? I18n.tr("Signed in as") + " " + UnifiedAccount.getUsername(this)
+                : I18n.tr("No unified account yet. One username and password for all services."));
+        who.setPadding(0, 0, 0, dp(8));
+        unifiedAccountBody.addView(who);
+
+        if (configured) {
+            String[] labels = {"Jellyfin", "Sonarr", "Radarr", "Prowlarr", "Transmission"};
+            for (int i = 0; i < labels.length; i++) {
+                String id = UnifiedAccount.SERVICES[i];
+                String st = UnifiedAccount.getStatus(this, id);
+                int color = "ok".equals(st) ? AppTheme.success() : "failed".equals(st) ? AppTheme.danger() : AppTheme.warning();
+                String text = "ok".equals(st) ? I18n.tr("Applied") : "failed".equals(st) ? I18n.tr("Failed") : I18n.tr("Pending");
+                String msg = UnifiedAccount.getMessage(this, id);
+                LinearLayout r = new LinearLayout(this);
+                r.setOrientation(LinearLayout.HORIZONTAL);
+                r.setGravity(Gravity.CENTER_VERTICAL);
+                r.setPadding(0, dp(4), 0, dp(4));
+                TextView dot = new TextView(this);
+                dot.setText("●");
+                dot.setTextSize(10f);
+                dot.setTextColor(color);
+                dot.setPadding(0, 0, dp(8), 0);
+                r.addView(dot);
+                TextView name = new TextView(this);
+                name.setText(labels[i]);
+                name.setTextSize(12.5f);
+                name.setTextColor(AppTheme.text());
+                r.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+                TextView state = new TextView(this);
+                state.setText(text + (msg.isEmpty() || "ok".equals(st) ? "" : " — " + I18n.tr(msg)));
+                state.setTextSize(11f);
+                state.setTextColor(color);
+                state.setGravity(Gravity.END);
+                r.addView(state, new LinearLayout.LayoutParams(0, -2, 1.6f));
+                unifiedAccountBody.addView(r);
+            }
+        }
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, -2);
+        alp.topMargin = dp(10);
+        actions.setLayoutParams(alp);
+
+        Button edit = createPixelButton(I18n.tr(configured ? "CHANGE" : "SIGN IN / CREATE"), AppTheme.accent(), AppTheme.onAccent());
+        edit.setTextSize(10.5f);
+        edit.setOnClickListener(v -> showUnifiedAccountDialog(false));
+        LinearLayout.LayoutParams e1 = new LinearLayout.LayoutParams(0, dp(40), 1f);
+        actions.addView(edit, e1);
+
+        if (configured) {
+            Button apply = createOutlinePixelButton(I18n.tr("APPLY NOW"), AppTheme.outlineStrong(), AppTheme.text());
+            apply.setTextSize(10.5f);
+            apply.setOnClickListener(v -> {
+                Toast.makeText(this, I18n.tr("Applying the account to all services..."), Toast.LENGTH_SHORT).show();
+                runUnifiedApply(true, true);
+            });
+            LinearLayout.LayoutParams e2 = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            e2.setMarginStart(dp(8));
+            actions.addView(apply, e2);
+
+            Button forget = createOutlinePixelButton(I18n.tr("FORGET"), AppTheme.danger(), AppTheme.danger());
+            forget.setTextSize(10.5f);
+            forget.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+                    .setTitle(I18n.tr("Forget the saved account?"))
+                    .setMessage(I18n.tr("Only the copy stored in this app is removed. Sonarr, Radarr, Prowlarr and Jellyfin keep their current login; Transmission stops requiring a login the next time it starts."))
+                    .setPositiveButton(I18n.tr("FORGET"), (dd, w) -> {
+                        UnifiedAccount.clear(this);
+                        renderUnifiedAccountBody();
+                    })
+                    .setNegativeButton(I18n.tr("CANCEL"), null)
+                    .show());
+            LinearLayout.LayoutParams e3 = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            e3.setMarginStart(dp(8));
+            actions.addView(forget, e3);
+        }
+        unifiedAccountBody.addView(actions);
+    }
+
     private Dialog showOledDialog(String title, String subtitle, View contentView, String posText, int posColor, Runnable onPos, String negText, Runnable onNeg) {
         Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -10478,12 +10866,15 @@ public final class FishbowlActivity extends AppCompatActivity
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
 
+        // One username / password for every service
+        content.addView(buildUnifiedAccountCard());
+
         // Minimal Jellyfin User Accounts & Credentials Manager
         content.addView(buildSecurityJellyfinUsersCard());
 
         return buildCollapsibleCard(
                 "Security & Identity",
-                "Jellyfin user credentials & password management",
+                "One account for all services, Jellyfin users & passwords",
                 content,
                 false
         );
