@@ -1,4 +1,9 @@
-What's new in 2.0.4-beta.16 (beta)
+What's new in 2.0.4-beta.17 (beta)
+- Tapping a service logo on Home now opens its details window (links, API key, status, Web UI / Stop / Logs / Uninstall) instead of switching it on or off. The window was moved from the Media page.
+- Movie Importer and Media Storage moved from Home to the Media tab as richer cards: live folder usage and free space, staging retention policy, importer statistics, download-detection switches and quick actions.
+- Removed the STOP ALL button from the Media stack (START ALL shows only while nothing is running).
+
+From 2.0.4-beta.16:
 - Bazarr and Jackett were removed from the app completely (services, drawer, widget, storage, settings, licences).
 - The side drawer now opens above the bottom navigation bar instead of covering it.
 - The Download Center moved from the Media page into the Transmission tab (new DOWNLOADS section with history, refresh and clear).

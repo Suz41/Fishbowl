@@ -370,6 +370,8 @@ public final class FishbowlActivity extends AppCompatActivity
     private LinearLayout servicesCardsContainer;
     private TextView servicesSummaryBadge;
     private Button masterStackToggleBtn;
+    private View masterStackGap;
+    private MediaToolsView mediaToolsView;
     private TextView homeServicesCountBadge;
     private LinearLayout homeServicesRow;
     private boolean isAvailableServicesDrawerOpen = false;
@@ -1175,6 +1177,7 @@ public final class FishbowlActivity extends AppCompatActivity
             refreshHomeAccountsUI();
         } else if (activeTab == 1) {
             refreshServicesTabUI();
+            if (mediaToolsView != null) mediaToolsView.refresh(false);
         } else if (activeTab == 2) {
             refreshLogServiceChips();
             updateLogLevelChips();
@@ -1835,9 +1838,6 @@ public final class FishbowlActivity extends AppCompatActivity
 
         // 4. Services Control Plane (Horizontal Icon Row)
         layout.addView(buildServicesControlPlaneSection());
-
-        // Tools Action Row (Movie Importer & Media Storage)
-        layout.addView(buildHomeToolsSection());
 
         scroll.addView(layout);
         root.addView(scroll, new FrameLayout.LayoutParams(
@@ -2852,36 +2852,10 @@ public final class FishbowlActivity extends AppCompatActivity
         serviceTileMap.put(id, icon);
 
         tile.setOnClickListener(v -> {
-            if ("jellyfin".equalsIgnoreCase(id)) {
-                if (controller != null && controller.getState() == JellyfinController.State.RUNNING) {
-                    Toast.makeText(this, I18n.tr("Stopping Jellyarr Server..."), Toast.LENGTH_SHORT).show();
-                    controller.stop();
-                    triggerServerAction(JellyfinServerService.ACTION_STOP);
-                } else {
-                    Toast.makeText(this, I18n.tr("Starting Jellyarr Server..."), Toast.LENGTH_SHORT).show();
-                    triggerServerAction(JellyfinServerService.ACTION_START);
-                }
-            } else {
-                MediaServiceManager mgr = MediaServiceManager.getInstance(this);
-                ManagedService svc = mgr.getService(id);
-                if (svc != null) {
-                    if (svc.isBlocked()) {
-                        Toast.makeText(this, I18n.tr(name + " is blocked: " + (svc.getBlockedReason() != null ? svc.getBlockedReason() : "Incompatible")), Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                    if (svc.isRunning()) {
-                        Toast.makeText(this, I18n.tr("Stopping " + name + "..."), Toast.LENGTH_SHORT).show();
-                        mgr.stopService(id);
-                    } else {
-                        Toast.makeText(this, I18n.tr("Starting " + name + "..."), Toast.LENGTH_SHORT).show();
-                        mgr.startService(id);
-                    }
-                }
+            ManagedService svc = MediaServiceManager.getInstance(this).getService(id);
+            if (svc != null) {
+                showServiceDetailsModal(svc);
             }
-            mainHandler.postDelayed(() -> {
-                refreshHomeServicesBadge();
-                refreshServicesTabUI();
-            }, 600);
         });
 
         slot.addView(tile);
@@ -5009,8 +4983,8 @@ public final class FishbowlActivity extends AppCompatActivity
         masterStackToggleBtn.setLetterSpacing(0.06f);
         masterRow.addView(masterStackToggleBtn, new LinearLayout.LayoutParams(0, dp(44), 1.0f));
 
-        View btnGap = new View(this);
-        masterRow.addView(btnGap, new LinearLayout.LayoutParams(dp(8), 1));
+        masterStackGap = new View(this);
+        masterRow.addView(masterStackGap, new LinearLayout.LayoutParams(dp(8), 1));
 
         Button btnSyncAll = createOutlinePixelButton("SYNC STACK", AppTheme.textSecondary(), AppTheme.text());
         btnSyncAll.setTextSize(11f);
@@ -5076,6 +5050,9 @@ public final class FishbowlActivity extends AppCompatActivity
         scParams.topMargin = dp(10);
         servicesCardsContainer.setLayoutParams(scParams);
         layout.addView(servicesCardsContainer);
+
+        mediaToolsView = new MediaToolsView(this);
+        layout.addView(mediaToolsView.getView());
 
         scroll.addView(layout);
         refreshServicesTabUI();
@@ -5328,18 +5305,11 @@ public final class FishbowlActivity extends AppCompatActivity
 
         if (masterStackToggleBtn != null) {
             if (anyActive) {
-                masterStackToggleBtn.setText("STOP ALL");
-                applyOutlineButtonStyle(masterStackToggleBtn, AppTheme.danger(), AppTheme.danger());
-                masterStackToggleBtn.setOnClickListener(v -> {
-                    Toast.makeText(this, I18n.tr("Stopping companion media stack..."), Toast.LENGTH_SHORT).show();
-                    MediaServiceManager.getInstance(this).stopCompanionServices();
-                    mainHandler.postDelayed(() -> {
-                        MediaServiceManager.getInstance(this).reconcileRunningServices();
-                        refreshServicesTabUI();
-                        refreshHomeServicesBadge();
-                    }, 2000);
-                });
+                masterStackToggleBtn.setVisibility(View.GONE);
+                if (masterStackGap != null) masterStackGap.setVisibility(View.GONE);
             } else {
+                masterStackToggleBtn.setVisibility(View.VISIBLE);
+                if (masterStackGap != null) masterStackGap.setVisibility(View.VISIBLE);
                 masterStackToggleBtn.setText("START ALL");
                 applyOutlineButtonStyle(masterStackToggleBtn, Color.WHITE, Color.WHITE);
                 masterStackToggleBtn.setOnClickListener(v -> {
@@ -5456,15 +5426,9 @@ public final class FishbowlActivity extends AppCompatActivity
         card.setClickable(true);
         card.setFocusable(true);
         card.setOnClickListener(v -> {
-            if (installed) {
-                showServiceDetailsModal(svc);
-            } else {
+            if (!installed) {
                 showServiceInstallCompatibilityDialog(svc);
             }
-        });
-        card.setOnLongClickListener(v -> {
-            showServiceDetailsModal(svc);
-            return true;
         });
 
         // 1. Top Header Row: Icon + Name / Version + Status Badge
@@ -5472,10 +5436,6 @@ public final class FishbowlActivity extends AppCompatActivity
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
         top.setOnClickListener(v -> card.performClick());
-        top.setOnLongClickListener(v -> {
-            showServiceDetailsModal(svc);
-            return true;
-        });
 
         ImageView iconView = new ImageView(this);
         iconView.setImageResource(getServiceIconRes(id));
