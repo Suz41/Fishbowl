@@ -82,22 +82,6 @@ object FishbowlSecurityManager {
             defaultPath = "/transmission/web/",
             authMode = "RPC Authentication (fishbowl / fishbowl)",
             roleDescription = "High-performance BitTorrent download client with RPC control"
-        ),
-        ServiceSecurityProfile(
-            serviceId = "bazarr",
-            displayName = "Bazarr Subtitle Companion",
-            defaultPort = 6767,
-            defaultPath = "/",
-            authMode = "API Key & Web Forms Auth",
-            roleDescription = "Automated subtitle synchronization for Radarr and Sonarr"
-        ),
-        ServiceSecurityProfile(
-            serviceId = "jackett",
-            displayName = "Jackett Torrent Scraper",
-            defaultPort = 9117,
-            defaultPath = "/",
-            authMode = "Admin API Key",
-            roleDescription = "Legacy torrent tracker scraper and indexer bridge"
         )
     )
 

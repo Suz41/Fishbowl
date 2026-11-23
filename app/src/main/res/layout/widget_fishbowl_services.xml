@@ -8,7 +8,7 @@
     android:orientation="vertical"
     android:padding="6dp">
 
-    <!-- Row 1: Top 5 Services (Jellyfin, Radarr, Sonarr, Prowlarr, Jackett) -->
+    <!-- Row 1: Top 4 Services (Jellyfin, Radarr, Sonarr, Prowlarr) -->
     <LinearLayout
         android:id="@+id/svc_row_1"
         android:layout_width="match_parent"
@@ -153,43 +153,9 @@
             </FrameLayout>
         </LinearLayout>
 
-        <!-- 5. Jackett -->
-        <LinearLayout
-            android:id="@+id/svc_container_jackett"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_margin="2dp"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical">
-
-            <FrameLayout
-                android:id="@+id/svc_tile_jackett"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@drawable/widget_service_tile_bg">
-
-                <ImageView
-                    android:id="@+id/svc_icon_jackett"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_service_jackett" />
-
-                <ImageView
-                    android:id="@+id/svc_dot_jackett"
-                    android:layout_width="5dp"
-                    android:layout_height="5dp"
-                    android:layout_gravity="top|end"
-                    android:layout_marginEnd="4dp"
-                    android:layout_marginTop="4dp"
-                    android:src="@drawable/widget_status_dot_red" />
-            </FrameLayout>
-        </LinearLayout>
-
     </LinearLayout>
 
-    <!-- Row 2: Secondary Companion Services (Transmission, Bazarr + Spacers) -->
+    <!-- Row 2: Secondary Companion Services (Transmission + Spacers) -->
     <LinearLayout
         android:id="@+id/svc_row_2"
         android:layout_width="match_parent"
@@ -233,43 +199,15 @@
             </FrameLayout>
         </LinearLayout>
 
-        <!-- 8. Bazarr -->
-        <LinearLayout
-            android:id="@+id/svc_container_bazarr"
+        <!-- Invisible spacers to preserve 4-column alignment -->
+        <FrameLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_margin="2dp"
             android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical">
+            android:visibility="invisible" />
 
-            <FrameLayout
-                android:id="@+id/svc_tile_bazarr"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@drawable/widget_service_tile_bg">
-
-                <ImageView
-                    android:id="@+id/svc_icon_bazarr"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_service_bazarr" />
-
-                <ImageView
-                    android:id="@+id/svc_dot_bazarr"
-                    android:layout_width="5dp"
-                    android:layout_height="5dp"
-                    android:layout_gravity="top|end"
-                    android:layout_marginEnd="4dp"
-                    android:layout_marginTop="4dp"
-                    android:src="@drawable/widget_status_dot_red" />
-            </FrameLayout>
-        </LinearLayout>
-
-        <!-- 10. Spacer FrameLayout to preserve 5-column alignment -->
         <FrameLayout
-            android:id="@+id/svc_container_spacer"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_margin="2dp"

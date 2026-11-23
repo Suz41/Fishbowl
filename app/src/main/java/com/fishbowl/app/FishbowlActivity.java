@@ -163,10 +163,7 @@ public final class FishbowlActivity extends AppCompatActivity
     private static final int TAB_TRANSMISSION = 12;
     private View cachedProwlarrView;
     private ProwlarrTabView prowlarrTabView;
-    private View cachedJackettView;
-    private JackettTabView jackettTabView;
     private static final int TAB_PROWLARR = 11;
-    private static final int TAB_JACKETT = 13;
 
     // Containers
     private LinearLayout rootLayout;
@@ -360,9 +357,10 @@ public final class FishbowlActivity extends AppCompatActivity
     private final Runnable downloadRefreshRunnable = new Runnable() {
         @Override
         public void run() {
-            if (activeTab == 1 && !isFinishing() && (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1 || !isDestroyed())) {
-                refreshDownloadCenter();
-                long delay = hasActiveDownloads ? 1500L : 3500L;
+            if (activeTab == TAB_TRANSMISSION && !isFinishing() && (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1 || !isDestroyed())) {
+                boolean visible = downloadItemsContainer != null && downloadItemsContainer.isShown();
+                if (visible) refreshDownloadCenter();
+                long delay = (visible && hasActiveDownloads) ? 1500L : 3500L;
                 downloadAutoRefreshHandler.postDelayed(this, delay);
             }
         }
@@ -671,7 +669,7 @@ public final class FishbowlActivity extends AppCompatActivity
         } else {
             triggerAutoStartOnAppLaunchIfEnabled();
         }
-        if (activeTab == 1) {
+        if (activeTab == TAB_TRANSMISSION) {
             downloadAutoRefreshHandler.removeCallbacks(downloadRefreshRunnable);
             downloadAutoRefreshHandler.post(downloadRefreshRunnable);
         }
@@ -751,9 +749,6 @@ public final class FishbowlActivity extends AppCompatActivity
             return;
         }
         if (activeTab == TAB_PROWLARR && prowlarrTabView != null && prowlarrTabView.onBack()) {
-            return;
-        }
-        if (activeTab == TAB_JACKETT && jackettTabView != null && jackettTabView.onBack()) {
             return;
         }
         if (activeTab == 3 && closeSettingsSection()) {
@@ -950,6 +945,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         transmissionTabView = new TransmissionTabView(this);
+        transmissionTabView.setCenterView(buildDownloadCenterCard(), this::refreshDownloadCenter);
         cachedTransmissionView = transmissionTabView.getView();
         cachedTransmissionView.setVisibility(View.GONE);
         contentContainer.addView(cachedTransmissionView, new FrameLayout.LayoutParams(
@@ -959,12 +955,6 @@ public final class FishbowlActivity extends AppCompatActivity
         cachedProwlarrView = prowlarrTabView.getView();
         cachedProwlarrView.setVisibility(View.GONE);
         contentContainer.addView(cachedProwlarrView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        jackettTabView = new JackettTabView(this);
-        cachedJackettView = jackettTabView.getView();
-        cachedJackettView.setVisibility(View.GONE);
-        contentContainer.addView(cachedJackettView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         cachedPlaceholderView = buildPlaceholderView();
@@ -983,6 +973,9 @@ public final class FishbowlActivity extends AppCompatActivity
         rootLayout.addView(navDivider, new LinearLayout.LayoutParams(-1, dp(1)));
 
         bottomNavLayout = buildBottomNavBar();
+        bottomNavLayout.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or2, ob) -> {
+            if (b - t != ob - ot) syncDrawerBottomMargin();
+        });
         rootLayout.addView(bottomNavLayout);
 
         // Initial tab render
@@ -1169,10 +1162,9 @@ public final class FishbowlActivity extends AppCompatActivity
         if (cachedRadarrView != null) cachedRadarrView.setVisibility(activeTab == TAB_RADARR ? View.VISIBLE : View.GONE);
         if (cachedTransmissionView != null) cachedTransmissionView.setVisibility(activeTab == TAB_TRANSMISSION ? View.VISIBLE : View.GONE);
         if (cachedProwlarrView != null) cachedProwlarrView.setVisibility(activeTab == TAB_PROWLARR ? View.VISIBLE : View.GONE);
-        if (cachedJackettView != null) cachedJackettView.setVisibility(activeTab == TAB_JACKETT ? View.VISIBLE : View.GONE);
         if (cachedPlaceholderView != null) {
             boolean ph = activeTab >= PLACEHOLDER_TAB_BASE && activeTab != TAB_RADARR && activeTab != TAB_TRANSMISSION
-                    && activeTab != TAB_PROWLARR && activeTab != TAB_JACKETT;
+                    && activeTab != TAB_PROWLARR;
             cachedPlaceholderView.setVisibility(ph ? View.VISIBLE : View.GONE);
             if (ph) showPlaceholderFor(activeTab);
         }
@@ -1183,7 +1175,6 @@ public final class FishbowlActivity extends AppCompatActivity
             refreshHomeAccountsUI();
         } else if (activeTab == 1) {
             refreshServicesTabUI();
-            refreshDownloadCenter();
         } else if (activeTab == 2) {
             refreshLogServiceChips();
             updateLogLevelChips();
@@ -1209,10 +1200,10 @@ public final class FishbowlActivity extends AppCompatActivity
             if (radarrTabView != null) radarrTabView.refresh();
         } else if (activeTab == TAB_TRANSMISSION) {
             if (transmissionTabView != null) transmissionTabView.refresh();
+            downloadAutoRefreshHandler.removeCallbacks(downloadRefreshRunnable);
+            downloadAutoRefreshHandler.postDelayed(downloadRefreshRunnable, 800);
         } else if (activeTab == TAB_PROWLARR) {
             if (prowlarrTabView != null) prowlarrTabView.refresh();
-        } else if (activeTab == TAB_JACKETT) {
-            if (jackettTabView != null) jackettTabView.refresh();
         } else if (activeTab == 4) {
             refreshUnifiedLogsDisplay();
             if (autoScrollEnabled && logsScrollView != null) {
@@ -1228,7 +1219,7 @@ public final class FishbowlActivity extends AppCompatActivity
             logUpdatePending = false;
         }
 
-        if (activeTab == 1) {
+        if (activeTab == TAB_TRANSMISSION) {
             downloadAutoRefreshHandler.removeCallbacks(downloadRefreshRunnable);
             downloadAutoRefreshHandler.postDelayed(downloadRefreshRunnable, 1000);
         } else {
@@ -2791,7 +2782,7 @@ public final class FishbowlActivity extends AppCompatActivity
         if (!isMovieStreamerModeEnabled() && isMediaStackEnabled()) {
             MediaServiceManager mgr = MediaServiceManager.getInstance(this);
             String[] preferredOrder = new String[] {
-                    "radarr", "sonarr", "prowlarr", "jackett", "transmission", "bazarr"
+                    "radarr", "sonarr", "prowlarr", "transmission"
             };
             for (String sid : preferredOrder) {
                 ManagedService s = mgr.getService(sid);
@@ -3063,11 +3054,7 @@ public final class FishbowlActivity extends AppCompatActivity
             case "radarr":       return R.drawable.logo_radarr;
             case "sonarr":       return R.drawable.logo_sonarr;
             case "prowlarr":     return R.drawable.logo_prowlarr;
-            case "jackett":
-            case "jkt":
-            case "jk":           return R.drawable.logo_jackett;
             case "transmission": return R.drawable.logo_transmission;
-            case "bazarr":       return R.drawable.logo_bazarr;
             case "jellyfin":
             default:             return R.drawable.logo_jellyfin;
         }
@@ -4160,8 +4147,8 @@ public final class FishbowlActivity extends AppCompatActivity
         // Determine service tag from line or fallback
         String serviceTag = defaultServiceTag;
         if (line.startsWith("[JELLYFIN]") || line.startsWith("[RADARR]") || line.startsWith("[SONARR]")
-                || line.startsWith("[PROWLARR]") || line.startsWith("[JACKETT]") || line.startsWith("[TRANSMISSION]")
-                || line.startsWith("[BAZARR]")) {
+                || line.startsWith("[PROWLARR]") || line.startsWith("[TRANSMISSION]")
+                ) {
             int endTag = line.indexOf(']');
             if (endTag > 0) {
                 serviceTag = line.substring(1, endTag).toUpperCase(Locale.ROOT);
@@ -4393,15 +4380,14 @@ public final class FishbowlActivity extends AppCompatActivity
     private boolean sideDrawerOpen = false;
 
     private static final int PLACEHOLDER_TAB_BASE = 10;
-    private static final String[] PLACEHOLDER_NAMES = {"Radarr", "Prowlarr", "Transmission", "Jackett", "Bazarr"};
+    private static final String[] PLACEHOLDER_NAMES = {"Radarr", "Prowlarr", "Transmission"};
     private static final int[] PLACEHOLDER_ICONS = {R.drawable.logo_radarr, R.drawable.logo_prowlarr,
-            R.drawable.logo_transmission, R.drawable.logo_jackett,
-            R.drawable.logo_bazarr};
+            R.drawable.logo_transmission};
 
     /** True for the full-colour original service logos (PNG); they are never tinted. */
     private static boolean isColorLogoRes(int res) {
         return res == R.drawable.logo_jellyfin || res == R.drawable.logo_radarr || res == R.drawable.logo_sonarr || res == R.drawable.logo_prowlarr
-                || res == R.drawable.logo_jackett || res == R.drawable.logo_transmission || res == R.drawable.logo_bazarr;
+                || res == R.drawable.logo_transmission;
     }
 
     /** Colour logo: full colour when active, desaturated and faded when off. */
@@ -4519,7 +4505,7 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private void applyDrawerInsets(int top, int bottom) {
-        if (sideDrawerPanel != null) sideDrawerPanel.setPadding(0, top + dp(24), 0, bottom + dp(24));
+        if (sideDrawerPanel != null) sideDrawerPanel.setPadding(0, top + dp(24), 0, dp(24));
     }
 
     private void rebuildDrawerItems() {
@@ -4638,8 +4624,23 @@ public final class FishbowlActivity extends AppCompatActivity
         if (sideDrawerOpen) closeSideDrawer(); else openSideDrawer();
     }
 
+    /** Keeps the drawer and its scrim above the bottom navigation bar so they never cover it. */
+    private void syncDrawerBottomMargin() {
+        if (sideDrawerPanel == null || sideDrawerScrim == null || bottomNavLayout == null) return;
+        int h = bottomNavLayout.getVisibility() == View.VISIBLE ? bottomNavLayout.getHeight() : 0;
+        View[] vs = {sideDrawerPanel, sideDrawerScrim};
+        for (View v : vs) {
+            ViewGroup.LayoutParams lp = v.getLayoutParams();
+            if (lp instanceof FrameLayout.LayoutParams && ((FrameLayout.LayoutParams) lp).bottomMargin != h) {
+                ((FrameLayout.LayoutParams) lp).bottomMargin = h;
+                v.setLayoutParams(lp);
+            }
+        }
+    }
+
     private void openSideDrawer() {
         if (sideDrawerPanel == null || sideDrawerOpen) return;
+        syncDrawerBottomMargin();
         sideDrawerOpen = true;
         updateDrawerSelection();
         sideDrawerScrim.setVisibility(View.VISIBLE);
@@ -5076,12 +5077,8 @@ public final class FishbowlActivity extends AppCompatActivity
         servicesCardsContainer.setLayoutParams(scParams);
         layout.addView(servicesCardsContainer);
 
-        // Unified Torrent Download Manager directly integrated at bottom of Media Stack
-        layout.addView(buildDownloadCenterCard());
-
         scroll.addView(layout);
         refreshServicesTabUI();
-        refreshDownloadCenter();
         return scroll;
     }
 
@@ -6552,21 +6549,13 @@ public final class FishbowlActivity extends AppCompatActivity
         // 4. Runtime Environment Check
         File prefix = TermuxConstants.TERMUX_PREFIX_DIR;
         String id = svc.getId().toLowerCase(Locale.ROOT);
-        if ("radarr".equals(id) || "sonarr".equals(id) || "prowlarr".equals(id) || "jackett".equals(id)) {
+        if ("radarr".equals(id) || "sonarr".equals(id) || "prowlarr".equals(id)) {
             File dotnet = new File(prefix, "lib/dotnet/dotnet");
             if (!dotnet.exists()) dotnet = new File(prefix, "bin/dotnet");
             if (dotnet.exists()) {
                 checks.add("[OK] Runtime: .NET 10.0 ARM64 CoreCLR Installed");
             } else {
                 checks.add("[OK] Runtime: CoreCLR Bionic Decoupling Ready");
-            }
-        } else if ("bazarr".equals(id)) {
-            File python = new File(prefix, "bin/python3");
-            if (!python.exists()) python = new File(prefix, "bin/python");
-            if (python.exists()) {
-                checks.add("[OK] Runtime: Python 3 Installed");
-            } else {
-                checks.add("[WARN] Runtime: Python 3 needed for execution");
             }
         } else if ("transmission".equals(id)) {
             checks.add("[OK] Runtime: Native ARM64 Bionic Ready");
@@ -7086,7 +7075,7 @@ public final class FishbowlActivity extends AppCompatActivity
                         for (int i = 0; i < assets.length(); i++) {
                             JSONObject a = assets.getJSONObject(i);
                             String name = a.optString("name", "");
-                            if ((name.contains(pattern) || (pattern.equals("bazarr.zip") && name.equalsIgnoreCase("bazarr.zip"))) && !name.contains("musl")) {
+                            if ((name.contains(pattern)) && !name.contains("musl")) {
                                 String bUrl = a.optString("browser_download_url", "");
                                 if (!bUrl.isEmpty()) return bUrl;
                                 return a.optString("url", "");
@@ -7105,8 +7094,6 @@ public final class FishbowlActivity extends AppCompatActivity
         if ("radarr".equalsIgnoreCase(id)) return fetchGitHubApiAssetUrl("Radarr/Radarr", "linux-core-arm64.tar.gz");
         if ("sonarr".equalsIgnoreCase(id)) return fetchGitHubApiAssetUrl("Sonarr/Sonarr", "linux-arm64.tar.gz");
         if ("prowlarr".equalsIgnoreCase(id)) return fetchGitHubApiAssetUrl("Prowlarr/Prowlarr", "linux-core-arm64.tar.gz");
-        if ("jackett".equalsIgnoreCase(id)) return fetchGitHubApiAssetUrl("Jackett/Jackett", "LinuxARM64.tar.gz");
-        if ("bazarr".equalsIgnoreCase(id)) return fetchGitHubApiAssetUrl("morpheus65535/bazarr", "bazarr.zip");
         return null;
     }
 
@@ -7860,101 +7847,6 @@ public final class FishbowlActivity extends AppCompatActivity
 
         String id = svc.getId().toLowerCase(Locale.ROOT);
 
-        if ("bazarr".equalsIgnoreCase(id)) {
-            ensurePythonSymlinks(prefix);
-            ensureLibrarySymlinks(prefix);
-            File pythonBin = new File(prefix, "bin/python3");
-            if (!pythonBin.exists()) pythonBin = new File(prefix, "bin/python");
-            File bzLibSsl = new File(prefix, "lib/libssl.so.3");
-            File bzLibSqlite = new File(prefix, "lib/libsqlite3.so");
-            File bzExpat = new File(prefix, "lib/libexpat.so.1.13.1");
-            if (!pythonBin.exists() || !bzLibSsl.exists() || !bzLibSqlite.exists() || !bzExpat.exists()
-                    || !isDebPackageAlreadyInstalled("libexpat", prefix)) {
-                String[] pyDeps = {
-                    "libc++", "zlib", "openssl", "libbz2", "libcrypt", "libexpat", "libffi",
-                    "liblzma", "libsqlite", "libandroid-support", "libandroid-posix-semaphore",
-                    "ncurses", "ncurses-ui-libs", "readline", "zstd", "python"
-                };
-                for (String dep : pyDeps) {
-                    if (progress != null && progress.isCancelled()) {
-                        throw new InterruptedException("Installation cancelled");
-                    }
-                    downloadAndInstallDebPackage(dep, prefix, progress, "Setting up Python 3 runtime (" + dep + ")...");
-                }
-                ensurePythonSymlinks(prefix);
-                ensureLibrarySymlinks(prefix);
-                if (pythonBin.exists()) {
-                    pythonBin.setExecutable(true, false);
-                    try { android.system.Os.chmod(pythonBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                }
-            }
-
-            File sevenZipBin = new File(prefix, "bin/7z");
-            if (!sevenZipBin.exists()) {
-                downloadAndInstallDebPackage("7zip", prefix, progress, "Setting up 7-Zip archiver utility...");
-                ensureLibrarySymlinks(prefix);
-            }
-
-            if (progress != null && progress.isCancelled()) {
-                throw new InterruptedException("Installation cancelled");
-            }
-
-            runOnUiThread(() -> {
-                if (progress != null) progress.setMessage(I18n.tr("Downloading Bazarr release..."));
-            });
-            File cacheZip = new File(getCacheDir(), "bazarr.zip");
-            String bzUrl = "https://github.com/morpheus65535/bazarr/releases/latest/download/bazarr.zip";
-            final String bzStep = "Downloading Bazarr release...";
-            DownloadProgressCallback bzCallback = new DownloadProgressCallback() {
-                @Override
-                public void onProgress(long current, long total, double speedKbps) {
-                    if (progress != null) {
-                        runOnUiThread(() -> progress.updateDownloadProgress(bzStep, current, total, speedKbps));
-                    }
-                }
-                @Override
-                public boolean isCancelled() {
-                    return progress != null && progress.isCancelled();
-                }
-            };
-
-            try {
-                downloadWithRedirects(bzUrl, cacheZip, bzCallback);
-            } catch (Exception dlEx) {
-                if (progress != null && progress.isCancelled()) throw dlEx;
-                String fallbackUrl = fetchGitHubApiAssetUrl("morpheus65535/bazarr", "bazarr.zip");
-                if (fallbackUrl != null && !fallbackUrl.isEmpty()) {
-                    Log.i(TAG, "Direct Bazarr download failed, falling back to GitHub API stream: " + fallbackUrl);
-                    runOnUiThread(() -> {
-                        if (progress != null) progress.setMessage(I18n.tr("Resolving direct asset stream for Bazarr..."));
-                    });
-                    downloadWithRedirects(fallbackUrl, cacheZip, bzCallback);
-                } else {
-                    throw dlEx;
-                }
-            }
-
-            if (progress != null && progress.isCancelled()) {
-                if (cacheZip.exists()) cacheZip.delete();
-                throw new InterruptedException("Installation cancelled");
-            }
-
-            runOnUiThread(() -> {
-                if (progress != null) {
-                    progress.setStep("Extracting Bazarr packages...", "Unpacking python components...");
-                }
-            });
-            File bzTarget = new File(servicesDir, "bazarr");
-            if (!bzTarget.exists()) bzTarget.mkdirs();
-            extractZipArchive(cacheZip, bzTarget);
-            cacheZip.delete();
-
-            MediaServiceManager.getInstance(this).ensureServiceConfigSanitized("bazarr");
-            MediaServiceManager.getInstance(this).autoWireStack(null);
-            svc.reconcileInstalledState();
-            return;
-        }
-
         if ("transmission".equalsIgnoreCase(id)) {
             String[] trDeps = {"libc++", "libpsl", "libidn2", "libevent", "miniupnpc", "natpmpc", "transmission"};
             for (String dep : trDeps) {
@@ -7978,7 +7870,7 @@ public final class FishbowlActivity extends AppCompatActivity
             return;
         }
 
-        // Servarr applications (.NET 10.0 ARM64): Radarr, Sonarr, Prowlarr, Jackett
+        // Servarr applications (.NET 10.0 ARM64): Radarr, Sonarr, Prowlarr
         String downloadUrl;
         if ("sonarr".equalsIgnoreCase(id)) {
             downloadUrl = "https://services.sonarr.tv/v1/download/main/latest?version=4&os=linux&arch=arm64";
@@ -7986,8 +7878,6 @@ public final class FishbowlActivity extends AppCompatActivity
             downloadUrl = "https://prowlarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
         } else if ("radarr".equalsIgnoreCase(id)) {
             downloadUrl = "https://radarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch=arm64";
-        } else if ("jackett".equalsIgnoreCase(id)) {
-            downloadUrl = "https://github.com/Jackett/Jackett/releases/latest/download/Jackett.Binaries.LinuxARM64.tar.gz";
         } else {
             return;
         }
@@ -8082,23 +7972,13 @@ public final class FishbowlActivity extends AppCompatActivity
                 dll = checkCap;
             } else if (checkLow.exists()) {
                 dll = checkLow;
-            } else if ("jackett".equalsIgnoreCase(id)) {
-                File checkJackett = new File(targetDir, "jackett.dll");
-                File checkCapJackett = new File(targetDir, "Jackett.dll");
-                if (checkJackett.exists()) dll = checkJackett;
-                else if (checkCapJackett.exists()) dll = checkCapJackett;
             }
         }
-        File jackettBin = new File(targetDir, "jackett");
-        if (jackettBin.exists()) {
-            jackettBin.setExecutable(true, false);
-            try { android.system.Os.chmod(jackettBin.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-        }
-        if (!dll.exists() && !"jackett".equalsIgnoreCase(id)) {
+        if (!dll.exists()) {
             File foundDll = findDllRecursively(targetDir, id);
             if (foundDll != null) dll = foundDll;
         }
-        if (!dll.exists() && !("jackett".equalsIgnoreCase(id) && jackettBin.exists())) {
+        if (!dll.exists()) {
             throw new IllegalStateException("Service binary not found after extraction: " + svc.getManifest().getExecutableOrDllPath());
         }
         if (dll.exists()) {
@@ -8803,9 +8683,9 @@ public final class FishbowlActivity extends AppCompatActivity
         what.setText("What gets synchronized:\n"
                 + "• Download folders and media library folders (Movies / Series / Music)\n"
                 + "• Transmission as the download client in Radarr and Sonarr\n"
-                + "• Prowlarr/Jackett indexers pushed to Radarr and Sonarr\n"
+                + "• Prowlarr indexers pushed to Radarr and Sonarr\n"
                 + "• Existing media imported into Radarr / Sonarr\n"
-                + "• API keys and Bazarr subtitles links\n\n"
+                + "• API keys between the services\n\n"
                 + "Only services that are installed AND running are synchronized.");
         what.setTextSize(12f);
         what.setTextColor(AppTheme.textSecondary());
@@ -8826,7 +8706,7 @@ public final class FishbowlActivity extends AppCompatActivity
         dRef[0] = showOledDialog("Sync Stack", "Live progress", sv, null, 0, null, "CLOSE", null);
 
         String[][] known = {{"Transmission","transmission"},{"Radarr","radarr"},{"Sonarr","sonarr"},
-                {"Prowlarr","prowlarr"},{"Jackett","jackett"},{"Bazarr","bazarr"}};
+                {"Prowlarr","prowlarr"}};
         for (String[] k : known) {
             try {
                 ManagedService svc = mgr.getService(k[1]);
@@ -8851,10 +8731,10 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private void launchMoviesStack() {
-        Toast.makeText(this, I18n.tr("Starting Movies Stack (Radarr + Transmission + Prowlarr + Jackett)..."), Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, I18n.tr("Starting Movies Stack (Radarr + Transmission + Prowlarr)..."), Toast.LENGTH_SHORT).show();
         new Thread(() -> {
             MediaServiceManager mgr = MediaServiceManager.getInstance(this);
-            String[] servicesToStart = {"transmission", "prowlarr", "jackett", "radarr"};
+            String[] servicesToStart = {"transmission", "prowlarr", "radarr"};
             for (String id : servicesToStart) {
                 ManagedService svc = mgr.getService(id);
                 if (svc != null && svc.isEnabled() && !svc.isRunning() && svc.isInstalled()) {
@@ -8872,10 +8752,10 @@ public final class FishbowlActivity extends AppCompatActivity
     }
 
     private void launchSeriesStack() {
-        Toast.makeText(this, I18n.tr("Starting TV Shows / Series Stack (Sonarr + Transmission + Prowlarr + Jackett)..."), Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, I18n.tr("Starting TV Shows / Series Stack (Sonarr + Transmission + Prowlarr)..."), Toast.LENGTH_SHORT).show();
         new Thread(() -> {
             MediaServiceManager mgr = MediaServiceManager.getInstance(this);
-            String[] servicesToStart = {"transmission", "prowlarr", "jackett", "sonarr"};
+            String[] servicesToStart = {"transmission", "prowlarr", "sonarr"};
             for (String id : servicesToStart) {
                 ManagedService svc = mgr.getService(id);
                 if (svc != null && svc.isEnabled() && !svc.isRunning() && svc.isInstalled()) {
@@ -9708,13 +9588,11 @@ public final class FishbowlActivity extends AppCompatActivity
                 long radarrBytes = calculateDirSize(new File(servicesDir, "radarr"));
                 long sonarrBytes = calculateDirSize(new File(servicesDir, "sonarr"));
                 long prowlarrBytes = calculateDirSize(new File(servicesDir, "prowlarr"));
-                long jackettBytes = calculateDirSize(new File(servicesDir, "jackett"));
-                long bazarrBytes = calculateDirSize(new File(servicesDir, "bazarr"));
 
                 File radarrBak = new File(servicesDir, "radarr.bak");
                 long radarrBakBytes = radarrBak.exists() ? calculateDirSize(radarrBak) : 0;
 
-                long totalBytes = usrBytes + radarrBytes + sonarrBytes + prowlarrBytes + jackettBytes + bazarrBytes + radarrBakBytes;
+                long totalBytes = usrBytes + radarrBytes + sonarrBytes + prowlarrBytes + radarrBakBytes;
 
                 runOnUiThread(() -> {
                     progress.dismiss();
@@ -9762,14 +9640,6 @@ public final class FishbowlActivity extends AppCompatActivity
                     }
                     if (prowlarrBytes > 0) {
                         content.addView(createStorageBreakdownItem(AppTheme.warning(), "Prowlarr (Indexer Proxy)", "/services/prowlarr", prowlarrBytes, totalBytes));
-                        content.addView(createSettingsDivider());
-                    }
-                    if (jackettBytes > 0) {
-                        content.addView(createStorageBreakdownItem(AppTheme.warning(), "Jackett (Indexer Proxy)", "/services/jackett", jackettBytes, totalBytes));
-                        content.addView(createSettingsDivider());
-                    }
-                    if (bazarrBytes > 0) {
-                        content.addView(createStorageBreakdownItem(Color.parseColor("#5D9253"), "Bazarr (Subtitles Engine)", "/services/bazarr", bazarrBytes, totalBytes));
                         content.addView(createSettingsDivider());
                     }
 
@@ -12069,13 +11939,9 @@ public final class FishbowlActivity extends AppCompatActivity
         content.addView(createSettingsDivider());
         content.addView(buildSpecRow("Transmission Daemon", "GNU GPL v2.0 / v3.0"));
         content.addView(createSettingsDivider());
-        content.addView(buildSpecRow("Jackett Indexer Proxy", "GNU GPL v2.0"));
-        content.addView(createSettingsDivider());
         content.addView(buildSpecRow("Termux Android Environment", "Apache License 2.0"));
         content.addView(createSettingsDivider());
         content.addView(buildSpecRow("Servarr Stack (Radarr/Sonarr/Prowlarr)", "GNU GPL v3.0"));
-        content.addView(createSettingsDivider());
-        content.addView(buildSpecRow("Bazarr Subtitle Manager", "GNU GPL v3.0"));
         content.addView(createSettingsDivider());
         content.addView(buildSpecRow("FlareSolverr Cloudflare Proxy", "MIT License"));
         content.addView(createSettingsDivider());
@@ -12136,16 +12002,10 @@ public final class FishbowlActivity extends AppCompatActivity
                 + "Copyright (c) .NET Foundation and Contributors\n\n"
                 + "5. Transmission Daemon (GPL-2.0 / GPL-3.0)\n"
                 + "Copyright (c) Transmission Project\n\n"
-                + "6. Jackett Torrent Indexer Proxy (GPL-2.0)\n"
-                + "Copyright (c) Jackett Contributors\n"
-                + "Licensed under the GNU General Public License v2.0.\n\n"
                 + "7. Termux Android Environment (Apache-2.0)\n"
                 + "Copyright (c) Termux Open Source Project\n\n"
                 + "8. Servarr Stack (Radarr, Sonarr, Prowlarr) (GPL-3.0)\n"
                 + "Copyright (c) Servarr Development Team\n\n"
-                + "9. Bazarr Subtitles (GPL-3.0)\n"
-                + "Copyright (c) Bazarr Contributors\n"
-                + "Licensed under the GNU General Public License v3.0.\n\n"
                 + "11. FlareSolverr Proxy (MIT)\n"
                 + "Copyright (c) FlareSolverr Contributors\n"
                 + "Licensed under the MIT License.\n\n"

@@ -441,12 +441,10 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
             else if (customUrl.contains(":8989")) serviceId = "sonarr";
             else if (customUrl.contains(":9696")) serviceId = "prowlarr";
             else if (customUrl.contains(":9091")) serviceId = "transmission";
-            else if (customUrl.contains(":6767")) serviceId = "bazarr";
-            else if (customUrl.contains(":9117")) serviceId = "jackett";
         }
 
         if (serviceId != null) {
-            long waitTimeout = "bazarr".equalsIgnoreCase(serviceId) ? 120000L : 60000L;
+            long waitTimeout = 60000L;
             MediaServiceManager.getInstance(this).ensureServiceReadyAndGetUrl(serviceId, waitTimeout, new MediaServiceManager.ServiceReadyCallback() {
                 @Override
                 public void onReady(String url) {
@@ -712,7 +710,7 @@ public final class JellyfinWebActivity extends AppCompatActivity implements Jell
             if (host == null) return false;
             boolean isLocal = "127.0.0.1".equals(host) || "localhost".equals(host) || isLocalOrLanHost(host);
             boolean isAllowedPort = (port == 8096 || port == 7878 || port == 8989 || port == 9696
-                    || port == 9091 || port == 5055 || port == 6767 || port == 8686 || port == 9117);
+                    || port == 9091 || port == 5055 || port == 8686);
             return isLocal && isAllowedPort;
         } catch (Throwable t) {
             return false;

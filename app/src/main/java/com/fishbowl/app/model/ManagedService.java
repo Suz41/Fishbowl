@@ -43,24 +43,6 @@ public class ManagedService {
             File f = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/transmission-daemon");
             return f.exists();
         }
-        if ("bazarr".equalsIgnoreCase(manifest.getId())) {
-            File f1 = manifest.getExecutableOrDllPath() != null ? new File(manifest.getExecutableOrDllPath()) : null;
-            File home = TermuxConstants.TERMUX_HOME_DIR;
-            File f2 = new File(home, "services/bazarr/main.py");
-            File f3 = new File(home, "services/bazarr/bazarr/main.py");
-            boolean fOk = (f1 != null && f1.exists()) || f2.exists() || f3.exists();
-            File pyBin1 = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/python3");
-            File pyBin2 = new File(TermuxConstants.TERMUX_PREFIX_DIR, "bin/python");
-            boolean pyOk = pyBin1.exists() || pyBin2.exists();
-            return fOk && pyOk;
-        }
-        if ("jackett".equalsIgnoreCase(manifest.getId())) {
-            File fBin = new File(manifest.getInstallDir(), "jackett");
-            File fDll = new File(manifest.getInstallDir(), "Jackett.dll");
-            File fDllLower = new File(manifest.getInstallDir(), "jackett.dll");
-            File fTarget = manifest.getExecutableOrDllPath() != null ? new File(manifest.getExecutableOrDllPath()) : null;
-            return (fTarget != null && fTarget.exists()) || fBin.exists() || fDll.exists() || fDllLower.exists();
-        }
         if (manifest.getExecutableOrDllPath() != null) {
             File f = new File(manifest.getExecutableOrDllPath());
             if (f.exists()) return true;

@@ -1023,12 +1023,8 @@ public final class UpdateManager {
                 "Current release up to date (.NET 10 ARM64)."));
         list.add(new ServiceVersionInfo("prowlarr", "Prowlarr", "1.31.2", "1.31.2", false,
                 "Current release up to date (.NET 10 ARM64)."));
-        list.add(new ServiceVersionInfo("jackett", "Jackett Indexer Proxy", "0.24.2932", "0.24.2932", false,
-                "Current release up to date (.NET 10 ARM64 Torznab multi-tracker provider)."));
         list.add(new ServiceVersionInfo("transmission", "Transmission", "4.1.4", "4.1.4", false,
                 "Active native BitTorrent client v4.1.4 up to date."));
-        list.add(new ServiceVersionInfo("bazarr", "Bazarr", "1.4.3", "1.4.3", false,
-                "Python 3.12 Bionic runtime supervisor active."));
         return list;
     }
 

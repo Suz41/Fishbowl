@@ -41,8 +41,8 @@ public class ServiceLifecycleContractsTest {
         Assert.assertEquals("sonarr", failure.getServiceId());
         Assert.assertEquals("Port occupied", failure.getReason());
 
-        ServiceLifecycleResult.Skipped skipped = new ServiceLifecycleResult.Skipped("bazarr", "Already running");
-        Assert.assertEquals("bazarr", skipped.getServiceId());
+        ServiceLifecycleResult.Skipped skipped = new ServiceLifecycleResult.Skipped("radarr", "Already running");
+        Assert.assertEquals("radarr", skipped.getServiceId());
         Assert.assertEquals("Already running", skipped.getReason());
     }
 

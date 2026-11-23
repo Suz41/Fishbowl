@@ -1,4 +1,9 @@
-What's new in 2.0.4-beta.15 (beta)
+What's new in 2.0.4-beta.16 (beta)
+- Bazarr and Jackett were removed from the app completely (services, drawer, widget, storage, settings, licences).
+- The side drawer now opens above the bottom navigation bar instead of covering it.
+- The Download Center moved from the Media page into the Transmission tab (new DOWNLOADS section with history, refresh and clear).
+
+From 2.0.4-beta.15:
 - New Prowlarr tab (side drawer): indexers (add / edit / test / enable), search and grab, applications sync, stats, history and system.
 - New Jackett tab (side drawer): indexers (add / edit / test / delete) with Torznab URLs, search with copy / send to Transmission, and server settings.
 

@@ -56,8 +56,9 @@ public final class TransmissionTabView {
     private static final int S_ADD = 1;
     private static final int S_SPEED = 2;
     private static final int S_SETTINGS = 3;
+    private static final int S_CENTER = 4;
 
-    private static final String[] SECTION_NAMES = {"TORRENTS", "ADD", "SPEED", "SETTINGS"};
+    private static final String[] SECTION_NAMES = {"TORRENTS", "ADD", "SPEED", "SETTINGS", "DOWNLOADS"};
     private static final String[] FILTER_NAMES = {"All", "Downloading", "Seeding", "Paused", "Error", "Completed"};
     private static final String[] SORT_NAMES = {"Name", "Date added", "Progress", "Size", "Download speed", "Ratio", "Queue"};
 
@@ -196,8 +197,26 @@ public final class TransmissionTabView {
             case S_TORRENTS: loadTorrents(false); startTicker(); break;
             case S_ADD: renderAdd(); break;
             case S_SPEED: loadSpeed(); startTicker(); break;
+            case S_CENTER: renderCenter(); break;
             default: loadSettings(); break;
         }
+    }
+
+    private View centerView = null;
+    private Runnable centerRefresh = null;
+
+    /** Hosts the app's Download Center (history / clear / per-torrent rows) as the DOWNLOADS section. */
+    public void setCenterView(View v, Runnable refreshAction) {
+        centerView = v;
+        centerRefresh = refreshAction;
+    }
+
+    private void renderCenter() {
+        listContainer.removeAllViews();
+        if (centerView == null) return;
+        if (centerView.getParent() instanceof ViewGroup) ((ViewGroup) centerView.getParent()).removeView(centerView);
+        listContainer.addView(centerView);
+        if (centerRefresh != null) centerRefresh.run();
     }
 
     private boolean isLive() {

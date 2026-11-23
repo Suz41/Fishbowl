@@ -58,16 +58,14 @@ public class FishbowlServicesWidgetProvider extends AppWidgetProvider {
     }
 
     private static final ServiceEntry[] SERVICES = new ServiceEntry[] {
-            // Row 1: Top 5 Core & Primary Indexers / Download Orchestrators
+            // Row 1: Top 4 Core & Primary Indexers / Download Orchestrators
             new ServiceEntry("jellyfin",     R.id.svc_container_jellyfin,     R.id.svc_tile_jellyfin,     R.id.svc_icon_jellyfin,     R.id.svc_dot_jellyfin,     8096, "#AB03A9", false),
             new ServiceEntry("radarr",       R.id.svc_container_radarr,       R.id.svc_tile_radarr,       R.id.svc_icon_radarr,       R.id.svc_dot_radarr,       7878, "#FF9E20", false),
             new ServiceEntry("sonarr",       R.id.svc_container_sonarr,       R.id.svc_tile_sonarr,       R.id.svc_icon_sonarr,       R.id.svc_dot_sonarr,       8989, "#CCFBFA", false),
             new ServiceEntry("prowlarr",     R.id.svc_container_prowlarr,     R.id.svc_tile_prowlarr,     R.id.svc_icon_prowlarr,     R.id.svc_dot_prowlarr,     9696, "#FFFC8C", false),
-            new ServiceEntry("jackett",      R.id.svc_container_jackett,      R.id.svc_tile_jackett,      R.id.svc_icon_jackett,      R.id.svc_dot_jackett,      9117, "#F97316", false),
 
             // Row 2: Secondary Companion Services & Download Client
             new ServiceEntry("transmission", R.id.svc_container_transmission, R.id.svc_tile_transmission, R.id.svc_icon_transmission, R.id.svc_dot_transmission, 9091, "#FF788D", true),
-            new ServiceEntry("bazarr",       R.id.svc_container_bazarr,       R.id.svc_tile_bazarr,       R.id.svc_icon_bazarr,       R.id.svc_dot_bazarr,       6767, "#5D9253", true),
     };
 
     @Override
@@ -169,7 +167,6 @@ public class FishbowlServicesWidgetProvider extends AppWidgetProvider {
             views.setViewVisibility(R.id.svc_row_2, View.GONE);
         } else {
             views.setViewVisibility(R.id.svc_row_2, View.VISIBLE);
-            views.setViewVisibility(R.id.svc_container_spacer, row2InstalledCount == 4 ? View.INVISIBLE : View.GONE);
         }
 
         appWidgetManager.updateAppWidget(appWidgetId, views);

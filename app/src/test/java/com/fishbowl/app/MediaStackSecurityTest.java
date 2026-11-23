@@ -72,7 +72,7 @@ public class MediaStackSecurityTest {
         jellyfinDir.mkdirs();
 
         Set<String> allowedCompanions = new HashSet<>(Arrays.asList(
-                "radarr", "sonarr", "prowlarr", "jackett", "transmission", "transmission-daemon", "bazarr"
+                "radarr", "sonarr", "prowlarr", "transmission", "transmission-daemon"
         ));
 
         // Simulate strict cleanup
@@ -154,28 +154,5 @@ public class MediaStackSecurityTest {
     public void testFindPidListeningOnPortReturnsZeroForUnoccupiedPort() {
         int pid = MediaServiceManager.findPidListeningOnPort(59999);
         Assert.assertEquals("Unoccupied port must resolve to PID 0", 0, pid);
-    }
-
-    @Test
-    public void testBazarrApiKeyParsingFromYaml() throws Exception {
-        File bazarrConfigDir = new File(configDir, "bazarr/config");
-        bazarrConfigDir.mkdirs();
-        File yamlFile = new File(bazarrConfigDir, "config.yaml");
-        String testKey = "abc123def456bazarrtestkey";
-        String yamlContent = "---\nauth:\n  apikey: '" + testKey + "'\n  type: form\ngeneral:\n  port: 6767\n";
-        MediaServiceManager.writeTextFile(yamlFile, yamlContent);
-
-        String readKey = null;
-        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(yamlFile))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                line = line.trim();
-                if (line.startsWith("apikey:")) {
-                    readKey = line.replace("apikey:", "").trim().replace("'", "").replace("\"", "");
-                    break;
-                }
-            }
-        }
-        Assert.assertEquals("Extracted Bazarr API key must match configured YAML value", testKey, readKey);
     }
 }

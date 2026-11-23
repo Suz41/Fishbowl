@@ -47,9 +47,7 @@ object DashboardPresenter {
             "radarr", "rrr" -> parseHexColor("#FF9E20")
             "sonarr", "snr" -> parseHexColor("#CCFBFA")
             "prowlarr", "prr" -> parseHexColor("#FFFC8C")
-            "jackett", "jkt", "jk" -> parseHexColor("#F97316")
             "transmission", "trr" -> parseHexColor("#FF788D")
-            "bazarr", "brr", "bzr" -> parseHexColor("#5D9253")
             "flaresolverr", "flr" -> parseHexColor("#34D399")
             "jellyfin", "jfn", "jf" -> parseHexColor("#AB03A9")
             else -> -1

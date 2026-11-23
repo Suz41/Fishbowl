@@ -395,7 +395,7 @@ public class ProcessConcurrencyAndLifecycleStressTest {
                 // Rollback state from STARTING to ERROR
                 serviceState.set("ERROR");
                 callbackResult.set(new ServiceLifecycleResult.Failure(
-                        "bazarr",
+                        "radarr",
                         "RESOURCE_EXHAUSTED: Lifecycle executor queue full",
                         rex
                 ));

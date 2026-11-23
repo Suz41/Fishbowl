@@ -413,8 +413,6 @@ public final class JellyfinAccountManager {
         list.add(new ServiceSecurityMapping("sonarr", "Sonarr (TV Shows)", 8989, "TV Series PVR Automation & Season Tracking", "API Key / Forms (Disabled for Local)", false));
         list.add(new ServiceSecurityMapping("prowlarr", "Prowlarr (Indexers)", 9696, "Unified Torrent & Usenet Indexer Proxy", "API Key / Forms (Disabled for Local)", false));
         list.add(new ServiceSecurityMapping("transmission", "Transmission Daemon", 9091, "Headless BitTorrent Download Client", "RPC Loopback Whitelist / No Auth", false));
-        list.add(new ServiceSecurityMapping("bazarr", "Bazarr (Subtitles)", 6767, "Multi-language Subtitle Fetcher", "API Key / Local Loopback Access", false));
-        list.add(new ServiceSecurityMapping("jackett", "Jackett Proxy", 9117, "Torrent Tracker Proxy & Torznab Provider", "API Key / Loopback Access", false));
         return list;
     }
 }

@@ -18,7 +18,6 @@ In accordance with Section 6 of the GNU General Public License v3.0 (*Conveying 
 | **Radarr** | `6.4.4` (ARM64) | [Radarr/Radarr](https://github.com/Radarr/Radarr) | GNU GPLv3 |
 | **Sonarr** | `4.0.9` (ARM64) | [Sonarr/Sonarr](https://github.com/Sonarr/Sonarr) | GNU GPLv3 |
 | **Prowlarr** | `1.21.2` (ARM64) | [Prowlarr/Prowlarr](https://github.com/Prowlarr/Prowlarr) | GNU GPLv3 |
-| **Jackett** | `0.22.x` (ARM64) | [Jackett/Jackett](https://github.com/Jackett/Jackett) | GNU GPLv2 |
 | **Transmission Daemon** | `4.1.4` (ARM64 Bionic) | [transmission/transmission](https://github.com/transmission/transmission) | GNU GPLv2 / GPLv3 |
 | **SQLite3 Database Engine** | `3.46.1` (`libe_sqlite3.so`) | [sqlite/sqlite](https://sqlite.org) | Public Domain |
 | **Fontconfig Engine** | `2.15.0` (`libfontconfig.so`) | [fontconfig/fontconfig](https://gitlab.freedesktop.org/fontconfig/fontconfig) | MIT / Permissive |
@@ -41,11 +40,6 @@ In accordance with Section 6 of the GNU General Public License v3.0 (*Conveying 
 - **License:** GNU General Public License v3.0 (GPLv3)
 - **Website:** <https://jellyfin.org>
 - **Notice:** Fishbowl is an independent, unofficial community project. It is not affiliated with, endorsed by, maintained by, or sponsored by the official Jellyfin Project.
-
-### Jackett Indexer Proxy
-- **Copyright:** (c) 2014-2026 Jackett Contributors
-- **License:** GNU General Public License v2.0 (GPLv2)
-- **Source:** <https://github.com/Jackett/Jackett>
 
 ### Servarr Automation Stack (Radarr, Sonarr, Prowlarr)
 - **Copyright:** (c) 2010–2026 Sonarr, Radarr, and Prowlarr Contributors
@@ -144,7 +138,7 @@ IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING WILL ANY C
 Fishbowl is an open-source Android hosting environment designed exclusively for private homelab infrastructure and personal media server administration.
 
 - Fishbowl does not host, stream, distribute, or index any copyrighted content, torrents, magnet links, or proprietary media streams.
-- Bundled and interfaced companion utilities (such as Transmission, Radarr, Sonarr, Prowlarr, Jackett, and Bazarr) are modular, open-source software packages intended solely for lawful personal workflows, including managing self-owned backups, personal home videos, Creative Commons assets, and public-domain media.
+- Bundled and interfaced companion utilities (such as Transmission, Radarr, Sonarr, and Prowlarr) are modular, open-source software packages intended solely for lawful personal workflows, including managing self-owned backups, personal home videos, Creative Commons assets, and public-domain media.
 - The project maintainers expressly disclaim any and all liability for unauthorized or illegal use of this software. End users are solely responsible for ensuring that their use of Fishbowl complies with all relevant local, national, and international copyright and telecommunications laws.
 
 ---
