@@ -859,6 +859,11 @@ public class JellyfinController {
             Map<String, String> env = pb.environment();
             env.put("HOME", homeDir.getAbsolutePath());
             env.put("DOTNET_ROOT", new File(prefixDir, "lib/dotnet").getAbsolutePath());
+            File tmpDir = new File(prefixDir, "tmp");
+            if (!tmpDir.exists()) {
+                tmpDir.mkdirs();
+            }
+            env.put("TMPDIR", tmpDir.getAbsolutePath());
             String existingPath = env.getOrDefault("PATH", "");
             env.put("PATH", new File(prefixDir, "lib/dotnet").getAbsolutePath()
                     + ":" + new File(prefixDir, "opt/jellyfin/bin").getAbsolutePath()

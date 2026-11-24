@@ -153,7 +153,11 @@ public class JellyfinBootstrapper {
 
     public static void ensureNetworkConfig(Context context) {
         try {
-            File etcDir = new File(TermuxConstants.TERMUX_PREFIX_DIR, "etc");
+            File prefixDir = TermuxConstants.TERMUX_PREFIX_DIR;
+            File tmpDir = new File(prefixDir, "tmp");
+            if (!tmpDir.exists()) tmpDir.mkdirs();
+
+            File etcDir = new File(prefixDir, "etc");
             if (!etcDir.exists()) etcDir.mkdirs();
 
             File hostsFile = new File(etcDir, "hosts");
