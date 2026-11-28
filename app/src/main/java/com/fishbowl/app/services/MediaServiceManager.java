@@ -1244,8 +1244,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 env.put("DOTNET_GCHighMemPercent", "75");
                 env.put("DOTNET_ThreadPool_MinThreads", "4");
                 env.put("DOTNET_ThreadPool_MaxThreads", "64");
-                env.put("DOTNET_DefaultStackSize", "2097152");
-                env.put("COMPlus_DefaultStackSize", "2097152");
+                env.put("DOTNET_DefaultStackSize", "200000"); // 0x200000 = 2MB (CoreCLR parses DWORD as hex)
+                env.put("COMPlus_DefaultStackSize", "200000");
                 env.put("DOTNET_EnableWriteXorExecute", "0");
 
                 String nativeLibDir = appContext.getApplicationInfo().nativeLibraryDir;
@@ -2302,28 +2302,74 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 try { android.system.Os.chmod(targetEsqlite.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
             }
 
-            // 4. Ensure Bionic libMonoPosixHelper.so is present from prefix/lib or directly from assets
+            // 4. Ensure Bionic libMonoPosixHelper.so is present from nativeLibraryDir, prefix/lib, or assets (atomic replace to avoid SIGBUS on live mmap)
+            File nativeMono = new File(appContext.getApplicationInfo().nativeLibraryDir, "libMonoPosixHelper.so");
             File prefixMono = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libMonoPosixHelper.so");
-            if (!prefixMono.exists()) {
-                try (InputStream in = appContext.getAssets().open("libMonoPosixHelper.so");
-                     FileOutputStream out = new FileOutputStream(prefixMono)) {
-                    byte[] buf = new byte[8192];
-                    int r;
-                    while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
-                } catch (Throwable ignored) {}
-                if (prefixMono.exists()) {
-                    try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            if (!prefixMono.exists() || (nativeMono.exists() && prefixMono.length() != nativeMono.length())) {
+                File tmpMono = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/.libMonoPosixHelper.so.tmp");
+                boolean copied = false;
+                if (nativeMono.exists()) {
+                    try {
+                        copyFile(nativeMono, tmpMono);
+                        copied = tmpMono.exists() && tmpMono.length() > 0;
+                    } catch (Throwable ignored) {}
+                }
+                if (!copied) {
+                    try (InputStream in = appContext.getAssets().open("libMonoPosixHelper.so");
+                         FileOutputStream out = new FileOutputStream(tmpMono)) {
+                        byte[] buf = new byte[8192];
+                        int r;
+                        while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+                        copied = tmpMono.exists() && tmpMono.length() > 0;
+                    } catch (Throwable ignored) {}
+                }
+                if (copied) {
+                    try { android.system.Os.chmod(tmpMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                    if (!tmpMono.renameTo(prefixMono)) tmpMono.delete();
+                } else if (tmpMono.exists()) {
+                    tmpMono.delete();
                 }
             }
+            if (prefixMono.exists()) {
+                try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
             File targetMono = new File(parent, "libMonoPosixHelper.so");
-            if (prefixMono.exists() && (!targetMono.exists() || targetMono.length() != prefixMono.length())) {
-                copyFile(prefixMono, targetMono);
+            File targetNoLibMono = new File(parent, "MonoPosixHelper.so");
+            File monoSrc = nativeMono.exists() ? nativeMono : prefixMono;
+            if (monoSrc.exists()) {
+                for (File dst : new File[] { targetMono, targetNoLibMono }) {
+                    if (!dst.exists() || dst.length() != monoSrc.length()) {
+                        File tmpDst = new File(parent, "." + dst.getName() + ".tmp");
+                        try {
+                            copyFile(monoSrc, tmpDst);
+                            tmpDst.setReadable(true, false);
+                            tmpDst.setExecutable(true, false);
+                            try { android.system.Os.chmod(tmpDst.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                            if (!tmpDst.renameTo(dst)) tmpDst.delete();
+                        } catch (Throwable ignored) {
+                            if (tmpDst.exists()) tmpDst.delete();
+                        }
+                    }
+                    if (dst.exists()) {
+                        dst.setReadable(true, false);
+                        dst.setExecutable(true, false);
+                        try { android.system.Os.chmod(dst.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                    }
+                }
             }
-            if (targetMono.exists()) {
-                targetMono.setReadable(true, false);
-                targetMono.setExecutable(true, false);
-                try { android.system.Os.chmod(targetMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-            }
+
+            // Ensure Android system libz.so is symlinked into prefix/lib for libMonoPosixHelper.so zlib resolution
+            try {
+                File prefixLibZ = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libz.so");
+                File prefixLibZ1 = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libz.so.1");
+                File systemLibZ = new File("/system/lib64/libz.so");
+                if (!prefixLibZ.exists() && systemLibZ.exists()) {
+                    android.system.Os.symlink(systemLibZ.getAbsolutePath(), prefixLibZ.getAbsolutePath());
+                }
+                if (!prefixLibZ1.exists() && prefixLibZ.exists()) {
+                    android.system.Os.symlink(prefixLibZ.getAbsolutePath(), prefixLibZ1.getAbsolutePath());
+                }
+            } catch (Throwable ignored) {}
 
             // 5. Ensure runtimeconfig uses net10.0 and Bionic frameworks
             File jfConfig = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.runtimeconfig.json");
@@ -2346,6 +2392,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                         "    ],\n" +
                         "    \"configProperties\": {\n" +
                         "      \"System.GC.Server\": false,\n" +
+                        "      \"System.Threading.DefaultStackSize\": 2097152,\n" +
+                        "      \"System.Threading.ThreadPool.MinThreads\": 4,\n" +
+                        "      \"System.Threading.ThreadPool.MaxThreads\": 64,\n" +
                         "      \"System.Reflection.Metadata.MetadataUpdater.IsSupported\": false,\n" +
                         "      \"System.Reflection.NullabilityInfoContext.IsSupported\": true,\n" +
                         "      \"System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization\": false\n" +
@@ -2356,6 +2405,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     fos.write(minimalConfig.getBytes(StandardCharsets.UTF_8));
                 }
             }
+
+            healServarrDatabase(baseName);
 
             // 6. Pre-create or sanitize config.xml (BindAddress 0.0.0.0 and Auth None for local Web UI)
             File configDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/" + baseName);
@@ -2516,6 +2567,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         else if ("prowlarr".equalsIgnoreCase(serviceId)) { baseName = "Prowlarr"; port = 9696; }
         else if ("lidarr".equalsIgnoreCase(serviceId)) { baseName = "Lidarr"; port = 8686; }
         if (baseName != null) {
+            healServarrDatabase(baseName);
             File configDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/" + baseName);
             if (!configDir.exists()) configDir.mkdirs();
             File configXml = new File(configDir, "config.xml");
@@ -2769,13 +2821,43 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     }
 
     private void preSeedPopularJackettIndexers(File indexersDir) {
+        // Mirror torrentgalaxyclone.yml to torrentgalaxy.yml in Definitions for backwards compatibility
+        try {
+            File defDir = new File(TermuxConstants.TERMUX_HOME_DIR, "services/jackett/Definitions");
+            if (defDir.exists() && defDir.isDirectory()) {
+                File cloneDef = new File(defDir, "torrentgalaxyclone.yml");
+                File tgDef = new File(defDir, "torrentgalaxy.yml");
+                if (cloneDef.exists() && !tgDef.exists()) {
+                    copyFile(cloneDef, tgDef);
+                    Log.i(TAG, "[Jackett] Mirrored torrentgalaxyclone.yml to torrentgalaxy.yml");
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        // Purge obsolete torrentgalaxy definition causing Jackett HTTP 500 'Unknown indexer'
+        File badTg = new File(indexersDir, "torrentgalaxy.json");
+        if (badTg.exists()) badTg.delete();
+
+        // Ensure limetorrents uses www. to prevent Cardigann 301/302 domain redirect exception
+        File ltFile = new File(indexersDir, "limetorrents.json");
+        if (ltFile.exists()) {
+            try {
+                byte[] bytes = java.nio.file.Files.readAllBytes(ltFile.toPath());
+                String ltJson = new String(bytes, StandardCharsets.UTF_8);
+                if (ltJson.contains("https://limetorrents.lol/") && !ltJson.contains("https://www.limetorrents.lol/")) {
+                    ltJson = ltJson.replace("https://limetorrents.lol/", "https://www.limetorrents.lol/");
+                    java.nio.file.Files.write(ltFile.toPath(), ltJson.getBytes(StandardCharsets.UTF_8));
+                }
+            } catch (Throwable ignored) {}
+        }
+
         String[][] trackers = {
             {"1337x", "https://1337x.to/"},
             {"yts", "https://yts.mx/"},
             {"thepiratebay", "https://thepiratebay.org/"},
             {"eztv", "https://eztv.re/"},
-            {"torrentgalaxy", "https://torrentgalaxy.to/"},
-            {"limetorrents", "https://limetorrents.lol/"}
+            {"torrentgalaxyclone", "https://torrentgalaxy.to/"},
+            {"limetorrents", "https://www.limetorrents.lol/"}
         };
         for (String[] tracker : trackers) {
             File idxFile = new File(indexersDir, tracker[0] + ".json");
@@ -2787,6 +2869,30 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     }
                 } catch (Throwable ignored) {}
             }
+        }
+    }
+
+    private void healServarrDatabase(String baseName) {
+        if (baseName == null) return;
+        try {
+            File dbFile = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/" + baseName + "/" + baseName.toLowerCase(Locale.ROOT) + ".db");
+            if (!dbFile.exists()) return;
+            android.database.sqlite.SQLiteDatabase db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    dbFile.getAbsolutePath(), null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE);
+            if (db != null) {
+                try {
+                    db.execSQL("UPDATE Indexers SET Settings = REPLACE(Settings, '/indexers/torrentgalaxy/', '/indexers/torrentgalaxyclone/') WHERE Settings LIKE '%/indexers/torrentgalaxy/%';");
+                    db.execSQL("UPDATE Indexers SET Settings = REPLACE(Settings, 'https://limetorrents.lol/', 'https://www.limetorrents.lol/') WHERE Settings LIKE '%https://limetorrents.lol/%';");
+                    db.execSQL("UPDATE Indexers SET Settings = REPLACE(Settings, 'http://limetorrents.lol/', 'https://www.limetorrents.lol/') WHERE Settings LIKE '%http://limetorrents.lol/%';");
+                    Log.i(TAG, "[DatabaseHealer] Successfully healed " + baseName + " database indexers");
+                } catch (Throwable t) {
+                    Log.d(TAG, "[DatabaseHealer] Notice updating " + baseName + ": " + t.getMessage());
+                } finally {
+                    db.close();
+                }
+            }
+        } catch (Throwable t) {
+            Log.d(TAG, "[DatabaseHealer] Could not open " + baseName + " DB: " + t.getMessage());
         }
     }
 
@@ -4338,6 +4444,10 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 for (File f : files) {
                     String name = f.getName();
                     String id = name.substring(0, name.length() - 5).trim();
+                    if ("torrentgalaxy".equalsIgnoreCase(id)) {
+                        f.delete();
+                        continue;
+                    }
                     if (!id.isEmpty() && !"ServerConfig".equalsIgnoreCase(id)) {
                         foundIds.add(id);
                     }
@@ -4349,7 +4459,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             foundIds.add("yts");
             foundIds.add("thepiratebay");
             foundIds.add("1337x");
-            foundIds.add("torrentgalaxy");
+            foundIds.add("torrentgalaxyclone");
             foundIds.add("limetorrents");
             foundIds.add("eztv");
         }
@@ -4396,31 +4506,40 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         return list;
     }
 
-    private void cleanupLegacyJackettAllIndexer(int port, String apiKey, String existing) {
-        if (existing == null || (!existing.contains("Jackett (All)") && !existing.contains("/indexers/all/"))) return;
+    private boolean cleanupLegacyJackettAllIndexer(int port, String apiKey, String existing) {
+        if (existing == null) return false;
+        String existingLower = existing.toLowerCase(Locale.ROOT);
+        if (!existing.contains("Jackett (All)") && !existingLower.contains("/indexers/all/") && !existingLower.contains("/indexers/torrentgalaxy/")) {
+            return false;
+        }
+        boolean deletedAny = false;
         try {
             org.json.JSONArray arr = new org.json.JSONArray(existing);
             for (int i = 0; i < arr.length(); i++) {
                 org.json.JSONObject item = arr.getJSONObject(i);
                 String name = item.optString("name", "");
-                String raw = item.toString();
-                if (name.contains("Jackett (All)") || raw.contains("/indexers/all/")) {
+                String rawLower = item.toString().toLowerCase(Locale.ROOT);
+                if (name.contains("Jackett (All)") || rawLower.contains("/indexers/all/") || rawLower.contains("/indexers/torrentgalaxy/")) {
                     int id = item.optInt("id", -1);
                     if (id > 0) {
                         httpDelete("http://127.0.0.1:" + port + getApiPrefix(port) + "/indexer/" + id + "?apiKey=" + apiKey);
-                        Log.i(TAG, "[AutoWire] Cleaned up obsolete Jackett aggregate indexer id " + id + " from port " + port);
+                        deletedAny = true;
+                        Log.i(TAG, "[AutoWire] Cleaned up obsolete Jackett indexer id " + id + " from port " + port);
                     }
                 }
             }
         } catch (Throwable t) {
             Log.w(TAG, "[AutoWire] cleanupLegacyJackettAllIndexer notice: " + t.getMessage());
         }
+        return deletedAny;
     }
 
     private void ensureJackettInRadarr(String radarrKey, String jackettKey, StringBuilder log) {
         try {
             String existing = httpGet("http://127.0.0.1:7878/api/v3/indexer?apiKey=" + radarrKey);
-            cleanupLegacyJackettAllIndexer(7878, radarrKey, existing);
+            if (cleanupLegacyJackettAllIndexer(7878, radarrKey, existing)) {
+                existing = httpGet("http://127.0.0.1:7878/api/v3/indexer?apiKey=" + radarrKey);
+            }
 
             List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
             int addedCount = 0;
@@ -4476,7 +4595,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     private void ensureJackettInSonarr(String sonarrKey, String jackettKey, StringBuilder log) {
         try {
             String existing = httpGet("http://127.0.0.1:8989/api/v3/indexer?apiKey=" + sonarrKey);
-            cleanupLegacyJackettAllIndexer(8989, sonarrKey, existing);
+            if (cleanupLegacyJackettAllIndexer(8989, sonarrKey, existing)) {
+                existing = httpGet("http://127.0.0.1:8989/api/v3/indexer?apiKey=" + sonarrKey);
+            }
 
             List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
             int addedCount = 0;
@@ -4532,7 +4653,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     private void ensureJackettInLidarr(String lidarrKey, String jackettKey, StringBuilder log) {
         try {
             String existing = httpGet("http://127.0.0.1:8686/api/v1/indexer?apiKey=" + lidarrKey);
-            cleanupLegacyJackettAllIndexer(8686, lidarrKey, existing);
+            if (cleanupLegacyJackettAllIndexer(8686, lidarrKey, existing)) {
+                existing = httpGet("http://127.0.0.1:8686/api/v1/indexer?apiKey=" + lidarrKey);
+            }
 
             List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
             int addedCount = 0;
@@ -4588,7 +4711,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     private void ensureJackettInProwlarr(String prowlarrKey, String jackettKey, StringBuilder log) {
         try {
             String existing = httpGet("http://127.0.0.1:9696/api/v1/indexer?apiKey=" + prowlarrKey);
-            cleanupLegacyJackettAllIndexer(9696, prowlarrKey, existing);
+            if (cleanupLegacyJackettAllIndexer(9696, prowlarrKey, existing)) {
+                existing = httpGet("http://127.0.0.1:9696/api/v1/indexer?apiKey=" + prowlarrKey);
+            }
 
             List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
             int addedCount = 0;

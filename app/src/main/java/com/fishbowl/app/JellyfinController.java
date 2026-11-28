@@ -897,8 +897,8 @@ public class JellyfinController {
             env.put("DOTNET_GCHighMemPercent", "80");
             env.put("DOTNET_ThreadPool_MinThreads", "4");
             env.put("DOTNET_ThreadPool_MaxThreads", "48");
-            env.put("DOTNET_DefaultStackSize", "2097152");
-            env.put("COMPlus_DefaultStackSize", "2097152");
+            env.put("DOTNET_DefaultStackSize", "200000"); // 0x200000 = 2MB (CoreCLR parses DWORD as hex)
+            env.put("COMPlus_DefaultStackSize", "200000");
             env.put("DOTNET_EnableWriteXorExecute", "0");
             env.put("DOTNET_TieredPGO", "0");
 
