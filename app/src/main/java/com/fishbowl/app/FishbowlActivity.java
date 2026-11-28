@@ -6470,6 +6470,14 @@ public final class FishbowlActivity extends AppCompatActivity
                     throw new IOException("HTTP Error " + code + ": " + conn.getResponseMessage());
                 }
 
+                String contentType = conn.getContentType();
+                String destLower = destFile.getName().toLowerCase(Locale.ROOT);
+                if (contentType != null && contentType.toLowerCase(Locale.ROOT).contains("text/html")
+                        && (destLower.endsWith(".deb") || destLower.endsWith(".zip")
+                        || destLower.endsWith(".tar.gz") || destLower.endsWith(".tgz"))) {
+                    throw new IOException("Server returned HTML page (" + contentType + ") instead of binary archive for " + destFile.getName());
+                }
+
                 long totalLength = conn.getContentLengthLong();
                 if (destFile.exists()) destFile.delete();
                 if (destFile.getParentFile() != null && !destFile.getParentFile().exists()) {
@@ -6701,24 +6709,24 @@ public final class FishbowlActivity extends AppCompatActivity
         TERMUX_POOL_MAP.put("transmission", "pool/main/t/transmission/transmission_4.1.4_aarch64.deb");
         TERMUX_POOL_MAP.put("libpsl", "pool/main/libp/libpsl/libpsl_0.23.3_aarch64.deb");
         TERMUX_POOL_MAP.put("libidn2", "pool/main/libi/libidn2/libidn2_2.3.8-1_aarch64.deb");
-        TERMUX_POOL_MAP.put("miniupnpc", "pool/main/m/miniupnpc/miniupnpc_2.3.3-1_aarch64.deb");
+        TERMUX_POOL_MAP.put("miniupnpc", "pool/main/m/miniupnpc/miniupnpc_2.3.5_aarch64.deb");
         TERMUX_POOL_MAP.put("natpmpc", "pool/main/n/natpmpc/natpmpc_20230423-2_aarch64.deb");
         TERMUX_POOL_MAP.put("libc++", "pool/main/libc/libc++/libc++_30_aarch64.deb");
         TERMUX_POOL_MAP.put("7zip", "pool/main/7/7zip/7zip_26.06_aarch64.deb");
-        TERMUX_POOL_MAP.put("nodejs-lts", "pool/main/n/nodejs-lts/nodejs-lts_24.22.2-1_aarch64.deb");
+        TERMUX_POOL_MAP.put("nodejs-lts", "pool/main/n/nodejs-lts/nodejs-lts_24.22.3_aarch64.deb");
         TERMUX_POOL_MAP.put("zlib", "pool/main/z/zlib/zlib_1.4_aarch64.deb");
         TERMUX_POOL_MAP.put("openssl", "pool/main/o/openssl/openssl_1:3.6.5_aarch64.deb");
         TERMUX_POOL_MAP.put("libicu", "pool/main/libi/libicu/libicu_79.1_aarch64.deb");
         TERMUX_POOL_MAP.put("libcrypt", "pool/main/libc/libcrypt/libcrypt_0.2-6_aarch64.deb");
         TERMUX_POOL_MAP.put("libandroid-posix-semaphore", "pool/main/liba/libandroid-posix-semaphore/libandroid-posix-semaphore_0.1-4_aarch64.deb");
         TERMUX_POOL_MAP.put("ncurses-ui-libs", "pool/main/n/ncurses-ui-libs/ncurses-ui-libs_6.6.20260307+really6.5.20250830_aarch64.deb");
-        TERMUX_POOL_MAP.put("zstd", "pool/main/z/zstd/zstd_1.5.7-1_aarch64.deb");
+        TERMUX_POOL_MAP.put("zstd", "pool/main/z/zstd/zstd_1.6.0_aarch64.deb");
         TERMUX_POOL_MAP.put("c-ares", "pool/main/c/c-ares/c-ares_1.34.9_aarch64.deb");
         TERMUX_POOL_MAP.put("python", "pool/main/p/python/python_3.14.10_aarch64.deb");
         TERMUX_POOL_MAP.put("libbz2", "pool/main/libb/libbz2/libbz2_1.0.8-8_aarch64.deb");
-        TERMUX_POOL_MAP.put("libexpat", "pool/main/libe/libexpat/libexpat_2.10.0_aarch64.deb");
+        TERMUX_POOL_MAP.put("libexpat", "pool/main/libe/libexpat/libexpat_2.11.0_aarch64.deb");
         TERMUX_POOL_MAP.put("libevent", "pool/main/libe/libevent/libevent_2.1.13_aarch64.deb");
-        TERMUX_POOL_MAP.put("libffi", "pool/main/libf/libffi/libffi_3.8.0_aarch64.deb");
+        TERMUX_POOL_MAP.put("libffi", "pool/main/libf/libffi/libffi_3.8.2_aarch64.deb");
         TERMUX_POOL_MAP.put("liblzma", "pool/main/libl/liblzma/liblzma_5.8.4_aarch64.deb");
         TERMUX_POOL_MAP.put("libsqlite", "pool/main/libs/libsqlite/libsqlite_3.54.1-1_aarch64.deb");
         TERMUX_POOL_MAP.put("libandroid-support", "pool/main/liba/libandroid-support/libandroid-support_29-1_aarch64.deb");
@@ -7050,6 +7058,19 @@ public final class FishbowlActivity extends AppCompatActivity
         }
     }
 
+    private static boolean isValidDebArchive(File file) {
+        if (file == null || !file.exists() || file.length() < 16) return false;
+        try (FileInputStream fis = new FileInputStream(file)) {
+            byte[] magic = new byte[8];
+            if (fis.read(magic) != 8) return false;
+            // Debian .deb files are standard ar archives starting with "!<arch>\n"
+            return magic[0] == '!' && magic[1] == '<' && magic[2] == 'a' && magic[3] == 'r'
+                    && magic[4] == 'c' && magic[5] == 'h' && magic[6] == '>' && magic[7] == '\n';
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private void downloadAndInstallDebPackage(String pkgName, File prefixDir, OledProgressDialog progress, String stepDescription) throws Exception {
         if (isDebPackageAlreadyInstalled(pkgName, prefixDir)) {
             Log.i(TAG, "[FastInstall] Package " + pkgName + " already present in prefix, skipping download.");
@@ -7100,9 +7121,13 @@ public final class FishbowlActivity extends AppCompatActivity
             String debUrl = mirror + relPath;
             try {
                 downloadWithRedirects(debUrl, cacheDeb, debCb);
-                if (cacheDeb.exists() && cacheDeb.length() > 0) {
+                if (isValidDebArchive(cacheDeb)) {
                     downloaded = true;
                     break;
+                } else {
+                    if (cacheDeb.exists()) cacheDeb.delete();
+                    lastErr = new IOException("Mirror returned invalid .deb archive (expected !<arch> header) from " + debUrl);
+                    Log.w(TAG, "Invalid .deb archive from mirror " + debUrl + ", trying next mirror...");
                 }
             } catch (InterruptedException ie) {
                 if (cacheDeb.exists()) cacheDeb.delete();
@@ -7129,9 +7154,13 @@ public final class FishbowlActivity extends AppCompatActivity
                     String debUrl = mirror + relPath;
                     try {
                         downloadWithRedirects(debUrl, cacheDeb, debCb);
-                        if (cacheDeb.exists() && cacheDeb.length() > 0) {
+                        if (isValidDebArchive(cacheDeb)) {
                             downloaded = true;
                             break;
+                        } else {
+                            if (cacheDeb.exists()) cacheDeb.delete();
+                            lastErr = new IOException("Mirror returned invalid .deb archive (expected !<arch> header) from " + debUrl);
+                            Log.w(TAG, "Invalid dynamic .deb archive from mirror " + debUrl + ", trying next mirror...");
                         }
                     } catch (InterruptedException ie) {
                         if (cacheDeb.exists()) cacheDeb.delete();
@@ -7215,8 +7244,7 @@ public final class FishbowlActivity extends AppCompatActivity
             if (!pythonBin.exists()) pythonBin = new File(prefix, "bin/python");
             File bzLibSsl = new File(prefix, "lib/libssl.so.3");
             File bzLibSqlite = new File(prefix, "lib/libsqlite3.so");
-            File bzExpat = new File(prefix, "lib/libexpat.so.1.13.1");
-            if (!pythonBin.exists() || !bzLibSsl.exists() || !bzLibSqlite.exists() || !bzExpat.exists()
+            if (!pythonBin.exists() || !bzLibSsl.exists() || !bzLibSqlite.exists()
                     || !isDebPackageAlreadyInstalled("libexpat", prefix)) {
                 String[] pyDeps = {
                     "libc++", "zlib", "openssl", "libbz2", "libcrypt", "libexpat", "libffi",
