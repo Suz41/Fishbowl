@@ -1247,6 +1247,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 env.put("DOTNET_DefaultStackSize", "2097152");
                 env.put("COMPlus_DefaultStackSize", "2097152");
                 env.put("DOTNET_EnableWriteXorExecute", "0");
+                env.put("DOTNET_TieredPGO", "0");
 
                 String nativeLibDir = appContext.getApplicationInfo().nativeLibraryDir;
                 String prefixLib = new File(prefix, "lib").getAbsolutePath();
@@ -1281,8 +1282,16 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 ms.setProcessPid(pid);
                 if (pid > 0) {
                     try {
-                        android.os.Process.setThreadPriority((int) pid, android.os.Process.THREAD_PRIORITY_BACKGROUND);
-                        Log.i(TAG, "[Optimization] Set background thread priority (BACKGROUND) for " + ms.getDisplayName() + " (PID " + pid + ")");
+                        boolean isInteractiveWebStack = "sonarr".equalsIgnoreCase(id)
+                                || "radarr".equalsIgnoreCase(id)
+                                || "prowlarr".equalsIgnoreCase(id)
+                                || "lidarr".equalsIgnoreCase(id)
+                                || "jackett".equalsIgnoreCase(id);
+                        int targetPriority = isInteractiveWebStack
+                                ? android.os.Process.THREAD_PRIORITY_DEFAULT
+                                : android.os.Process.THREAD_PRIORITY_BACKGROUND;
+                        android.os.Process.setThreadPriority((int) pid, targetPriority);
+                        Log.i(TAG, "[Optimization] Set thread priority (" + (isInteractiveWebStack ? "DEFAULT" : "BACKGROUND") + ") for " + ms.getDisplayName() + " (PID " + pid + ")");
                     } catch (Throwable t) {
                         Log.w(TAG, "[Optimization] Could not set thread priority: " + t.getMessage());
                     }
@@ -2750,6 +2759,22 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 cfg.put("FlareSolverrUrl", "http://127.0.0.1:8191");
                 changed = true;
             }
+            if (!cfg.has("FlareSolverrMaxTimeout") || cfg.optInt("FlareSolverrMaxTimeout", 55000) > 15000) {
+                cfg.put("FlareSolverrMaxTimeout", 15000);
+                changed = true;
+            }
+            if (!cfg.has("CacheEnabled") || !cfg.optBoolean("CacheEnabled", false)) {
+                cfg.put("CacheEnabled", true);
+                changed = true;
+            }
+            if (!cfg.has("CacheTtl") || cfg.optInt("CacheTtl", 0) < 900) {
+                cfg.put("CacheTtl", 1800);
+                changed = true;
+            }
+            if (!cfg.has("CacheMaxResultsPerIndexer") || cfg.optInt("CacheMaxResultsPerIndexer", 0) <= 0) {
+                cfg.put("CacheMaxResultsPerIndexer", 1000);
+                changed = true;
+            }
             if (cfg.has("AdminPassword") && !cfg.optString("AdminPassword").isEmpty()) {
                 cfg.put("AdminPassword", "");
                 changed = true;
@@ -4142,6 +4167,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             return false;
         }
 
+        // Remove redundant Prowlarr->Jackett chained indexers (avoids double-hop latency and triple queries in Sonarr/Radarr)
+        cleanupChainedJackettInProwlarr(prowlarrKey, log);
+
         syncRecommendedIndexers(prowlarrKey, log);
 
         // Link into Radarr if running
@@ -4179,9 +4207,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         if (isPortOccupied(8191)) {
             int cfTagId = ensureProwlarrTag(prowlarrKey, "flaresolverr");
             if (!hasProwlarrProxy(prowlarrKey, "FlareSolverr")) {
-                String proxyBody = buildFlareSolverrProxyJson("FlareSolverr", "http://127.0.0.1:8191/", 60, cfTagId);
+                String proxyBody = buildFlareSolverrProxyJson("FlareSolverr", "http://127.0.0.1:8191/", 20, cfTagId);
                 if (postJson("http://127.0.0.1:9696/api/v1/indexerproxy?apiKey=" + prowlarrKey, proxyBody)) {
-                    log.append("[OK] Native Cloudflare Solver registered in Prowlarr\n");
+                    log.append("[OK] Native Cloudflare Solver registered in Prowlarr (20s timeout)\n");
                 } else {
                     log.append("[WARN] Failed to register Native Cloudflare Solver in Prowlarr\n");
                 }
@@ -4190,14 +4218,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 log.append("[OK] Native Cloudflare Solver already active in Prowlarr\n");
             }
             ensureIndexersTagged(prowlarrKey, cfTagId);
-        }
-
-        // Link Jackett into Prowlarr if running
-        if (isPortOccupied(9117)) {
-            String jackettKey = getServiceApiKey("jackett");
-            if (jackettKey != null) {
-                ensureJackettInProwlarr(prowlarrKey, jackettKey, log);
-            }
         }
 
         // Trigger sync command to push indexers to Radarr, Sonarr, and Lidarr
@@ -4273,7 +4293,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         if (isPortOccupied(9696)) {
             String prowlarrKey = getServiceApiKey("prowlarr");
             if (prowlarrKey != null) {
-                ensureJackettInProwlarr(prowlarrKey, jackettKey, log);
+                cleanupChainedJackettInProwlarr(prowlarrKey, log);
             }
         }
         return true;
@@ -4417,10 +4437,102 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         }
     }
 
+    private String normalizeTrackerKey(String raw) {
+        if (raw == null) return "";
+        String s = raw.toLowerCase(Locale.ROOT)
+                .replace("(prowlarr)", "")
+                .replace("(jackett)", "")
+                .replaceAll("[^a-z0-9]", "");
+        if (s.equals("torrentgalaxyclone") || s.equals("tgx")) return "torrentgalaxy";
+        if (s.equals("tpb")) return "thepiratebay";
+        if (s.equals("nyaa")) return "nyaasi";
+        if (s.equals("rarbg")) return "therarbg";
+        return s;
+    }
+
+    private Set<String> extractProwlarrTrackerKeys(String existingJson) {
+        Set<String> keys = new HashSet<>();
+        if (existingJson == null || !existingJson.trim().startsWith("[")) return keys;
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray(existingJson);
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject item = arr.getJSONObject(i);
+                String name = item.optString("name", "");
+                String rawLower = item.toString().toLowerCase(Locale.ROOT);
+                boolean isProwlarr = name.toLowerCase(Locale.ROOT).contains("(prowlarr)") || rawLower.contains("127.0.0.1:9696");
+                if (isProwlarr && !name.toLowerCase(Locale.ROOT).contains("(jackett)")) {
+                    String key = normalizeTrackerKey(name);
+                    if (!key.isEmpty()) keys.add(key);
+                }
+            }
+        } catch (Throwable ignored) {}
+        return keys;
+    }
+
+    private boolean deduplicateJackettAgainstProwlarr(int port, String apiKey, String existing, Set<String> prowlarrKeys) {
+        if (existing == null || prowlarrKeys == null || prowlarrKeys.isEmpty()) return false;
+        boolean deletedAny = false;
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray(existing);
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject item = arr.getJSONObject(i);
+                String name = item.optString("name", "");
+                String rawLower = item.toString().toLowerCase(Locale.ROOT);
+                boolean isJackett = name.toLowerCase(Locale.ROOT).contains("(jackett)") || rawLower.contains("127.0.0.1:9117");
+                if (isJackett) {
+                    String key = normalizeTrackerKey(name);
+                    if (!key.isEmpty() && prowlarrKeys.contains(key)) {
+                        int id = item.optInt("id", -1);
+                        if (id > 0) {
+                            httpDelete("http://127.0.0.1:" + port + getApiPrefix(port) + "/indexer/" + id + "?apiKey=" + apiKey);
+                            deletedAny = true;
+                            Log.i(TAG, "[AutoWire] Removed duplicate Jackett indexer '" + name + "' (already synced via Prowlarr) on port " + port);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "[AutoWire] deduplicateJackettAgainstProwlarr notice: " + t.getMessage());
+        }
+        return deletedAny;
+    }
+
+    private void cleanupChainedJackettInProwlarr(String prowlarrKey, StringBuilder log) {
+        try {
+            String existing = httpGet("http://127.0.0.1:9696/api/v1/indexer?apiKey=" + prowlarrKey);
+            if (existing == null || !existing.trim().startsWith("[")) return;
+            org.json.JSONArray arr = new org.json.JSONArray(existing);
+            int removed = 0;
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject item = arr.getJSONObject(i);
+                String name = item.optString("name", "");
+                String rawLower = item.toString().toLowerCase(Locale.ROOT);
+                if (name.toLowerCase(Locale.ROOT).contains("(jackett)") || rawLower.contains("127.0.0.1:9117")) {
+                    int id = item.optInt("id", -1);
+                    if (id > 0) {
+                        httpDelete("http://127.0.0.1:9696/api/v1/indexer/" + id + "?apiKey=" + prowlarrKey);
+                        removed++;
+                    }
+                }
+            }
+            if (removed > 0) {
+                Log.i(TAG, "[AutoWire] Removed " + removed + " redundant Prowlarr->Jackett chained indexer(s)");
+                if (log != null) log.append("[OK] Removed ").append(removed).append(" redundant Prowlarr->Jackett duplicate(s)\n");
+                postJson("http://127.0.0.1:9696/api/v1/command?apiKey=" + prowlarrKey, "{\"name\":\"ApplicationIndexerSync\"}");
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "[AutoWire] cleanupChainedJackettInProwlarr notice: " + t.getMessage());
+        }
+    }
+
     private void ensureJackettInRadarr(String radarrKey, String jackettKey, StringBuilder log) {
         try {
             String existing = httpGet("http://127.0.0.1:7878/api/v3/indexer?apiKey=" + radarrKey);
             cleanupLegacyJackettAllIndexer(7878, radarrKey, existing);
+            Set<String> prowlarrKeys = extractProwlarrTrackerKeys(existing);
+            if (deduplicateJackettAgainstProwlarr(7878, radarrKey, existing, prowlarrKeys)) {
+                existing = httpGet("http://127.0.0.1:7878/api/v3/indexer?apiKey=" + radarrKey);
+            }
 
             List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
             int addedCount = 0;
@@ -4428,6 +4540,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
 
             for (JackettIndexerInfo info : indexers) {
                 if (!info.supportsMovies) continue;
+                if (prowlarrKeys.contains(normalizeTrackerKey(info.displayName)) || prowlarrKeys.contains(normalizeTrackerKey(info.id))) {
+                    continue;
+                }
 
                 String targetUrl = "http://127.0.0.1:9117/api/v2.0/indexers/" + info.id + "/results/torznab/";
                 String targetName = info.displayName + " (Jackett)";
@@ -4477,6 +4592,10 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         try {
             String existing = httpGet("http://127.0.0.1:8989/api/v3/indexer?apiKey=" + sonarrKey);
             cleanupLegacyJackettAllIndexer(8989, sonarrKey, existing);
+            Set<String> prowlarrKeys = extractProwlarrTrackerKeys(existing);
+            if (deduplicateJackettAgainstProwlarr(8989, sonarrKey, existing, prowlarrKeys)) {
+                existing = httpGet("http://127.0.0.1:8989/api/v3/indexer?apiKey=" + sonarrKey);
+            }
 
             List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
             int addedCount = 0;
@@ -4484,6 +4603,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
 
             for (JackettIndexerInfo info : indexers) {
                 if (!info.supportsTv) continue;
+                if (prowlarrKeys.contains(normalizeTrackerKey(info.displayName)) || prowlarrKeys.contains(normalizeTrackerKey(info.id))) {
+                    continue;
+                }
 
                 String targetUrl = "http://127.0.0.1:9117/api/v2.0/indexers/" + info.id + "/results/torznab/";
                 String targetName = info.displayName + " (Jackett)";
@@ -4533,6 +4655,10 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         try {
             String existing = httpGet("http://127.0.0.1:8686/api/v1/indexer?apiKey=" + lidarrKey);
             cleanupLegacyJackettAllIndexer(8686, lidarrKey, existing);
+            Set<String> prowlarrKeys = extractProwlarrTrackerKeys(existing);
+            if (deduplicateJackettAgainstProwlarr(8686, lidarrKey, existing, prowlarrKeys)) {
+                existing = httpGet("http://127.0.0.1:8686/api/v1/indexer?apiKey=" + lidarrKey);
+            }
 
             List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
             int addedCount = 0;
@@ -4540,6 +4666,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
 
             for (JackettIndexerInfo info : indexers) {
                 if (!info.supportsMusic) continue;
+                if (prowlarrKeys.contains(normalizeTrackerKey(info.displayName)) || prowlarrKeys.contains(normalizeTrackerKey(info.id))) {
+                    continue;
+                }
 
                 String targetUrl = "http://127.0.0.1:9117/api/v2.0/indexers/" + info.id + "/results/torznab/";
                 String targetName = info.displayName + " (Jackett)";
@@ -5560,8 +5689,25 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                         tags = new org.json.JSONArray();
                         p.put("tags", tags);
                     }
+                    boolean proxyModified = false;
                     if (!hasTag) {
                         tags.put(tagId);
+                        proxyModified = true;
+                    }
+                    org.json.JSONArray fields = p.optJSONArray("fields");
+                    if (fields != null) {
+                        for (int f = 0; f < fields.length(); f++) {
+                            org.json.JSONObject field = fields.optJSONObject(f);
+                            if (field != null && "requestTimeout".equalsIgnoreCase(field.optString("name", ""))) {
+                                int curTimeout = field.optInt("value", 60);
+                                if (curTimeout > 20) {
+                                    field.put("value", 20);
+                                    proxyModified = true;
+                                }
+                            }
+                        }
+                    }
+                    if (proxyModified) {
                         int id = p.optInt("id", -1);
                         if (id > 0) {
                             putJson("http://127.0.0.1:9696/api/v1/indexerproxy/" + id + "?apiKey=" + apiKey, p.toString());
