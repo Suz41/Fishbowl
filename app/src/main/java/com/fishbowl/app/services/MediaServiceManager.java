@@ -1244,8 +1244,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 env.put("DOTNET_GCHighMemPercent", "75");
                 env.put("DOTNET_ThreadPool_MinThreads", "4");
                 env.put("DOTNET_ThreadPool_MaxThreads", "64");
-                env.put("DOTNET_DefaultStackSize", "2097152");
-                env.put("COMPlus_DefaultStackSize", "2097152");
+                env.put("DOTNET_DefaultStackSize", "200000"); // 0x200000 = 2MB (CoreCLR parses DWORD as hex)
+                env.put("COMPlus_DefaultStackSize", "200000");
                 env.put("DOTNET_EnableWriteXorExecute", "0");
 
                 String nativeLibDir = appContext.getApplicationInfo().nativeLibraryDir;
@@ -2302,28 +2302,74 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 try { android.system.Os.chmod(targetEsqlite.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
             }
 
-            // 4. Ensure Bionic libMonoPosixHelper.so is present from prefix/lib or directly from assets
+            // 4. Ensure Bionic libMonoPosixHelper.so is present from nativeLibraryDir, prefix/lib, or assets (atomic replace to avoid SIGBUS on live mmap)
+            File nativeMono = new File(appContext.getApplicationInfo().nativeLibraryDir, "libMonoPosixHelper.so");
             File prefixMono = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libMonoPosixHelper.so");
-            if (!prefixMono.exists()) {
-                try (InputStream in = appContext.getAssets().open("libMonoPosixHelper.so");
-                     FileOutputStream out = new FileOutputStream(prefixMono)) {
-                    byte[] buf = new byte[8192];
-                    int r;
-                    while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
-                } catch (Throwable ignored) {}
-                if (prefixMono.exists()) {
-                    try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            if (!prefixMono.exists() || (nativeMono.exists() && prefixMono.length() != nativeMono.length())) {
+                File tmpMono = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/.libMonoPosixHelper.so.tmp");
+                boolean copied = false;
+                if (nativeMono.exists()) {
+                    try {
+                        copyFile(nativeMono, tmpMono);
+                        copied = tmpMono.exists() && tmpMono.length() > 0;
+                    } catch (Throwable ignored) {}
+                }
+                if (!copied) {
+                    try (InputStream in = appContext.getAssets().open("libMonoPosixHelper.so");
+                         FileOutputStream out = new FileOutputStream(tmpMono)) {
+                        byte[] buf = new byte[8192];
+                        int r;
+                        while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+                        copied = tmpMono.exists() && tmpMono.length() > 0;
+                    } catch (Throwable ignored) {}
+                }
+                if (copied) {
+                    try { android.system.Os.chmod(tmpMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                    if (!tmpMono.renameTo(prefixMono)) tmpMono.delete();
+                } else if (tmpMono.exists()) {
+                    tmpMono.delete();
                 }
             }
+            if (prefixMono.exists()) {
+                try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            }
             File targetMono = new File(parent, "libMonoPosixHelper.so");
-            if (prefixMono.exists() && (!targetMono.exists() || targetMono.length() != prefixMono.length())) {
-                copyFile(prefixMono, targetMono);
+            File targetNoLibMono = new File(parent, "MonoPosixHelper.so");
+            File monoSrc = nativeMono.exists() ? nativeMono : prefixMono;
+            if (monoSrc.exists()) {
+                for (File dst : new File[] { targetMono, targetNoLibMono }) {
+                    if (!dst.exists() || dst.length() != monoSrc.length()) {
+                        File tmpDst = new File(parent, "." + dst.getName() + ".tmp");
+                        try {
+                            copyFile(monoSrc, tmpDst);
+                            tmpDst.setReadable(true, false);
+                            tmpDst.setExecutable(true, false);
+                            try { android.system.Os.chmod(tmpDst.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                            if (!tmpDst.renameTo(dst)) tmpDst.delete();
+                        } catch (Throwable ignored) {
+                            if (tmpDst.exists()) tmpDst.delete();
+                        }
+                    }
+                    if (dst.exists()) {
+                        dst.setReadable(true, false);
+                        dst.setExecutable(true, false);
+                        try { android.system.Os.chmod(dst.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                    }
+                }
             }
-            if (targetMono.exists()) {
-                targetMono.setReadable(true, false);
-                targetMono.setExecutable(true, false);
-                try { android.system.Os.chmod(targetMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-            }
+
+            // Ensure Android system libz.so is symlinked into prefix/lib for libMonoPosixHelper.so zlib resolution
+            try {
+                File prefixLibZ = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libz.so");
+                File prefixLibZ1 = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libz.so.1");
+                File systemLibZ = new File("/system/lib64/libz.so");
+                if (!prefixLibZ.exists() && systemLibZ.exists()) {
+                    android.system.Os.symlink(systemLibZ.getAbsolutePath(), prefixLibZ.getAbsolutePath());
+                }
+                if (!prefixLibZ1.exists() && prefixLibZ.exists()) {
+                    android.system.Os.symlink(prefixLibZ.getAbsolutePath(), prefixLibZ1.getAbsolutePath());
+                }
+            } catch (Throwable ignored) {}
 
             // 5. Ensure runtimeconfig uses net10.0 and Bionic frameworks
             File jfConfig = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.runtimeconfig.json");
@@ -2346,6 +2392,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                         "    ],\n" +
                         "    \"configProperties\": {\n" +
                         "      \"System.GC.Server\": false,\n" +
+                        "      \"System.Threading.DefaultStackSize\": 2097152,\n" +
+                        "      \"System.Threading.ThreadPool.MinThreads\": 4,\n" +
+                        "      \"System.Threading.ThreadPool.MaxThreads\": 64,\n" +
                         "      \"System.Reflection.Metadata.MetadataUpdater.IsSupported\": false,\n" +
                         "      \"System.Reflection.NullabilityInfoContext.IsSupported\": true,\n" +
                         "      \"System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization\": false\n" +
@@ -2356,6 +2405,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     fos.write(minimalConfig.getBytes(StandardCharsets.UTF_8));
                 }
             }
+
+            healServarrDatabase(baseName);
 
             // 6. Pre-create or sanitize config.xml (BindAddress 0.0.0.0 and Auth None for local Web UI)
             File configDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/" + baseName);
@@ -2516,6 +2567,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         else if ("prowlarr".equalsIgnoreCase(serviceId)) { baseName = "Prowlarr"; port = 9696; }
         else if ("lidarr".equalsIgnoreCase(serviceId)) { baseName = "Lidarr"; port = 8686; }
         if (baseName != null) {
+            healServarrDatabase(baseName);
             File configDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/" + baseName);
             if (!configDir.exists()) configDir.mkdirs();
             File configXml = new File(configDir, "config.xml");
@@ -2769,24 +2821,91 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     }
 
     private void preSeedPopularJackettIndexers(File indexersDir) {
-        String[][] trackers = {
-            {"1337x", "https://1337x.to/"},
-            {"yts", "https://yts.mx/"},
-            {"thepiratebay", "https://thepiratebay.org/"},
-            {"eztv", "https://eztv.re/"},
-            {"torrentgalaxy", "https://torrentgalaxy.to/"},
-            {"limetorrents", "https://limetorrents.lol/"}
+        // Mirror torrentgalaxyclone.yml to torrentgalaxy.yml in Definitions for backwards compatibility
+        try {
+            File defDir = new File(TermuxConstants.TERMUX_HOME_DIR, "services/jackett/Definitions");
+            if (defDir.exists() && defDir.isDirectory()) {
+                File cloneDef = new File(defDir, "torrentgalaxyclone.yml");
+                File tgDef = new File(defDir, "torrentgalaxy.yml");
+                if (cloneDef.exists() && !tgDef.exists()) {
+                    copyFile(cloneDef, tgDef);
+                    Log.i(TAG, "[Jackett] Mirrored torrentgalaxyclone.yml to torrentgalaxy.yml");
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        // Purge obsolete torrentgalaxy definition causing Jackett HTTP 500 'Unknown indexer'
+        File badTg = new File(indexersDir, "torrentgalaxy.json");
+        if (badTg.exists()) badTg.delete();
+
+        // Reset known dead/stale Fishbowl-hardcoded sitelinks to "" so Jackett's BaseIndexer.LoadValuesFromJson
+        // automatically resolves its own up-to-date DefaultSiteLink (e.g. torrentgalaxy.online, yts.pw, eztvx.to, www.limetorrents.fun)
+        String[][] staleReplacements = {
+            {"torrentgalaxyclone.json", "https://torrentgalaxy.to/"},
+            {"yts.json", "https://yts.mx/"},
+            {"limetorrents.json", "https://limetorrents.lol/"},
+            {"limetorrents.json", "http://limetorrents.lol/"},
+            {"eztv.json", "https://eztv.re/"}
         };
-        for (String[] tracker : trackers) {
-            File idxFile = new File(indexersDir, tracker[0] + ".json");
+        for (String[] pair : staleReplacements) {
+            File f = new File(indexersDir, pair[0]);
+            if (f.exists()) {
+                try {
+                    String json = new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+                    String target = "\"value\": \"" + pair[1] + "\"";
+                    String targetCompact = "\"value\":\"" + pair[1] + "\"";
+                    String updated = json.replace(target, "\"value\": \"\"").replace(targetCompact, "\"value\":\"\"");
+                    if (!updated.equals(json)) {
+                        java.nio.file.Files.write(f.toPath(), updated.getBytes(StandardCharsets.UTF_8));
+                        Log.i(TAG, "[Jackett] Cleared stale sitelink " + pair[1] + " in " + pair[0] + " to use Jackett DefaultSiteLink");
+                    }
+                } catch (Throwable ignored) {}
+            }
+        }
+
+        String[] trackers = {
+            "1337x",
+            "yts",
+            "thepiratebay",
+            "eztv",
+            "torrentgalaxyclone",
+            "limetorrents"
+        };
+        for (String trackerId : trackers) {
+            File idxFile = new File(indexersDir, trackerId + ".json");
             if (!idxFile.exists()) {
                 try {
-                    String json = "[\n  {\n    \"id\": \"sitelink\",\n    \"type\": \"inputstring\",\n    \"name\": \"Site Link\",\n    \"value\": \"" + tracker[1] + "\"\n  }\n]\n";
+                    // Empty sitelink instructs Jackett to mark IsConfigured=true and use its built-in DefaultSiteLink
+                    String json = "[\n  {\n    \"id\": \"sitelink\",\n    \"type\": \"inputstring\",\n    \"name\": \"Site Link\",\n    \"value\": \"\"\n  }\n]\n";
                     try (FileOutputStream fos = new FileOutputStream(idxFile)) {
                         fos.write(json.getBytes(StandardCharsets.UTF_8));
                     }
                 } catch (Throwable ignored) {}
             }
+        }
+    }
+
+    private void healServarrDatabase(String baseName) {
+        if (baseName == null) return;
+        try {
+            File dbFile = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/" + baseName + "/" + baseName.toLowerCase(Locale.ROOT) + ".db");
+            if (!dbFile.exists()) return;
+            android.database.sqlite.SQLiteDatabase db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    dbFile.getAbsolutePath(), null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE);
+            if (db != null) {
+                try {
+                    db.execSQL("UPDATE Indexers SET Settings = REPLACE(Settings, '/indexers/torrentgalaxy/', '/indexers/torrentgalaxyclone/') WHERE Settings LIKE '%/indexers/torrentgalaxy/%';");
+                    db.execSQL("UPDATE Indexers SET Settings = REPLACE(Settings, 'https://limetorrents.lol/', 'https://www.limetorrents.lol/') WHERE Settings LIKE '%https://limetorrents.lol/%';");
+                    db.execSQL("UPDATE Indexers SET Settings = REPLACE(Settings, 'http://limetorrents.lol/', 'https://www.limetorrents.lol/') WHERE Settings LIKE '%http://limetorrents.lol/%';");
+                    Log.i(TAG, "[DatabaseHealer] Successfully healed " + baseName + " database indexers");
+                } catch (Throwable t) {
+                    Log.d(TAG, "[DatabaseHealer] Notice updating " + baseName + ": " + t.getMessage());
+                } finally {
+                    db.close();
+                }
+            }
+        } catch (Throwable t) {
+            Log.d(TAG, "[DatabaseHealer] Could not open " + baseName + " DB: " + t.getMessage());
         }
     }
 
@@ -3537,7 +3656,13 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 if (db != null) {
                     try {
                         db.execSQL("UPDATE QualityDefinitions SET MaxSize = 100.0 WHERE MaxSize > 100.0 OR MaxSize IS NULL;");
-                        db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        try { db.execSQL("UPDATE QualityDefinitions SET PreferredSize = 100.0 WHERE PreferredSize > 100.0;"); } catch (Throwable ignored) {}
+                        db.execSQL("UPDATE QualityDefinitions SET MinSize = 100.0 WHERE MinSize > 100.0;");
+                        try {
+                            db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0, PreferredSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        } catch (Throwable ignored) {
+                            db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        }
                         db.execSQL("DELETE FROM QualityProfiles WHERE Name LIKE '%4K%' OR Name LIKE '%Ultra%' OR Name LIKE '%2160%';");
                     } finally {
                         db.close();
@@ -3553,22 +3678,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             String qdResp = httpGet("http://127.0.0.1:7878/api/v3/qualitydefinition?apiKey=" + apiKey);
             if (qdResp != null && qdResp.startsWith("[")) {
                 JSONArray qdArr = new JSONArray(qdResp);
-                boolean qdModified = false;
-                for (int i = 0; i < qdArr.length(); i++) {
-                    JSONObject qd = qdArr.getJSONObject(i);
-                    String title = qd.optString("title", "");
-                    if (title.contains("2160") || title.contains("4K") || title.contains("Ultra")) {
-                        qd.put("maxSize", 0.0);
-                        qd.put("minSize", 0.0);
-                        qdModified = true;
-                    } else {
-                        double max = qd.optDouble("maxSize", 0);
-                        if (max > 100.0 || max <= 0 || qd.isNull("maxSize")) {
-                            qd.put("maxSize", 100.0);
-                            qdModified = true;
-                        }
-                    }
-                }
+                boolean qdModified = normalizeQualityDefinitions(qdArr, 100.0);
                 if (qdModified) {
                     putJson("http://127.0.0.1:7878/api/v3/qualitydefinition/update?apiKey=" + apiKey, qdArr.toString());
                     log.append("[OK] Radarr quality definitions capped at 100 MB/min (<15 GB limit, 0 for 4K)\n");
@@ -3635,6 +3745,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     }
                     if (!cutoffAllowed && firstAllowedId > 0) {
                         prof.put("cutoff", firstAllowedId);
+                    } else if (!cutoffAllowed) {
+                        continue;
                     }
 
                     // Enforce Custom Format scores
@@ -3675,7 +3787,13 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 if (db != null) {
                     try {
                         db.execSQL("UPDATE QualityDefinitions SET MaxSize = 100.0 WHERE MaxSize > 100.0 OR MaxSize IS NULL;");
-                        db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        try { db.execSQL("UPDATE QualityDefinitions SET PreferredSize = 100.0 WHERE PreferredSize > 100.0;"); } catch (Throwable ignored) {}
+                        db.execSQL("UPDATE QualityDefinitions SET MinSize = 100.0 WHERE MinSize > 100.0;");
+                        try {
+                            db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0, PreferredSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        } catch (Throwable ignored) {
+                            db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        }
                         db.execSQL("DELETE FROM QualityProfiles WHERE Name LIKE '%4K%' OR Name LIKE '%Ultra%' OR Name LIKE '%2160%';");
                     } finally {
                         db.close();
@@ -3691,22 +3809,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             String qdResp = httpGet("http://127.0.0.1:8989/api/v3/qualitydefinition?apiKey=" + apiKey);
             if (qdResp != null && qdResp.startsWith("[")) {
                 JSONArray qdArr = new JSONArray(qdResp);
-                boolean qdModified = false;
-                for (int i = 0; i < qdArr.length(); i++) {
-                    JSONObject qd = qdArr.getJSONObject(i);
-                    String title = qd.optString("title", "");
-                    if (title.contains("2160") || title.contains("4K") || title.contains("Ultra")) {
-                        qd.put("maxSize", 0.0);
-                        qd.put("minSize", 0.0);
-                        qdModified = true;
-                    } else {
-                        double max = qd.optDouble("maxSize", 0);
-                        if (max > 100.0 || max <= 0 || qd.isNull("maxSize")) {
-                            qd.put("maxSize", 100.0);
-                            qdModified = true;
-                        }
-                    }
-                }
+                boolean qdModified = normalizeQualityDefinitions(qdArr, 100.0);
                 if (qdModified) {
                     putJson("http://127.0.0.1:8989/api/v3/qualitydefinition/update?apiKey=" + apiKey, qdArr.toString());
                     log.append("[OK] Sonarr quality definitions capped at 100 MB/min (<15 GB limit, 0 for 4K)\n");
@@ -3750,11 +3853,30 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     }
 
                     JSONArray items = prof.optJSONArray("items");
+                    int firstAllowedId = -1;
+                    boolean cutoffAllowed = false;
+                    int currentCutoff = prof.optInt("cutoff", -1);
                     if (items != null) {
                         for (int j = 0; j < items.length(); j++) {
                             JSONObject it = items.getJSONObject(j);
                             filterQualityItem(it);
+                            boolean isAllowed = it.optBoolean("allowed", false);
+                            int itId = it.optInt("id", -1);
+                            JSONObject q = it.optJSONObject("quality");
+                            int qId = (q != null) ? q.optInt("id", -1) : -1;
+                            if (isAllowed) {
+                                int candidate = (qId > 0) ? qId : itId;
+                                if (firstAllowedId == -1 && candidate > 0) firstAllowedId = candidate;
+                                if (currentCutoff == itId || currentCutoff == qId) {
+                                    cutoffAllowed = true;
+                                }
+                            }
                         }
+                    }
+                    if (!cutoffAllowed && firstAllowedId > 0) {
+                        prof.put("cutoff", firstAllowedId);
+                    } else if (!cutoffAllowed) {
+                        continue;
                     }
 
                     JSONArray formatItems = prof.optJSONArray("formatItems");
@@ -3780,6 +3902,73 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         } catch (Throwable t) {
             Log.w(TAG, "Sonarr quality profile enforcement error: " + t.getMessage());
         }
+    }
+
+    /**
+     * Enforces quality definition size caps while maintaining Sonarr/Radarr validator invariants:
+     * 0 <= minSize <= preferredSize <= maxSize.
+     */
+    private boolean normalizeQualityDefinitions(JSONArray qdArr, double maxCap) throws org.json.JSONException {
+        boolean modified = false;
+        for (int i = 0; i < qdArr.length(); i++) {
+            JSONObject qd = qdArr.getJSONObject(i);
+            String title = qd.optString("title", "");
+            boolean hasPreferred = qd.has("preferredSize") && !qd.isNull("preferredSize");
+            double min = qd.isNull("minSize") ? 0.0 : qd.optDouble("minSize", 0.0);
+            double pref = hasPreferred ? qd.optDouble("preferredSize", maxCap) : maxCap;
+            double max = qd.isNull("maxSize") ? -1.0 : qd.optDouble("maxSize", -1.0);
+
+            if (title.contains("2160") || title.contains("4K") || title.contains("Ultra")) {
+                if (max != 0.0 || min != 0.0 || (hasPreferred && pref != 0.0)) {
+                    qd.put("minSize", 0.0);
+                    if (qd.has("preferredSize")) qd.put("preferredSize", 0.0);
+                    qd.put("maxSize", 0.0);
+                    modified = true;
+                }
+            } else {
+                double newMax = (max > maxCap || max <= 0.0) ? maxCap : max;
+                double newMin = Math.max(0.0, Math.min(min, newMax));
+                double newPref = Math.max(newMin, Math.min(pref, newMax));
+                if (newMax != max || qd.isNull("maxSize")) {
+                    qd.put("maxSize", newMax);
+                    modified = true;
+                }
+                if (newMin != min || qd.isNull("minSize")) {
+                    qd.put("minSize", newMin);
+                    modified = true;
+                }
+                if (qd.has("preferredSize") && (qd.isNull("preferredSize") || newPref != pref)) {
+                    qd.put("preferredSize", newPref);
+                    modified = true;
+                }
+            }
+        }
+        return modified;
+    }
+
+    private int getDefaultProfileId(int port, String apiKey, String endpoint) {
+        try {
+            String resp = httpGet("http://127.0.0.1:" + port + getApiPrefix(port) + "/" + endpoint + "?apiKey=" + apiKey);
+            if (resp != null && resp.startsWith("[")) {
+                JSONArray arr = new JSONArray(resp);
+                int fallbackId = -1;
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject p = arr.getJSONObject(i);
+                    int id = p.optInt("id", -1);
+                    if (id <= 0) continue;
+                    String name = p.optString("name", "").toLowerCase(Locale.ROOT);
+                    if (name.contains("4k") || name.contains("ultra") || name.contains("2160")) continue;
+                    if (name.contains("1080") || name.contains("hd")) return id;
+                    if (fallbackId == -1) fallbackId = id;
+                }
+                if (fallbackId > 0) return fallbackId;
+                if (arr.length() > 0) {
+                    int firstId = arr.getJSONObject(0).optInt("id", -1);
+                    if (firstId > 0) return firstId;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return -1;
     }
 
     private void filterQualityItem(JSONObject it) {
@@ -4142,6 +4331,24 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             return false;
         }
 
+        // Ensure obsolete Byparr proxy is purged and native FlareSolverr proxy is registered BEFORE syncing indexers
+        removeProwlarrProxy(prowlarrKey, "Byparr");
+        int cfTagId = -1;
+        if (isPortOccupied(8191)) {
+            cfTagId = ensureProwlarrTag(prowlarrKey, "flaresolverr");
+            if (!hasProwlarrProxy(prowlarrKey, "FlareSolverr")) {
+                String proxyBody = buildFlareSolverrProxyJson("FlareSolverr", "http://127.0.0.1:8191/", 60, cfTagId);
+                if (postJson("http://127.0.0.1:9696/api/v1/indexerproxy?apiKey=" + prowlarrKey, proxyBody)) {
+                    log.append("[OK] Native Cloudflare Solver registered in Prowlarr\n");
+                } else {
+                    log.append("[WARN] Failed to register Native Cloudflare Solver in Prowlarr\n");
+                }
+            } else {
+                ensureProxyTagged(prowlarrKey, "FlareSolverr", cfTagId);
+                log.append("[OK] Native Cloudflare Solver already active in Prowlarr\n");
+            }
+        }
+
         syncRecommendedIndexers(prowlarrKey, log);
 
         // Link into Radarr if running
@@ -4172,23 +4379,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             }
         }
 
-        // Ensure obsolete Byparr proxy is purged from Prowlarr
-        removeProwlarrProxy(prowlarrKey, "Byparr");
-
-        // Wire native in-app Chromium solver proxy (listening on 127.0.0.1:8191)
-        if (isPortOccupied(8191)) {
-            int cfTagId = ensureProwlarrTag(prowlarrKey, "flaresolverr");
-            if (!hasProwlarrProxy(prowlarrKey, "FlareSolverr")) {
-                String proxyBody = buildFlareSolverrProxyJson("FlareSolverr", "http://127.0.0.1:8191/", 60, cfTagId);
-                if (postJson("http://127.0.0.1:9696/api/v1/indexerproxy?apiKey=" + prowlarrKey, proxyBody)) {
-                    log.append("[OK] Native Cloudflare Solver registered in Prowlarr\n");
-                } else {
-                    log.append("[WARN] Failed to register Native Cloudflare Solver in Prowlarr\n");
-                }
-            } else {
-                ensureProxyTagged(prowlarrKey, "FlareSolverr", cfTagId);
-                log.append("[OK] Native Cloudflare Solver already active in Prowlarr\n");
-            }
+        if (cfTagId > 0) {
             ensureIndexersTagged(prowlarrKey, cfTagId);
         }
 
@@ -4338,6 +4529,10 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 for (File f : files) {
                     String name = f.getName();
                     String id = name.substring(0, name.length() - 5).trim();
+                    if ("torrentgalaxy".equalsIgnoreCase(id)) {
+                        f.delete();
+                        continue;
+                    }
                     if (!id.isEmpty() && !"ServerConfig".equalsIgnoreCase(id)) {
                         foundIds.add(id);
                     }
@@ -4349,7 +4544,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             foundIds.add("yts");
             foundIds.add("thepiratebay");
             foundIds.add("1337x");
-            foundIds.add("torrentgalaxy");
+            foundIds.add("torrentgalaxyclone");
             foundIds.add("limetorrents");
             foundIds.add("eztv");
         }
@@ -4396,31 +4591,40 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         return list;
     }
 
-    private void cleanupLegacyJackettAllIndexer(int port, String apiKey, String existing) {
-        if (existing == null || (!existing.contains("Jackett (All)") && !existing.contains("/indexers/all/"))) return;
+    private boolean cleanupLegacyJackettAllIndexer(int port, String apiKey, String existing) {
+        if (existing == null) return false;
+        String existingLower = existing.toLowerCase(Locale.ROOT);
+        if (!existing.contains("Jackett (All)") && !existingLower.contains("/indexers/all/") && !existingLower.contains("/indexers/torrentgalaxy/")) {
+            return false;
+        }
+        boolean deletedAny = false;
         try {
             org.json.JSONArray arr = new org.json.JSONArray(existing);
             for (int i = 0; i < arr.length(); i++) {
                 org.json.JSONObject item = arr.getJSONObject(i);
                 String name = item.optString("name", "");
-                String raw = item.toString();
-                if (name.contains("Jackett (All)") || raw.contains("/indexers/all/")) {
+                String rawLower = item.toString().toLowerCase(Locale.ROOT);
+                if (name.contains("Jackett (All)") || rawLower.contains("/indexers/all/") || rawLower.contains("/indexers/torrentgalaxy/")) {
                     int id = item.optInt("id", -1);
                     if (id > 0) {
                         httpDelete("http://127.0.0.1:" + port + getApiPrefix(port) + "/indexer/" + id + "?apiKey=" + apiKey);
-                        Log.i(TAG, "[AutoWire] Cleaned up obsolete Jackett aggregate indexer id " + id + " from port " + port);
+                        deletedAny = true;
+                        Log.i(TAG, "[AutoWire] Cleaned up obsolete Jackett indexer id " + id + " from port " + port);
                     }
                 }
             }
         } catch (Throwable t) {
             Log.w(TAG, "[AutoWire] cleanupLegacyJackettAllIndexer notice: " + t.getMessage());
         }
+        return deletedAny;
     }
 
     private void ensureJackettInRadarr(String radarrKey, String jackettKey, StringBuilder log) {
         try {
             String existing = httpGet("http://127.0.0.1:7878/api/v3/indexer?apiKey=" + radarrKey);
-            cleanupLegacyJackettAllIndexer(7878, radarrKey, existing);
+            if (cleanupLegacyJackettAllIndexer(7878, radarrKey, existing)) {
+                existing = httpGet("http://127.0.0.1:7878/api/v3/indexer?apiKey=" + radarrKey);
+            }
 
             List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
             int addedCount = 0;
@@ -4476,7 +4680,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     private void ensureJackettInSonarr(String sonarrKey, String jackettKey, StringBuilder log) {
         try {
             String existing = httpGet("http://127.0.0.1:8989/api/v3/indexer?apiKey=" + sonarrKey);
-            cleanupLegacyJackettAllIndexer(8989, sonarrKey, existing);
+            if (cleanupLegacyJackettAllIndexer(8989, sonarrKey, existing)) {
+                existing = httpGet("http://127.0.0.1:8989/api/v3/indexer?apiKey=" + sonarrKey);
+            }
 
             List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
             int addedCount = 0;
@@ -4532,7 +4738,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     private void ensureJackettInLidarr(String lidarrKey, String jackettKey, StringBuilder log) {
         try {
             String existing = httpGet("http://127.0.0.1:8686/api/v1/indexer?apiKey=" + lidarrKey);
-            cleanupLegacyJackettAllIndexer(8686, lidarrKey, existing);
+            if (cleanupLegacyJackettAllIndexer(8686, lidarrKey, existing)) {
+                existing = httpGet("http://127.0.0.1:8686/api/v1/indexer?apiKey=" + lidarrKey);
+            }
 
             List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
             int addedCount = 0;
@@ -4588,7 +4796,9 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
     private void ensureJackettInProwlarr(String prowlarrKey, String jackettKey, StringBuilder log) {
         try {
             String existing = httpGet("http://127.0.0.1:9696/api/v1/indexer?apiKey=" + prowlarrKey);
-            cleanupLegacyJackettAllIndexer(9696, prowlarrKey, existing);
+            if (cleanupLegacyJackettAllIndexer(9696, prowlarrKey, existing)) {
+                existing = httpGet("http://127.0.0.1:9696/api/v1/indexer?apiKey=" + prowlarrKey);
+            }
 
             List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
             int addedCount = 0;
@@ -4713,6 +4923,12 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 }
             }
 
+            int defaultQualityProfileId = getDefaultProfileId(port, apiKey, "qualityprofile");
+            if (defaultQualityProfileId <= 0) {
+                Log.w(TAG, "[AutoWire] Skipping Radarr movie auto-import: no valid quality profile available yet");
+                return;
+            }
+
             int imported = 0;
             for (File item : items) {
                 String itemName = item.getName();
@@ -4731,6 +4947,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     JSONArray results = new JSONArray(lookupJson);
                     if (results.length() > 0) {
                         JSONObject movie = results.getJSONObject(0);
+                        movie.put("qualityProfileId", defaultQualityProfileId);
                         movie.put("rootFolderPath", moviesDir.getAbsolutePath());
                         String moviePath = item.isDirectory() ? item.getAbsolutePath() : new File(moviesDir, movie.optString("title", itemName)).getAbsolutePath();
                         movie.put("path", moviePath);
@@ -4779,6 +4996,12 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 }
             }
 
+            int defaultQualityProfileId = getDefaultProfileId(port, apiKey, "qualityprofile");
+            if (defaultQualityProfileId <= 0) {
+                Log.w(TAG, "[AutoWire] Skipping Sonarr series auto-import: no valid quality profile available yet");
+                return;
+            }
+
             int imported = 0;
             for (File folder : seriesFolders) {
                 String folderName = folder.getName();
@@ -4793,6 +5016,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     JSONArray results = new JSONArray(lookupJson);
                     if (results.length() > 0) {
                         JSONObject series = results.getJSONObject(0);
+                        series.put("qualityProfileId", defaultQualityProfileId);
                         series.put("rootFolderPath", tvDir.getAbsolutePath());
                         series.put("path", folder.getAbsolutePath());
                         series.put("monitored", true);
@@ -4838,6 +5062,13 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 }
             }
 
+            int defaultQualityProfileId = getDefaultProfileId(port, apiKey, "qualityprofile");
+            int defaultMetadataProfileId = getDefaultProfileId(port, apiKey, "metadataprofile");
+            if (defaultQualityProfileId <= 0 || defaultMetadataProfileId <= 0) {
+                Log.w(TAG, "[AutoWire] Skipping Lidarr artist auto-import: no valid quality/metadata profile available yet");
+                return;
+            }
+
             int imported = 0;
             for (File folder : artistFolders) {
                 String artistName = folder.getName().trim();
@@ -4849,6 +5080,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     JSONArray results = new JSONArray(lookupJson);
                     if (results.length() > 0) {
                         JSONObject artist = results.getJSONObject(0);
+                        artist.put("qualityProfileId", defaultQualityProfileId);
+                        artist.put("metadataProfileId", defaultMetadataProfileId);
                         artist.put("rootFolderPath", musicDir.getAbsolutePath());
                         artist.put("path", folder.getAbsolutePath());
                         artist.put("monitored", true);

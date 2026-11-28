@@ -551,13 +551,37 @@ public class JellyfinBootstrapper {
             File libDir = new File(prefixDir, "lib");
             if (!libDir.exists()) libDir.mkdirs();
             File prefixMono = new File(libDir, "libMonoPosixHelper.so");
-            if (!prefixMono.exists()) {
-                try (InputStream in = context.getAssets().open("libMonoPosixHelper.so");
-                     OutputStream out = new FileOutputStream(prefixMono)) {
-                    byte[] buf = new byte[8192];
-                    int r;
-                    while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
-                } catch (Throwable ignored) {}
+            File nativeMono = new File(context.getApplicationInfo().nativeLibraryDir, "libMonoPosixHelper.so");
+            boolean needsMonoCopy = !prefixMono.exists() || (nativeMono.exists() && prefixMono.length() != nativeMono.length());
+            if (needsMonoCopy) {
+                File tmpMono = new File(libDir, ".libMonoPosixHelper.so.tmp");
+                boolean copied = false;
+                if (nativeMono.exists()) {
+                    try (InputStream in = new java.io.FileInputStream(nativeMono);
+                         OutputStream out = new FileOutputStream(tmpMono)) {
+                        byte[] buf = new byte[8192];
+                        int r;
+                        while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+                        copied = true;
+                    } catch (Throwable ignored) {}
+                }
+                if (!copied) {
+                    try (InputStream in = context.getAssets().open("libMonoPosixHelper.so");
+                         OutputStream out = new FileOutputStream(tmpMono)) {
+                        byte[] buf = new byte[8192];
+                        int r;
+                        while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+                        copied = true;
+                    } catch (Throwable ignored) {}
+                }
+                if (copied && tmpMono.exists() && tmpMono.length() > 0) {
+                    try { Os.chmod(tmpMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                    if (!tmpMono.renameTo(prefixMono)) {
+                        tmpMono.delete();
+                    }
+                } else if (tmpMono.exists()) {
+                    tmpMono.delete();
+                }
             }
             if (prefixMono.exists()) {
                 try { Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
