@@ -2838,32 +2838,45 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         File badTg = new File(indexersDir, "torrentgalaxy.json");
         if (badTg.exists()) badTg.delete();
 
-        // Ensure limetorrents uses www. to prevent Cardigann 301/302 domain redirect exception
-        File ltFile = new File(indexersDir, "limetorrents.json");
-        if (ltFile.exists()) {
-            try {
-                byte[] bytes = java.nio.file.Files.readAllBytes(ltFile.toPath());
-                String ltJson = new String(bytes, StandardCharsets.UTF_8);
-                if (ltJson.contains("https://limetorrents.lol/") && !ltJson.contains("https://www.limetorrents.lol/")) {
-                    ltJson = ltJson.replace("https://limetorrents.lol/", "https://www.limetorrents.lol/");
-                    java.nio.file.Files.write(ltFile.toPath(), ltJson.getBytes(StandardCharsets.UTF_8));
-                }
-            } catch (Throwable ignored) {}
+        // Reset known dead/stale Fishbowl-hardcoded sitelinks to "" so Jackett's BaseIndexer.LoadValuesFromJson
+        // automatically resolves its own up-to-date DefaultSiteLink (e.g. torrentgalaxy.online, yts.pw, eztvx.to, www.limetorrents.fun)
+        String[][] staleReplacements = {
+            {"torrentgalaxyclone.json", "https://torrentgalaxy.to/"},
+            {"yts.json", "https://yts.mx/"},
+            {"limetorrents.json", "https://limetorrents.lol/"},
+            {"limetorrents.json", "http://limetorrents.lol/"},
+            {"eztv.json", "https://eztv.re/"}
+        };
+        for (String[] pair : staleReplacements) {
+            File f = new File(indexersDir, pair[0]);
+            if (f.exists()) {
+                try {
+                    String json = new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+                    String target = "\"value\": \"" + pair[1] + "\"";
+                    String targetCompact = "\"value\":\"" + pair[1] + "\"";
+                    String updated = json.replace(target, "\"value\": \"\"").replace(targetCompact, "\"value\":\"\"");
+                    if (!updated.equals(json)) {
+                        java.nio.file.Files.write(f.toPath(), updated.getBytes(StandardCharsets.UTF_8));
+                        Log.i(TAG, "[Jackett] Cleared stale sitelink " + pair[1] + " in " + pair[0] + " to use Jackett DefaultSiteLink");
+                    }
+                } catch (Throwable ignored) {}
+            }
         }
 
-        String[][] trackers = {
-            {"1337x", "https://1337x.to/"},
-            {"yts", "https://yts.mx/"},
-            {"thepiratebay", "https://thepiratebay.org/"},
-            {"eztv", "https://eztv.re/"},
-            {"torrentgalaxyclone", "https://torrentgalaxy.to/"},
-            {"limetorrents", "https://www.limetorrents.lol/"}
+        String[] trackers = {
+            "1337x",
+            "yts",
+            "thepiratebay",
+            "eztv",
+            "torrentgalaxyclone",
+            "limetorrents"
         };
-        for (String[] tracker : trackers) {
-            File idxFile = new File(indexersDir, tracker[0] + ".json");
+        for (String trackerId : trackers) {
+            File idxFile = new File(indexersDir, trackerId + ".json");
             if (!idxFile.exists()) {
                 try {
-                    String json = "[\n  {\n    \"id\": \"sitelink\",\n    \"type\": \"inputstring\",\n    \"name\": \"Site Link\",\n    \"value\": \"" + tracker[1] + "\"\n  }\n]\n";
+                    // Empty sitelink instructs Jackett to mark IsConfigured=true and use its built-in DefaultSiteLink
+                    String json = "[\n  {\n    \"id\": \"sitelink\",\n    \"type\": \"inputstring\",\n    \"name\": \"Site Link\",\n    \"value\": \"\"\n  }\n]\n";
                     try (FileOutputStream fos = new FileOutputStream(idxFile)) {
                         fos.write(json.getBytes(StandardCharsets.UTF_8));
                     }
@@ -4318,6 +4331,24 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             return false;
         }
 
+        // Ensure obsolete Byparr proxy is purged and native FlareSolverr proxy is registered BEFORE syncing indexers
+        removeProwlarrProxy(prowlarrKey, "Byparr");
+        int cfTagId = -1;
+        if (isPortOccupied(8191)) {
+            cfTagId = ensureProwlarrTag(prowlarrKey, "flaresolverr");
+            if (!hasProwlarrProxy(prowlarrKey, "FlareSolverr")) {
+                String proxyBody = buildFlareSolverrProxyJson("FlareSolverr", "http://127.0.0.1:8191/", 60, cfTagId);
+                if (postJson("http://127.0.0.1:9696/api/v1/indexerproxy?apiKey=" + prowlarrKey, proxyBody)) {
+                    log.append("[OK] Native Cloudflare Solver registered in Prowlarr\n");
+                } else {
+                    log.append("[WARN] Failed to register Native Cloudflare Solver in Prowlarr\n");
+                }
+            } else {
+                ensureProxyTagged(prowlarrKey, "FlareSolverr", cfTagId);
+                log.append("[OK] Native Cloudflare Solver already active in Prowlarr\n");
+            }
+        }
+
         syncRecommendedIndexers(prowlarrKey, log);
 
         // Link into Radarr if running
@@ -4348,23 +4379,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             }
         }
 
-        // Ensure obsolete Byparr proxy is purged from Prowlarr
-        removeProwlarrProxy(prowlarrKey, "Byparr");
-
-        // Wire native in-app Chromium solver proxy (listening on 127.0.0.1:8191)
-        if (isPortOccupied(8191)) {
-            int cfTagId = ensureProwlarrTag(prowlarrKey, "flaresolverr");
-            if (!hasProwlarrProxy(prowlarrKey, "FlareSolverr")) {
-                String proxyBody = buildFlareSolverrProxyJson("FlareSolverr", "http://127.0.0.1:8191/", 60, cfTagId);
-                if (postJson("http://127.0.0.1:9696/api/v1/indexerproxy?apiKey=" + prowlarrKey, proxyBody)) {
-                    log.append("[OK] Native Cloudflare Solver registered in Prowlarr\n");
-                } else {
-                    log.append("[WARN] Failed to register Native Cloudflare Solver in Prowlarr\n");
-                }
-            } else {
-                ensureProxyTagged(prowlarrKey, "FlareSolverr", cfTagId);
-                log.append("[OK] Native Cloudflare Solver already active in Prowlarr\n");
-            }
+        if (cfTagId > 0) {
             ensureIndexersTagged(prowlarrKey, cfTagId);
         }
 
