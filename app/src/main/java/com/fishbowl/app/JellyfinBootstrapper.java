@@ -330,6 +330,85 @@ public class JellyfinBootstrapper {
         }
     }
 
+    /**
+     * Atomically deploys Bionic libMonoPosixHelper.so from nativeLibraryDir (or APK assets fallback)
+     * into prefix/lib and optionally into a service directory (including MonoPosixHelper.so alias)
+     * using temp-file rename to avoid SIGBUS on already-mapped binaries.
+     */
+    public static void deployMonoPosixHelper(Context context, File prefixLibDir, File serviceDir) {
+        if (context == null || prefixLibDir == null) return;
+        if (!prefixLibDir.exists()) prefixLibDir.mkdirs();
+
+        File nativeMono = new File(context.getApplicationInfo().nativeLibraryDir, "libMonoPosixHelper.so");
+        File prefixMono = new File(prefixLibDir, "libMonoPosixHelper.so");
+
+        if (!prefixMono.exists() || (nativeMono.exists() && prefixMono.length() != nativeMono.length())) {
+            File tmpMono = new File(prefixLibDir, ".libMonoPosixHelper.so.tmp");
+            boolean copied = false;
+            if (nativeMono.exists()) {
+                try (InputStream in = new java.io.FileInputStream(nativeMono)) {
+                    copied = atomicWriteExecutable(in, tmpMono, prefixMono);
+                } catch (Throwable ignored) {}
+            }
+            if (!copied) {
+                try (InputStream in = context.getAssets().open("libMonoPosixHelper.so")) {
+                    atomicWriteExecutable(in, tmpMono, prefixMono);
+                } catch (Throwable ignored) {}
+            }
+        }
+        ensureExecutablePermissions(prefixMono);
+
+        if (serviceDir != null) {
+            File monoSrc = nativeMono.exists() ? nativeMono : prefixMono;
+            if (monoSrc.exists()) {
+                for (String name : new String[] { "libMonoPosixHelper.so", "MonoPosixHelper.so" }) {
+                    File dst = new File(serviceDir, name);
+                    if (!dst.exists() || dst.length() != monoSrc.length()) {
+                        File tmpDst = new File(serviceDir, "." + name + ".tmp");
+                        try (InputStream in = new java.io.FileInputStream(monoSrc)) {
+                            atomicWriteExecutable(in, tmpDst, dst);
+                        } catch (Throwable ignored) {
+                            if (tmpDst.exists()) tmpDst.delete();
+                        }
+                    }
+                    ensureExecutablePermissions(dst);
+                }
+            }
+        }
+    }
+
+    private static boolean atomicWriteExecutable(InputStream in, File tmpFile, File targetFile) {
+        try (OutputStream out = new FileOutputStream(tmpFile)) {
+            byte[] buf = new byte[8192];
+            int r;
+            while ((r = in.read(buf)) != -1) {
+                out.write(buf, 0, r);
+            }
+        } catch (Throwable t) {
+            if (tmpFile.exists()) tmpFile.delete();
+            return false;
+        }
+        if (!tmpFile.exists() || tmpFile.length() <= 0) {
+            if (tmpFile.exists()) tmpFile.delete();
+            return false;
+        }
+        ensureExecutablePermissions(tmpFile);
+        if (!tmpFile.renameTo(targetFile)) {
+            tmpFile.delete();
+            return false;
+        }
+        return true;
+    }
+
+    private static void ensureExecutablePermissions(File file) {
+        if (file == null || !file.exists()) return;
+        file.setReadable(true, false);
+        file.setExecutable(true, false);
+        try {
+            Os.chmod(file.getAbsolutePath(), 0755);
+        } catch (Throwable ignored) {}
+    }
+
     public static boolean initializeIfNeeded(Context context) {
         return initializeIfNeeded(context, null);
     }
@@ -549,43 +628,7 @@ public class JellyfinBootstrapper {
             }
 
             File libDir = new File(prefixDir, "lib");
-            if (!libDir.exists()) libDir.mkdirs();
-            File prefixMono = new File(libDir, "libMonoPosixHelper.so");
-            File nativeMono = new File(context.getApplicationInfo().nativeLibraryDir, "libMonoPosixHelper.so");
-            boolean needsMonoCopy = !prefixMono.exists() || (nativeMono.exists() && prefixMono.length() != nativeMono.length());
-            if (needsMonoCopy) {
-                File tmpMono = new File(libDir, ".libMonoPosixHelper.so.tmp");
-                boolean copied = false;
-                if (nativeMono.exists()) {
-                    try (InputStream in = new java.io.FileInputStream(nativeMono);
-                         OutputStream out = new FileOutputStream(tmpMono)) {
-                        byte[] buf = new byte[8192];
-                        int r;
-                        while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
-                        copied = true;
-                    } catch (Throwable ignored) {}
-                }
-                if (!copied) {
-                    try (InputStream in = context.getAssets().open("libMonoPosixHelper.so");
-                         OutputStream out = new FileOutputStream(tmpMono)) {
-                        byte[] buf = new byte[8192];
-                        int r;
-                        while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
-                        copied = true;
-                    } catch (Throwable ignored) {}
-                }
-                if (copied && tmpMono.exists() && tmpMono.length() > 0) {
-                    try { Os.chmod(tmpMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                    if (!tmpMono.renameTo(prefixMono)) {
-                        tmpMono.delete();
-                    }
-                } else if (tmpMono.exists()) {
-                    tmpMono.delete();
-                }
-            }
-            if (prefixMono.exists()) {
-                try { Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-            }
+            deployMonoPosixHelper(context, libDir, null);
 
             File jellyfinDll = new File(prefixDir, "lib/jellyfin/jellyfin.dll");
             Log.i(TAG, "Post-extraction check: dotnetBin=" + dotnetBin.getAbsolutePath() + " exists=" + dotnetBin.exists() + ", jellyfinDll=" + jellyfinDll.getAbsolutePath() + " exists=" + jellyfinDll.exists());

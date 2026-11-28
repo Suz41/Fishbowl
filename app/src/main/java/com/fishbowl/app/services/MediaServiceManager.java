@@ -2312,73 +2312,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             }
 
             // 4. Ensure Bionic libMonoPosixHelper.so is present from nativeLibraryDir, prefix/lib, or assets (atomic replace to avoid SIGBUS on live mmap)
-            File nativeMono = new File(appContext.getApplicationInfo().nativeLibraryDir, "libMonoPosixHelper.so");
-            File prefixMono = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libMonoPosixHelper.so");
-            if (!prefixMono.exists() || (nativeMono.exists() && prefixMono.length() != nativeMono.length())) {
-                File tmpMono = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/.libMonoPosixHelper.so.tmp");
-                boolean copied = false;
-                if (nativeMono.exists()) {
-                    try {
-                        copyFile(nativeMono, tmpMono);
-                        copied = tmpMono.exists() && tmpMono.length() > 0;
-                    } catch (Throwable ignored) {}
-                }
-                if (!copied) {
-                    try (InputStream in = appContext.getAssets().open("libMonoPosixHelper.so");
-                         FileOutputStream out = new FileOutputStream(tmpMono)) {
-                        byte[] buf = new byte[8192];
-                        int r;
-                        while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
-                        copied = tmpMono.exists() && tmpMono.length() > 0;
-                    } catch (Throwable ignored) {}
-                }
-                if (copied) {
-                    try { android.system.Os.chmod(tmpMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                    if (!tmpMono.renameTo(prefixMono)) tmpMono.delete();
-                } else if (tmpMono.exists()) {
-                    tmpMono.delete();
-                }
-            }
-            if (prefixMono.exists()) {
-                try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-            }
-            File targetMono = new File(parent, "libMonoPosixHelper.so");
-            File targetNoLibMono = new File(parent, "MonoPosixHelper.so");
-            File monoSrc = nativeMono.exists() ? nativeMono : prefixMono;
-            if (monoSrc.exists()) {
-                for (File dst : new File[] { targetMono, targetNoLibMono }) {
-                    if (!dst.exists() || dst.length() != monoSrc.length()) {
-                        File tmpDst = new File(parent, "." + dst.getName() + ".tmp");
-                        try {
-                            copyFile(monoSrc, tmpDst);
-                            tmpDst.setReadable(true, false);
-                            tmpDst.setExecutable(true, false);
-                            try { android.system.Os.chmod(tmpDst.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                            if (!tmpDst.renameTo(dst)) tmpDst.delete();
-                        } catch (Throwable ignored) {
-                            if (tmpDst.exists()) tmpDst.delete();
-                        }
-                    }
-                    if (dst.exists()) {
-                        dst.setReadable(true, false);
-                        dst.setExecutable(true, false);
-                        try { android.system.Os.chmod(dst.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                    }
-                }
-            }
-
-            // Ensure Android system libz.so is symlinked into prefix/lib for libMonoPosixHelper.so zlib resolution
-            try {
-                File prefixLibZ = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libz.so");
-                File prefixLibZ1 = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/libz.so.1");
-                File systemLibZ = new File("/system/lib64/libz.so");
-                if (!prefixLibZ.exists() && systemLibZ.exists()) {
-                    android.system.Os.symlink(systemLibZ.getAbsolutePath(), prefixLibZ.getAbsolutePath());
-                }
-                if (!prefixLibZ1.exists() && prefixLibZ.exists()) {
-                    android.system.Os.symlink(prefixLibZ.getAbsolutePath(), prefixLibZ1.getAbsolutePath());
-                }
-            } catch (Throwable ignored) {}
+            com.fishbowl.app.JellyfinBootstrapper.deployMonoPosixHelper(
+                    appContext, new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib"), parent);
 
             // 5. Ensure runtimeconfig uses net10.0 and Bionic frameworks
             File jfConfig = new File(TermuxConstants.TERMUX_PREFIX_DIR, "lib/jellyfin/jellyfin.runtimeconfig.json");
@@ -2576,7 +2511,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         else if ("prowlarr".equalsIgnoreCase(serviceId)) { baseName = "Prowlarr"; port = 9696; }
         else if ("lidarr".equalsIgnoreCase(serviceId)) { baseName = "Lidarr"; port = 8686; }
         if (baseName != null) {
-            healServarrDatabase(baseName);
             File configDir = new File(TermuxConstants.TERMUX_HOME_DIR, ".config/" + baseName);
             if (!configDir.exists()) configDir.mkdirs();
             File configXml = new File(configDir, "config.xml");
@@ -4922,57 +4856,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         }
     }
 
-    private void ensureJackettInProwlarr(String prowlarrKey, String jackettKey, StringBuilder log) {
-        try {
-            String existing = httpGet("http://127.0.0.1:9696/api/v1/indexer?apiKey=" + prowlarrKey);
-            if (cleanupLegacyJackettAllIndexer(9696, prowlarrKey, existing)) {
-                existing = httpGet("http://127.0.0.1:9696/api/v1/indexer?apiKey=" + prowlarrKey);
-            }
-
-            List<JackettIndexerInfo> indexers = getConfiguredJackettIndexers(jackettKey);
-            int addedCount = 0;
-            int verifiedCount = 0;
-
-            for (JackettIndexerInfo info : indexers) {
-                String targetUrl = "http://127.0.0.1:9117/api/v2.0/indexers/" + info.id + "/results/torznab/";
-                String targetName = info.displayName + " (Jackett)";
-
-                if (existing != null && (existing.contains(targetUrl) || existing.contains("\"" + targetName + "\""))) {
-                    verifiedCount++;
-                    continue;
-                }
-
-                try {
-                    org.json.JSONObject idx = new org.json.JSONObject();
-                    idx.put("name", targetName);
-                    idx.put("enable", true);
-                    idx.put("redirect", false);
-                    idx.put("priority", 25);
-                    idx.put("configContract", "TorznabSettings");
-                    idx.put("implementation", "Torznab");
-                    idx.put("protocol", "torrent");
-                    org.json.JSONArray fields = new org.json.JSONArray();
-                    fields.put(new org.json.JSONObject().put("name", "baseUrl").put("value", targetUrl));
-                    fields.put(new org.json.JSONObject().put("name", "apiPath").put("value", "/api"));
-                    fields.put(new org.json.JSONObject().put("name", "apiKey").put("value", jackettKey));
-                    idx.put("fields", fields);
-
-                    if (postJson("http://127.0.0.1:9696/api/v1/indexer?apiKey=" + prowlarrKey, idx.toString(), 20000)) {
-                        addedCount++;
-                        log.append("[OK] Jackett indexer linked into Prowlarr: ").append(info.displayName).append("\n");
-                    }
-                } catch (Throwable it) {
-                    Log.w(TAG, "[AutoWire] Prowlarr Jackett link notice for " + info.id + ": " + it.getMessage());
-                }
-            }
-            if (verifiedCount > 0) {
-                log.append("[OK] ").append(verifiedCount).append(" Jackett indexer(s) active in Prowlarr\n");
-            }
-        } catch (Throwable t) {
-            log.append("[WARN] Prowlarr Jackett linking notice: ").append(t.getMessage()).append("\n");
-        }
-    }
-
     public boolean wireBazarr(StringBuilder log) {
         if (!isPortOccupied(6767)) {
             log.append("[SKIP] Bazarr is not running (Port 6767 offline)\n");
@@ -5252,6 +5135,13 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     wiredServices.add("Transmission");
                 }
 
+                ManagedService prowlarr = getService("prowlarr");
+                if (prowlarr != null && prowlarr.isInstalled() && isPortOccupied(9696)) {
+                    ensureServiceConfigSanitized("prowlarr");
+                    wireProwlarr(log);
+                    wiredServices.add("Prowlarr");
+                }
+
                 ManagedService radarr = getService("radarr");
                 if (radarr != null && radarr.isInstalled() && isPortOccupied(7878)) {
                     ensureServiceConfigSanitized("radarr");
@@ -5271,13 +5161,6 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     ensureServiceConfigSanitized("lidarr");
                     wireLidarr(log);
                     wiredServices.add("Lidarr");
-                }
-
-                ManagedService prowlarr = getService("prowlarr");
-                if (prowlarr != null && prowlarr.isInstalled() && isPortOccupied(9696)) {
-                    ensureServiceConfigSanitized("prowlarr");
-                    wireProwlarr(log);
-                    wiredServices.add("Prowlarr");
                 }
 
                 ManagedService jackett = getService("jackett");

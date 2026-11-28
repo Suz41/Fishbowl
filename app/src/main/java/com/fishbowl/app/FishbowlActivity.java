@@ -7516,60 +7516,7 @@ public final class FishbowlActivity extends AppCompatActivity
                 try { android.system.Os.chmod(targetEsqlite.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
             }
 
-            File nativeMono = new File(getApplicationInfo().nativeLibraryDir, "libMonoPosixHelper.so");
-            File prefixMono = new File(prefix, "lib/libMonoPosixHelper.so");
-            if (!prefixMono.exists() || (nativeMono.exists() && prefixMono.length() != nativeMono.length())) {
-                File tmpMono = new File(prefix, "lib/.libMonoPosixHelper.so.tmp");
-                boolean copied = false;
-                if (nativeMono.exists()) {
-                    try {
-                        copyFile(nativeMono, tmpMono);
-                        copied = tmpMono.exists() && tmpMono.length() > 0;
-                    } catch (Throwable ignored) {}
-                }
-                if (!copied) {
-                    try (InputStream in = getAssets().open("libMonoPosixHelper.so");
-                         OutputStream out = new FileOutputStream(tmpMono)) {
-                        byte[] buf = new byte[8192];
-                        int r;
-                        while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
-                        copied = tmpMono.exists() && tmpMono.length() > 0;
-                    } catch (Throwable ignored) {}
-                }
-                if (copied) {
-                    try { android.system.Os.chmod(tmpMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                    if (!tmpMono.renameTo(prefixMono)) tmpMono.delete();
-                } else if (tmpMono.exists()) {
-                    tmpMono.delete();
-                }
-            }
-            if (prefixMono.exists()) {
-                try { android.system.Os.chmod(prefixMono.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-            }
-            File targetMono = new File(parent, "libMonoPosixHelper.so");
-            File targetNoLibMono = new File(parent, "MonoPosixHelper.so");
-            File monoSrc = nativeMono.exists() ? nativeMono : prefixMono;
-            if (monoSrc.exists()) {
-                for (File dst : new File[] { targetMono, targetNoLibMono }) {
-                    if (!dst.exists() || dst.length() != monoSrc.length()) {
-                        File tmpDst = new File(parent, "." + dst.getName() + ".tmp");
-                        try {
-                            copyFile(monoSrc, tmpDst);
-                            tmpDst.setReadable(true, false);
-                            tmpDst.setExecutable(true, false);
-                            try { android.system.Os.chmod(tmpDst.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                            if (!tmpDst.renameTo(dst)) tmpDst.delete();
-                        } catch (Throwable ignored) {
-                            if (tmpDst.exists()) tmpDst.delete();
-                        }
-                    }
-                    if (dst.exists()) {
-                        dst.setReadable(true, false);
-                        dst.setExecutable(true, false);
-                        try { android.system.Os.chmod(dst.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                    }
-                }
-            }
+            JellyfinBootstrapper.deployMonoPosixHelper(this, new File(prefix, "lib"), parent);
 
             File jfConfig = new File(prefix, "lib/jellyfin/jellyfin.runtimeconfig.json");
             File targetCfg = new File(parent, baseName + ".runtimeconfig.json");
