@@ -3643,7 +3643,13 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 if (db != null) {
                     try {
                         db.execSQL("UPDATE QualityDefinitions SET MaxSize = 100.0 WHERE MaxSize > 100.0 OR MaxSize IS NULL;");
-                        db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        try { db.execSQL("UPDATE QualityDefinitions SET PreferredSize = 100.0 WHERE PreferredSize > 100.0;"); } catch (Throwable ignored) {}
+                        db.execSQL("UPDATE QualityDefinitions SET MinSize = 100.0 WHERE MinSize > 100.0;");
+                        try {
+                            db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0, PreferredSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        } catch (Throwable ignored) {
+                            db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        }
                         db.execSQL("DELETE FROM QualityProfiles WHERE Name LIKE '%4K%' OR Name LIKE '%Ultra%' OR Name LIKE '%2160%';");
                     } finally {
                         db.close();
@@ -3659,22 +3665,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             String qdResp = httpGet("http://127.0.0.1:7878/api/v3/qualitydefinition?apiKey=" + apiKey);
             if (qdResp != null && qdResp.startsWith("[")) {
                 JSONArray qdArr = new JSONArray(qdResp);
-                boolean qdModified = false;
-                for (int i = 0; i < qdArr.length(); i++) {
-                    JSONObject qd = qdArr.getJSONObject(i);
-                    String title = qd.optString("title", "");
-                    if (title.contains("2160") || title.contains("4K") || title.contains("Ultra")) {
-                        qd.put("maxSize", 0.0);
-                        qd.put("minSize", 0.0);
-                        qdModified = true;
-                    } else {
-                        double max = qd.optDouble("maxSize", 0);
-                        if (max > 100.0 || max <= 0 || qd.isNull("maxSize")) {
-                            qd.put("maxSize", 100.0);
-                            qdModified = true;
-                        }
-                    }
-                }
+                boolean qdModified = normalizeQualityDefinitions(qdArr, 100.0);
                 if (qdModified) {
                     putJson("http://127.0.0.1:7878/api/v3/qualitydefinition/update?apiKey=" + apiKey, qdArr.toString());
                     log.append("[OK] Radarr quality definitions capped at 100 MB/min (<15 GB limit, 0 for 4K)\n");
@@ -3741,6 +3732,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     }
                     if (!cutoffAllowed && firstAllowedId > 0) {
                         prof.put("cutoff", firstAllowedId);
+                    } else if (!cutoffAllowed) {
+                        continue;
                     }
 
                     // Enforce Custom Format scores
@@ -3781,7 +3774,13 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 if (db != null) {
                     try {
                         db.execSQL("UPDATE QualityDefinitions SET MaxSize = 100.0 WHERE MaxSize > 100.0 OR MaxSize IS NULL;");
-                        db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        try { db.execSQL("UPDATE QualityDefinitions SET PreferredSize = 100.0 WHERE PreferredSize > 100.0;"); } catch (Throwable ignored) {}
+                        db.execSQL("UPDATE QualityDefinitions SET MinSize = 100.0 WHERE MinSize > 100.0;");
+                        try {
+                            db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0, PreferredSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        } catch (Throwable ignored) {
+                            db.execSQL("UPDATE QualityDefinitions SET MaxSize = 0.0, MinSize = 0.0 WHERE Title LIKE '%2160%' OR Title LIKE '%4K%' OR Title LIKE '%Ultra%';");
+                        }
                         db.execSQL("DELETE FROM QualityProfiles WHERE Name LIKE '%4K%' OR Name LIKE '%Ultra%' OR Name LIKE '%2160%';");
                     } finally {
                         db.close();
@@ -3797,22 +3796,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
             String qdResp = httpGet("http://127.0.0.1:8989/api/v3/qualitydefinition?apiKey=" + apiKey);
             if (qdResp != null && qdResp.startsWith("[")) {
                 JSONArray qdArr = new JSONArray(qdResp);
-                boolean qdModified = false;
-                for (int i = 0; i < qdArr.length(); i++) {
-                    JSONObject qd = qdArr.getJSONObject(i);
-                    String title = qd.optString("title", "");
-                    if (title.contains("2160") || title.contains("4K") || title.contains("Ultra")) {
-                        qd.put("maxSize", 0.0);
-                        qd.put("minSize", 0.0);
-                        qdModified = true;
-                    } else {
-                        double max = qd.optDouble("maxSize", 0);
-                        if (max > 100.0 || max <= 0 || qd.isNull("maxSize")) {
-                            qd.put("maxSize", 100.0);
-                            qdModified = true;
-                        }
-                    }
-                }
+                boolean qdModified = normalizeQualityDefinitions(qdArr, 100.0);
                 if (qdModified) {
                     putJson("http://127.0.0.1:8989/api/v3/qualitydefinition/update?apiKey=" + apiKey, qdArr.toString());
                     log.append("[OK] Sonarr quality definitions capped at 100 MB/min (<15 GB limit, 0 for 4K)\n");
@@ -3856,11 +3840,30 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     }
 
                     JSONArray items = prof.optJSONArray("items");
+                    int firstAllowedId = -1;
+                    boolean cutoffAllowed = false;
+                    int currentCutoff = prof.optInt("cutoff", -1);
                     if (items != null) {
                         for (int j = 0; j < items.length(); j++) {
                             JSONObject it = items.getJSONObject(j);
                             filterQualityItem(it);
+                            boolean isAllowed = it.optBoolean("allowed", false);
+                            int itId = it.optInt("id", -1);
+                            JSONObject q = it.optJSONObject("quality");
+                            int qId = (q != null) ? q.optInt("id", -1) : -1;
+                            if (isAllowed) {
+                                int candidate = (qId > 0) ? qId : itId;
+                                if (firstAllowedId == -1 && candidate > 0) firstAllowedId = candidate;
+                                if (currentCutoff == itId || currentCutoff == qId) {
+                                    cutoffAllowed = true;
+                                }
+                            }
                         }
+                    }
+                    if (!cutoffAllowed && firstAllowedId > 0) {
+                        prof.put("cutoff", firstAllowedId);
+                    } else if (!cutoffAllowed) {
+                        continue;
                     }
 
                     JSONArray formatItems = prof.optJSONArray("formatItems");
@@ -3886,6 +3889,73 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
         } catch (Throwable t) {
             Log.w(TAG, "Sonarr quality profile enforcement error: " + t.getMessage());
         }
+    }
+
+    /**
+     * Enforces quality definition size caps while maintaining Sonarr/Radarr validator invariants:
+     * 0 <= minSize <= preferredSize <= maxSize.
+     */
+    private boolean normalizeQualityDefinitions(JSONArray qdArr, double maxCap) throws org.json.JSONException {
+        boolean modified = false;
+        for (int i = 0; i < qdArr.length(); i++) {
+            JSONObject qd = qdArr.getJSONObject(i);
+            String title = qd.optString("title", "");
+            boolean hasPreferred = qd.has("preferredSize") && !qd.isNull("preferredSize");
+            double min = qd.isNull("minSize") ? 0.0 : qd.optDouble("minSize", 0.0);
+            double pref = hasPreferred ? qd.optDouble("preferredSize", maxCap) : maxCap;
+            double max = qd.isNull("maxSize") ? -1.0 : qd.optDouble("maxSize", -1.0);
+
+            if (title.contains("2160") || title.contains("4K") || title.contains("Ultra")) {
+                if (max != 0.0 || min != 0.0 || (hasPreferred && pref != 0.0)) {
+                    qd.put("minSize", 0.0);
+                    if (qd.has("preferredSize")) qd.put("preferredSize", 0.0);
+                    qd.put("maxSize", 0.0);
+                    modified = true;
+                }
+            } else {
+                double newMax = (max > maxCap || max <= 0.0) ? maxCap : max;
+                double newMin = Math.max(0.0, Math.min(min, newMax));
+                double newPref = Math.max(newMin, Math.min(pref, newMax));
+                if (newMax != max || qd.isNull("maxSize")) {
+                    qd.put("maxSize", newMax);
+                    modified = true;
+                }
+                if (newMin != min || qd.isNull("minSize")) {
+                    qd.put("minSize", newMin);
+                    modified = true;
+                }
+                if (qd.has("preferredSize") && (qd.isNull("preferredSize") || newPref != pref)) {
+                    qd.put("preferredSize", newPref);
+                    modified = true;
+                }
+            }
+        }
+        return modified;
+    }
+
+    private int getDefaultProfileId(int port, String apiKey, String endpoint) {
+        try {
+            String resp = httpGet("http://127.0.0.1:" + port + getApiPrefix(port) + "/" + endpoint + "?apiKey=" + apiKey);
+            if (resp != null && resp.startsWith("[")) {
+                JSONArray arr = new JSONArray(resp);
+                int fallbackId = -1;
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject p = arr.getJSONObject(i);
+                    int id = p.optInt("id", -1);
+                    if (id <= 0) continue;
+                    String name = p.optString("name", "").toLowerCase(Locale.ROOT);
+                    if (name.contains("4k") || name.contains("ultra") || name.contains("2160")) continue;
+                    if (name.contains("1080") || name.contains("hd")) return id;
+                    if (fallbackId == -1) fallbackId = id;
+                }
+                if (fallbackId > 0) return fallbackId;
+                if (arr.length() > 0) {
+                    int firstId = arr.getJSONObject(0).optInt("id", -1);
+                    if (firstId > 0) return firstId;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return -1;
     }
 
     private void filterQualityItem(JSONObject it) {
@@ -4838,6 +4908,12 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 }
             }
 
+            int defaultQualityProfileId = getDefaultProfileId(port, apiKey, "qualityprofile");
+            if (defaultQualityProfileId <= 0) {
+                Log.w(TAG, "[AutoWire] Skipping Radarr movie auto-import: no valid quality profile available yet");
+                return;
+            }
+
             int imported = 0;
             for (File item : items) {
                 String itemName = item.getName();
@@ -4856,6 +4932,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     JSONArray results = new JSONArray(lookupJson);
                     if (results.length() > 0) {
                         JSONObject movie = results.getJSONObject(0);
+                        movie.put("qualityProfileId", defaultQualityProfileId);
                         movie.put("rootFolderPath", moviesDir.getAbsolutePath());
                         String moviePath = item.isDirectory() ? item.getAbsolutePath() : new File(moviesDir, movie.optString("title", itemName)).getAbsolutePath();
                         movie.put("path", moviePath);
@@ -4904,6 +4981,12 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 }
             }
 
+            int defaultQualityProfileId = getDefaultProfileId(port, apiKey, "qualityprofile");
+            if (defaultQualityProfileId <= 0) {
+                Log.w(TAG, "[AutoWire] Skipping Sonarr series auto-import: no valid quality profile available yet");
+                return;
+            }
+
             int imported = 0;
             for (File folder : seriesFolders) {
                 String folderName = folder.getName();
@@ -4918,6 +5001,7 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     JSONArray results = new JSONArray(lookupJson);
                     if (results.length() > 0) {
                         JSONObject series = results.getJSONObject(0);
+                        series.put("qualityProfileId", defaultQualityProfileId);
                         series.put("rootFolderPath", tvDir.getAbsolutePath());
                         series.put("path", folder.getAbsolutePath());
                         series.put("monitored", true);
@@ -4963,6 +5047,13 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                 }
             }
 
+            int defaultQualityProfileId = getDefaultProfileId(port, apiKey, "qualityprofile");
+            int defaultMetadataProfileId = getDefaultProfileId(port, apiKey, "metadataprofile");
+            if (defaultQualityProfileId <= 0 || defaultMetadataProfileId <= 0) {
+                Log.w(TAG, "[AutoWire] Skipping Lidarr artist auto-import: no valid quality/metadata profile available yet");
+                return;
+            }
+
             int imported = 0;
             for (File folder : artistFolders) {
                 String artistName = folder.getName().trim();
@@ -4974,6 +5065,8 @@ public class MediaServiceManager implements ServiceLifecycleContract, ServiceReg
                     JSONArray results = new JSONArray(lookupJson);
                     if (results.length() > 0) {
                         JSONObject artist = results.getJSONObject(0);
+                        artist.put("qualityProfileId", defaultQualityProfileId);
+                        artist.put("metadataProfileId", defaultMetadataProfileId);
                         artist.put("rootFolderPath", musicDir.getAbsolutePath());
                         artist.put("path", folder.getAbsolutePath());
                         artist.put("monitored", true);
